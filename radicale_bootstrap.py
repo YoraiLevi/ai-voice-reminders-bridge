@@ -191,8 +191,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         import vox_instructions
 
-        vox_instructions.upsert_routing_row(principal, cfg.name, cfg.inbox_list, cfg.output_list)
-        print(f"  Vox routing   : registered {cfg.name} = {cfg.inbox_list} / {cfg.output_list}")
+        conf = vox_instructions.upsert_routing_row(principal, cfg.name, cfg.inbox_list, cfg.output_list)
+        state = "CONFIRMED" if conf["verified"] else "NOT VERIFIED - re-run vox_instructions.py --register"
+        print(f"  Vox routing   : {state} - {cfg.name} = {cfg.inbox_list} / {cfg.output_list} "
+              f"({conf['total_rows']} rows, {conf['attempts']} attempt(s))")
     except Exception as exc:  # pragma: no cover - network / best-effort
         print(f"  Vox routing   : SKIPPED ({exc}) — run vox_instructions.py --register later", file=sys.stderr)
 

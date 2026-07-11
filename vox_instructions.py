@@ -37,14 +37,19 @@ from __future__ import annotations
 import argparse
 import re
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
+
+from caldav.lib import error as caldav_error
 
 REPO_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(REPO_DIR))
 
 from _caldav import connect, find_list, load_creds  # noqa: E402
 from config import load_config  # noqa: E402
+
+ROUTING_MAX_RETRIES = 8  # optimistic-CAS retries when a concurrent writer wins the race
 
 LIST_NAME = "Vox Instructions"
 RULES_PREFIX = "Vox Instructions - GLOBAL RULES"
@@ -107,37 +112,96 @@ def set_global_rules(cal) -> str:
     return summary
 
 
-def _read_routing(cal) -> dict:
+def _parse_routing(desc: str) -> dict:
     rows: dict[str, tuple[str, str]] = {}
-    item = _find_item(cal, ROUTING_PREFIX)
-    if item is not None:
-        desc = str(item.icalendar_component.get("description") or "")
-        for line in desc.splitlines():
-            if line.strip().startswith("PROJECT ROUTING TABLE"):
-                continue
-            m = _ROW_RE.match(line)
-            if m:
-                rows[m.group(1).strip()] = (m.group(2).strip(), m.group(3).strip())
+    for line in (desc or "").splitlines():
+        if line.strip().startswith("PROJECT ROUTING TABLE"):
+            continue
+        m = _ROW_RE.match(line)
+        if m:
+            rows[m.group(1).strip()] = (m.group(2).strip(), m.group(3).strip())
     return rows
 
 
-def _write_routing(cal, rows: dict) -> str:
+def _routing_body(rows: dict) -> tuple[str, str]:
     summary = f"{ROUTING_PREFIX} (updated {_now()})"
-    body = [ROUTING_HEADER]
-    for name in sorted(rows):
-        inbox, output = rows[name]
-        body.append(f"{name} = {inbox} / {output}")
-    _replace_item(cal, ROUTING_PREFIX, summary, "\n".join(body))
-    return summary
+    lines = [ROUTING_HEADER] + [f"{n} = {rows[n][0]} / {rows[n][1]}" for n in sorted(rows)]
+    return summary, "\n".join(lines)
 
 
-def upsert_routing_row(principal, name: str, inbox: str, output: str) -> str:
-    """Add/update ONE project's routing row (idempotent). Creates the list + table if missing.
-    This is what radicale_bootstrap calls so onboarding self-registers a project."""
+def _read_routing(cal) -> dict:
+    item = _find_item(cal, ROUTING_PREFIX)
+    if item is None:
+        return {}
+    return _parse_routing(str(item.icalendar_component.get("description") or ""))
+
+
+def ensure_routing_item(cal):
+    """Guarantee the single routing-table item exists, so concurrent registrations only ever
+    UPDATE it (one stable resource) — that lets ETag If-Match CAS work and removes the
+    create-race entirely."""
+    item = _find_item(cal, ROUTING_PREFIX)
+    if item is None:
+        summary, body = _routing_body({})
+        cal.save_todo(summary=summary, description=body)
+        item = _find_item(cal, ROUTING_PREFIX)
+    return item
+
+
+def _jitter(name: str, attempt: int) -> float:
+    # name-derived offset desyncs concurrent writers; grows with attempt count
+    return (abs(hash(name)) % 13) * 0.02 + attempt * 0.08
+
+
+def upsert_routing_row(principal, name: str, inbox: str, output: str) -> dict:
+    """Add/update ONE project's routing row, CONCURRENCY-SAFE via ETag If-Match CAS.
+
+    Load the single routing item (captures its ETag) -> merge my row into the CURRENT rows
+    -> save() (sends `if-match: <etag>`). If another writer changed it since our load, the
+    server returns 412 and caldav raises ETagMismatchError -> we re-load the now-updated
+    content (which INCLUDES the other writer's row), merge our row again, and retry. So two
+    projects onboarding at once BOTH end up registered — neither silently drops the other.
+
+    Returns a confirmation dict: {name, verified, total_rows, attempts, rows} — so onboarding
+    is NOT silent fire-and-forget; the caller can see (and log) that the row actually landed.
+    """
     cal = ensure_list(principal)
-    rows = _read_routing(cal)
-    rows[name] = (inbox, output)
-    return _write_routing(cal, rows)
+    ensure_routing_item(cal)
+    for attempt in range(ROUTING_MAX_RETRIES):
+        item = _find_item(cal, ROUTING_PREFIX)
+        if item is None:
+            ensure_routing_item(cal)
+            continue
+        try:
+            item.load()  # refresh content AND ETag together
+        except Exception:
+            time.sleep(_jitter(name, attempt))
+            continue
+        rows = _parse_routing(str(item.icalendar_component.get("description") or ""))
+        if rows.get(name) == (inbox, output):
+            return {"name": name, "verified": True, "total_rows": len(rows),
+                    "attempts": attempt + 1, "rows": sorted(rows)}
+        rows[name] = (inbox, output)
+        summary, body = _routing_body(rows)
+        comp = item.icalendar_component
+        comp.pop("summary", None)
+        comp.add("summary", summary)
+        comp.pop("description", None)
+        comp.add("description", body)
+        try:
+            item.save()  # If-Match CAS on the loaded ETag
+        except caldav_error.ETagMismatchError:
+            time.sleep(_jitter(name, attempt))  # a concurrent writer won; re-read + retry
+            continue
+        except Exception:
+            time.sleep(_jitter(name, attempt))
+            continue
+        # save() succeeded under If-Match => our row is durably merged (any later writer
+        # loads THIS version and keeps our row). Confirmed.
+        return {"name": name, "verified": True, "total_rows": len(rows),
+                "attempts": attempt + 1, "rows": sorted(rows)}
+    return {"name": name, "verified": False, "total_rows": len(_read_routing(cal)),
+            "attempts": ROUTING_MAX_RETRIES, "rows": sorted(_read_routing(cal))}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -151,9 +215,13 @@ def main(argv: list[str] | None = None) -> int:
     cal = ensure_list(principal)
     print("global rules :", set_global_rules(cal))
     if args.register:
-        print("routing row  :", upsert_routing_row(principal, cfg.name, cfg.inbox_list, cfg.output_list))
+        conf = upsert_routing_row(principal, cfg.name, cfg.inbox_list, cfg.output_list)
+        ok = "OK" if conf["verified"] else "NOT VERIFIED"
+        print(f"routing row  : {conf['name']} -> {ok} "
+              f"({conf['total_rows']} rows total, {conf['attempts']} attempt(s)); rows={conf['rows']}")
     else:
-        print("routing table:", _write_routing(cal, _read_routing(cal)))  # ensure the item exists
+        ensure_routing_item(cal)
+        print("routing table: ensured")
     print(f"\n'{LIST_NAME}' is live on Radicale and will sync to the phone's Reminders.")
     return 0
 

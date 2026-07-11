@@ -97,7 +97,44 @@ there is no virtualenv for you to manage. (Install `uv` first if you don't have 
 
 ---
 
-## 4. Start ONE project (project-one)
+## 4. RECOMMENDED — one file, one command: `claude @SETUP.md`
+
+For a real project, you do **not** need to hand-edit configs or substitute a `$VB` path. The repo
+ships a single self-configuring template, **`SETUP.md`** (repo root). The whole flow is:
+
+1. Copy `SETUP.md` into your project folder (the one you want to control by voice).
+2. In that folder, run **`claude @SETUP.md`**.
+
+That's it — **the same file and the same command work for the FIRST launch and EVERY relaunch:**
+
+- **First launch:** `SETUP.md` finds the voice-bridge repo once, runs `bootstrap.py`, which derives
+  this project's **distinct** list names from the folder name and writes `.claude/voice-bridge.json`
+  (recording the repo path as `vb_path` so nothing ever searches again). It then tells you the one
+  manual step — create the two Reminders lists it names — and waits for you to confirm.
+- **Every relaunch:** `SETUP.md` sees the config already exists, reads `vb_path` from it (no search,
+  no substitution), and goes straight to starting the poller and listening.
+
+The **detect step** inside `SETUP.md` is what branches — you never decide "is this the one-time
+setup or a normal launch" by hand. You can preview what `bootstrap.py` would create without
+launching a manager session:
+
+```
+uv run /path/to/voice-bridge/bootstrap.py     # run from inside your project folder
+```
+
+It prints `CONFIGURED: <slug>` (first run) or `ALREADY CONFIGURED: <name>` (idempotent re-run), plus
+the resolved fields and the two list names to create. It is safe to re-run.
+
+The one-time **account** setup in section 3 (Apple creds) is still required once, for all projects.
+The manual per-project flow in sections **4-old through 7** below remains the explicit **fallback**
+if you'd rather drive it by hand (or need to understand exactly what `SETUP.md` automates).
+
+---
+
+## 4-old. Start ONE project by hand (project-one) — manual fallback
+
+> **This section and sections 5-7 are the MANUAL fallback.** The recommended path is section 4
+> (`claude @SETUP.md`) above, which automates exactly what these sections do by hand.
 
 Starting a project has two clearly separated phases: a **ONE-TIME SETUP** you do once per project,
 and an **EVERY LAUNCH** routine you repeat each session. (Section 3 above was the *account-level*

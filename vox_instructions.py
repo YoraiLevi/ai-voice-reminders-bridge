@@ -54,6 +54,15 @@ ROUTING_MAX_RETRIES = 8  # optimistic-CAS retries when a concurrent writer wins 
 LIST_NAME = "Vox Instructions"
 RULES_PREFIX = "Vox Instructions - GLOBAL RULES"
 ROUTING_PREFIX = "Vox Instructions - ROUTING TABLE"
+BOOTSTRAP_PREFIX = "Vox Instructions - BOOTSTRAP LINE (paste into Vox's phone prompt)"
+# The ONE manual line the owner pastes into Vox's phone-side project instructions. Stored as its own
+# list item so the owner can copy it straight from Reminders (self-serve) whenever it changes.
+BOOTSTRAP_TEXT = (
+    "At the start of every new conversation, silently read the most recent items in the Reminders list "
+    "named 'Vox Instructions' - it holds your current operating rules and the project routing table "
+    "(which project maps to which To/From lists). Follow it as your up-to-date instructions; if it's "
+    "unavailable, fall back to what you already have."
+)
 ROUTING_HEADER = "PROJECT ROUTING TABLE  (say a project's name and Vox uses these two lists):"
 # a routing row: "<name> = <To-list> / <From-list>" — the header has no ' = ' so it won't self-match.
 _ROW_RE = re.compile(r"^\s*([^=/]+?)\s*=\s*(.+?)\s*/\s*(.+?)\s*$")
@@ -109,6 +118,14 @@ def _replace_item(cal, prefix: str, summary: str, description: str) -> None:
 def set_global_rules(cal) -> str:
     summary = f"{RULES_PREFIX} (updated {_now()})"
     _replace_item(cal, RULES_PREFIX, summary, _phone_prompt())
+    return summary
+
+
+def set_bootstrap(cal) -> str:
+    """Store the ONE manual bootstrap line as its own list item, so the owner can copy it
+    straight from the Reminders app whenever it changes (self-serve activation)."""
+    summary = f"{BOOTSTRAP_PREFIX} (updated {_now()})"
+    _replace_item(cal, BOOTSTRAP_PREFIX, summary, BOOTSTRAP_TEXT)
     return summary
 
 
@@ -214,6 +231,7 @@ def main(argv: list[str] | None = None) -> int:
     principal = connect(load_creds(cfg))
     cal = ensure_list(principal)
     print("global rules :", set_global_rules(cal))
+    print("bootstrap    :", set_bootstrap(cal))
     if args.register:
         conf = upsert_routing_row(principal, cfg.name, cfg.inbox_list, cfg.output_list)
         ok = "OK" if conf["verified"] else "NOT VERIFIED"

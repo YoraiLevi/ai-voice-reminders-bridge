@@ -42,11 +42,22 @@ from __future__ import annotations
 import argparse
 import sys
 import time
-from datetime import datetime, timezone
+import re
+import uuid
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+from icalendar import Alarm, Calendar, Todo
 
 from _caldav import CredsError, connect, find_list, load_creds, todo_fields
 from config import Config, ConfigError, load_config
+
+# Every reply also fires a native iOS Reminders alarm (owner decision 2026-07-11 "option B":
+# alarm on EVERY reply, not just urgent ones — he uses Reminders solely for this channel).
+# The trigger is a small offset in the FUTURE so the alarm is still pending when the phone
+# next syncs the CalDAV item (a due time already in the past may not fire). ntfy stays on too.
+ALARM_LEAD_SECONDS = 60
+_URL_RE = re.compile(r"https?://\S+")
 
 
 def _incomplete_todos(cal):
@@ -112,10 +123,12 @@ def _principal(cfg: Config):
     return connect(load_creds(cfg))
 
 
-def _notify_push(cfg: Config, text: str) -> None:
+def _notify_push(cfg: Config, text: str, *, click: str | None = None) -> None:
     """Best-effort ntfy push so the phone gets a banner on a reply — the CalDAV path
     has no push of its own. Topic from cfg.ntfy_topic_file; no-op if absent; never raises.
-    Body kept short + word-boundary (iOS banners clip ~150 chars mid-word)."""
+    Body kept short + word-boundary (iOS banners clip ~150 chars mid-word).
+    `click` (a URL) sets the ntfy Click header so the banner opens the link in ONE tap
+    (this is the ntfy-for-links path the owner keeps alongside native alarms)."""
     try:
         topic_file = cfg.ntfy_topic_file
         if not topic_file or not topic_file.exists():
@@ -128,10 +141,13 @@ def _notify_push(cfg: Config, text: str) -> None:
         body = " ".join(text.split())
         if len(body) > 150:
             body = body[:149].rsplit(" ", 1)[0].rstrip() + "…"
+        headers = {"Title": f"Claude Code · {cfg.name}", "Tags": "robot", "Priority": "high"}
+        if click:
+            headers["Click"] = click
         req = urllib.request.Request(
             f"https://ntfy.sh/{topic}",
             data=body.encode("utf-8"),
-            headers={"Title": f"Claude Code · {cfg.name}", "Tags": "robot", "Priority": "high"},
+            headers=headers,
             method="POST",
         )
         urllib.request.urlopen(req, timeout=8)
@@ -139,9 +155,62 @@ def _notify_push(cfg: Config, text: str) -> None:
         pass  # notification is best-effort; never break the reply on it
 
 
-def send_reply(cfg: Config, text: str, *, needs_input: bool = True, notify: bool = True, principal=None) -> str:
+def _first_url(text: str) -> str | None:
+    m = _URL_RE.search(text)
+    return m.group(0).rstrip(").,;]") if m else None
+
+
+def _frontload_link(body: str, url: str | None) -> str:
+    """Put the link at the VERY START of the reminder body so it's the first tappable
+    thing in the iOS Reminders notes (owner preference). No-op if no url / already first."""
+    if not url or body.lstrip().startswith(url):
+        return body
+    return f"{url}\n\n{body}"
+
+
+def _alarmed_todo_ics(summary: str, description: str, needs_input: bool) -> str:
+    """Build a VTODO carrying a DUE time + an absolute DISPLAY VALARM, so iOS Reminders
+    fires a NATIVE banner+sound. Times are timezone-aware UTC (avoids the naive-local
+    stored-as-UTC bug); the trigger is ALARM_LEAD_SECONDS in the future."""
+    now = datetime.now(timezone.utc)
+    due = now + timedelta(seconds=ALARM_LEAD_SECONDS)
+    todo = Todo()
+    todo.add("uid", str(uuid.uuid4()))
+    todo.add("dtstamp", now)
+    todo.add("summary", summary)
+    todo.add("description", description)
+    todo.add("due", due)
+    todo.add("status", "NEEDS-ACTION")
+    if needs_input:
+        todo.add("priority", 1)
+    alarm = Alarm()
+    alarm.add("action", "DISPLAY")
+    alarm.add("description", summary)
+    alarm.add("trigger", due)  # absolute trigger at the due time
+    todo.add_component(alarm)
+    cal = Calendar()
+    cal.add("prodid", "-//voice-bridge//reply-alarm//EN")
+    cal.add("version", "2.0")
+    cal.add_component(todo)
+    return cal.to_ical().decode("utf-8")
+
+
+def send_reply(
+    cfg: Config,
+    text: str,
+    *,
+    needs_input: bool = True,
+    notify: bool = True,
+    native_alarm: bool = True,
+    principal=None,
+) -> str:
     """Write one reply as a new VTODO in the output list. priority=1 marks "needs
-    input". Returns the created UID. Raises CredsError/RuntimeError on failure."""
+    input". Returns the created UID. Raises CredsError/RuntimeError on failure.
+
+    native_alarm=True (the default, per the owner's "option B") attaches a DUE time +
+    a native iOS Reminders VALARM so every reply also fires a banner+sound — a reliable
+    backstop to ntfy. Any link in the text is moved to the very start of the reminder
+    body (two-tap open) AND set as the ntfy Click header (one-tap open)."""
     principal = principal or _principal(cfg)
     out = find_list(principal, cfg.output_list)
     if out is None:
@@ -153,11 +222,16 @@ def send_reply(cfg: Config, text: str, *, needs_input: bool = True, notify: bool
     # timestamp lets the owner + voice assistant detect stale/superseded messages.
     # Prefix every reply with time AND project name so multiple projects are distinguishable.
     stamp = f"[{datetime.now():%H:%M}][{cfg.name}] "
-    stamped = stamp + text.strip()
+    url = _first_url(text)
+    body = _frontload_link(text.strip(), url)
+    stamped = stamp + body
     summary = stamped.replace("\r", " ").replace("\n", " ").strip()[:120] or "(reply)"
-    todo = out.save_todo(summary=summary, description=stamped, priority=1 if needs_input else None)
+    if native_alarm:
+        todo = out.save_todo(ical=_alarmed_todo_ics(summary, stamped, needs_input))
+    else:
+        todo = out.save_todo(summary=summary, description=stamped, priority=1 if needs_input else None)
     if notify:
-        _notify_push(cfg, summary)
+        _notify_push(cfg, summary, click=url)
     f = todo_fields(todo)
     return f["uid"] or "(unknown-uid)"
 

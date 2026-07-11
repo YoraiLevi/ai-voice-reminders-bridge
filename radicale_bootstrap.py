@@ -185,6 +185,17 @@ def main(argv: list[str] | None = None) -> int:
 
     all_existed = all(s == "exists" for s in statuses.values())
 
+    # --- 3b. self-register this project into Vox's global routing table --------
+    # Best-effort: a failure here must NOT break onboarding (the To/From lists are
+    # already created). See vox_instructions.py.
+    try:
+        import vox_instructions
+
+        vox_instructions.upsert_routing_row(principal, cfg.name, cfg.inbox_list, cfg.output_list)
+        print(f"  Vox routing   : registered {cfg.name} = {cfg.inbox_list} / {cfg.output_list}")
+    except Exception as exc:  # pragma: no cover - network / best-effort
+        print(f"  Vox routing   : SKIPPED ({exc}) — run vox_instructions.py --register later", file=sys.stderr)
+
     # --- 4. report -------------------------------------------------------------
     print()
     if config_preexisted and all_existed:

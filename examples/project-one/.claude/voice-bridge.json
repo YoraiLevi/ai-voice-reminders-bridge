@@ -1,0 +1,13 @@
+{
+  "name": "project-one",
+  "inbox_list": "To Project One",
+  "output_list": "From Project One",
+  "from_name": "project-one-phone",
+  "mailbox_dir": "~/.claude/message-protocol/project-one",
+  "to_manager": "to-manager.md",
+  "to_phone": "to-phone.md",
+  "ntfy_topic_file": "~/.auth/ntfy-topic.txt",
+  "creds_env": "~/.auth/icloud.env",
+  "cookie_dir": "~/.auth/pyicloud-cookies",
+  "poll_interval": 10
+}

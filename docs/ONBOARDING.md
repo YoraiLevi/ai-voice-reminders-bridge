@@ -1,0 +1,213 @@
+# Onboarding — talk to your PC's Claude Code from your phone, across many projects
+
+This is the from-zero, plain-English walkthrough. It assumes **no prior context**. By the end
+you will be able to say something to your phone like *"on project one, add a login button"* and
+have a Claude Code session on your PC actually do it — and hear its reply back on your phone —
+for as many projects as you like, all through **one** voice assistant.
+
+We use the two shipped example projects (`project-one`, `project-two`) as the running example.
+
+---
+
+## 1. The one-paragraph mental model
+
+You talk to the **Claude app on your phone**. It cannot reach your PC directly. So we use
+**Apple Reminders lists as a shared mailbox**: the phone drops a task into a list; a little
+program on your PC (the **poller**) sees it and hands it to a **Claude Code "manager" session**
+running in your project; that session's reply goes into a **second** list, which the phone reads
+back to you. It is **not** a live phone call — messages arrive turn-by-turn, a little delayed, and
+each is timestamped. That is normal and expected.
+
+```
+  PHONE (Claude app)                              PC
+  ┌───────────────────────┐        ┌──────────────────────────────────────┐
+  │  "To Project One"     │ ─────▶ │  poller  ─▶  to-manager.md  ─▶ manager │
+  │   (you send here)     │        │                                session │
+  │                       │        │                                  │     │
+  │  "From Project One"   │ ◀───── │  to-phone.md  ◀──────────────────┘     │
+  │   (replies appear)    │        │   (poller drains this back to the list)│
+  └───────────────────────┘        └──────────────────────────────────────┘
+        one such PAIR of lists per project · one poller per project
+```
+
+**Each project gets its own pair of lists and its own poller.** The phone assistant holds a small
+**routing table** that maps a project to its pair of lists, so it knows which list to drop your
+request into and which lists to read replies from.
+
+---
+
+## 2. The pieces — what files and lists must exist
+
+For **each** project you want to control by voice, three things must line up:
+
+1. **A project folder on your PC** containing `.claude/voice-bridge.json` — the config. It names:
+   - `inbox_list` — the Reminders list the **phone sends to** (e.g. `To Project One`)
+   - `output_list` — the Reminders list **replies appear in** (e.g. `From Project One`)
+   - `mailbox_dir` — a folder on the PC where this project's mailbox files live
+   - `name` / `from_name` — labels that keep this project's bookkeeping separate from others
+   - locations (never the secrets themselves) of your Apple creds under `~/.auth`
+2. **Two Reminders lists on the phone**, named **exactly** as `inbox_list` and `output_list`.
+   (The Claude app / poller can put items *into* lists but **cannot create lists** — you make them
+   by hand in the Reminders app, once.)
+3. **A running poller and manager session** for that project on the PC.
+
+The two example configs already exist:
+
+- `examples/project-one/.claude/voice-bridge.json` → lists `To Project One` / `From Project One`
+- `examples/project-two/.claude/voice-bridge.json` → lists `To Project Two` / `From Project Two`
+
+### Why each project's names must be DISTINCT
+
+The poller writes two mailbox files inside `mailbox_dir`: `to-manager.md` (things coming IN from
+the phone) and `to-phone.md` (replies going OUT). These mailbox files are **not** auto-separated by
+project. So if two projects shared one `mailbox_dir`, their two managers would read the **same**
+`to-manager.md` and get each other's messages. That is why each example project has:
+
+- **distinct list names** (`To Project One` vs `To Project Two`) — so each poller reads only its own
+  inbox, and the phone can tell which project a reply is from; and
+- a **distinct `mailbox_dir`** (`~/.claude/message-protocol/project-one` vs `.../project-two`) — so
+  the two managers never see each other's mail.
+
+One thing is safely **shared**: your Apple login. All projects point `creds_env` / `cookie_dir` at
+the same `~/.auth` files, so you log in once and every project's poller uses that one session.
+
+---
+
+## 3. One-time setup (do this once, ever)
+
+You need the Apple credentials in place and a trusted session seeded. This is the same one-time
+setup as the single-project version — see [`OWNER-SETUP.md`](OWNER-SETUP.md) for the full detail.
+In short:
+
+1. Create `~/.auth/icloud.env` with your **main** Apple ID and password:
+   ```
+   ICLOUD_APPLE_ID=you@icloud.com
+   ICLOUD_PASSWORD=your-main-apple-id-password
+   ```
+2. Create `~/.auth/ntfy-topic.txt` with one private topic string, and subscribe the phone's
+   **ntfy** app to that same topic (this is how long content pushes a tappable banner).
+3. Seed the trusted session (needs a one-time 6-digit 2FA code):
+   ```
+   uv run /path/to/voice-bridge/pyicloud_login.py
+   ```
+   Good for ~60 days. Re-run only when the bridge later says "session needs 2FA".
+
+`uv run` reads each script's inline dependencies and installs them into a throwaway environment —
+there is no virtualenv for you to manage. (Install `uv` first if you don't have it.)
+
+---
+
+## 4. Start ONE project (project-one)
+
+Do these three things:
+
+1. **Make its two lists on the phone.** In the Reminders app, create two lists named exactly
+   `To Project One` and `From Project One`.
+2. **Open a Claude Code session in the project's folder** — the folder that contains
+   `.claude/voice-bridge.json`. Paste the contents of `examples/project-one/MANAGER-PROMPT.md`.
+   That prompt tells the session to confirm its config, start the poller, and watch its mailbox.
+   The exact command it runs (pinned to this project's config) is:
+   ```
+   uv run /path/to/voice-bridge/pyicloud_bridge.py --config ./.claude/voice-bridge.json --interval 60
+   ```
+   Leave that poller running for the whole session.
+3. **Sanity-check** before trusting it, any time:
+   ```
+   uv run /path/to/voice-bridge/pyicloud_bridge.py --config ./.claude/voice-bridge.json --show-config
+   ```
+   Confirm `name = project-one`, `inbox_list = To Project One`, `output_list = From Project One`,
+   and `mailbox_dir = ...\message-protocol\project-one`.
+
+At this point, anything you add to the `To Project One` list on the phone shows up (within the
+interval) in `~/.claude/message-protocol/project-one/to-manager.md`, and the manager acts on it.
+
+---
+
+## 5. Add the SECOND project (project-two) — running side by side
+
+Repeat step 4 for project-two, in a **separate** Claude Code session:
+
+1. Create `To Project Two` and `From Project Two` on the phone.
+2. Open a Claude Code session **in the project-two folder** and paste
+   `examples/project-two/MANAGER-PROMPT.md`. Its poller command uses project-two's config, so it
+   watches only `To Project Two` and writes only into `~/.claude/message-protocol/project-two/`.
+
+Because the two projects have distinct list names AND distinct mailbox dirs (section 2), the two
+pollers and two managers run at the same time without ever touching each other's messages.
+
+---
+
+## 6. Set up the phone to route to BOTH projects
+
+On the phone, save `examples/PHONE-ASSISTANT-PROMPT.md` (as a Claude **Project** custom
+instruction, or paste it at the start of a voice chat). It contains a **ROUTING TABLE** that maps
+each project to its list pair, plus a DEFAULT project for when you don't name one.
+
+Now, when you speak:
+- *"On project two, run the tests"* → the assistant drops it in `To Project Two`; project-two's
+  poller picks it up; that manager runs the tests.
+- Every turn, the assistant silently reads **both** `From Project One` and `From Project Two`, and
+  reads any reply back to you **saying which project it's from** ("project two says: tests pass").
+- If it can't tell which project you meant, it **asks** rather than guessing.
+
+To roll back to a single project, delete every block in the routing table except the DEFAULT one.
+
+---
+
+## 7. ONBOARD A NEW PROJECT — the recipe
+
+Say you have a real project, `my-app`, at `C:/Users/you/source/my-app`. To bring it under the same
+phone assistant:
+
+1. **Create the config.** Make `C:/Users/you/source/my-app/.claude/voice-bridge.json`. Copy an
+   example config and change the four project-specific fields to be **distinct from every other
+   project**:
+   ```json
+   {
+     "name": "my-app",
+     "inbox_list": "To My App",
+     "output_list": "From My App",
+     "from_name": "my-app-phone",
+     "mailbox_dir": "~/.claude/message-protocol/my-app",
+     "ntfy_topic_file": "~/.auth/ntfy-topic.txt",
+     "creds_env": "~/.auth/icloud.env",
+     "cookie_dir": "~/.auth/pyicloud-cookies",
+     "poll_interval": 10
+   }
+   ```
+   (Leave `creds_env` / `cookie_dir` / `ntfy_topic_file` pointing at the shared `~/.auth` files.)
+2. **Create the two Reminders lists** on the phone, named **exactly** `To My App` and `From My App`
+   (or set up the equivalent lists in Radicale if you use the CalDAV alt transport). The names must
+   match the config character-for-character.
+3. **Start the poller** from the project's folder, pinned to its config:
+   ```
+   uv run /path/to/voice-bridge/pyicloud_bridge.py --config ./.claude/voice-bridge.json --interval 60
+   ```
+   (First run `--show-config` to confirm it resolved to the `my-app` values.) Give that Claude Code
+   session a manager prompt — copy `examples/project-one/MANAGER-PROMPT.md` and swap the project
+   name, the two list names, and the mailbox path to `my-app`'s.
+4. **Add it to the phone routing table.** In `PHONE-ASSISTANT-PROMPT.md`, copy a `PROJECT:` block
+   and fill in:
+   ```
+   PROJECT: my-app
+     TO   list (I send here):     "To My App"
+     FROM list (you read here):   "From My App"
+   ```
+   Save the updated prompt in the phone app. Done — now "on my app, ..." routes to your real project.
+
+That's the whole loop: **folder + config (distinct names) → two lists → poller with `--config` →
+one line in the routing table.** Each new project is that same four-step block.
+
+---
+
+## 8. When things look wrong (quick checks)
+
+- **A request never arrives.** Confirm the list name on the phone matches `inbox_list` exactly
+  (`--show-config`), and that the poller for that project is actually running.
+- **The wrong session answers.** Two projects are sharing a `mailbox_dir` or a list name — make them
+  distinct (section 2). Re-run `--show-config` on each.
+- **Replies don't come back.** Confirm the manager is appending to *its* `to-phone.md` (the path the
+  MANAGER-PROMPT shows) and that the poller is still up. Replies are timestamped and can lag a turn.
+- **"session needs 2FA".** Re-run `pyicloud_login.py` once (section 3).
+- **The private Apple API stops working.** Switch to the CalDAV/Radicale alt transport — same
+  mailbox contract, one env var swap. See `../radicale/OWNER-SETUP.md`.

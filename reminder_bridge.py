@@ -131,7 +131,7 @@ def _notify_push(cfg: Config, text: str) -> None:
         req = urllib.request.Request(
             f"https://ntfy.sh/{topic}",
             data=body.encode("utf-8"),
-            headers={"Title": "Claude Code", "Tags": "robot", "Priority": "high"},
+            headers={"Title": f"Claude Code · {cfg.name}", "Tags": "robot", "Priority": "high"},
             method="POST",
         )
         urllib.request.urlopen(req, timeout=8)
@@ -151,7 +151,8 @@ def send_reply(cfg: Config, text: str, *, needs_input: bool = True, notify: bool
         )
     # Stamp every reply with local time — the channel is ASYNC/turn-based, so a
     # timestamp lets the owner + voice assistant detect stale/superseded messages.
-    stamp = datetime.now().strftime("[%H:%M] ")
+    # Prefix every reply with time AND project name so multiple projects are distinguishable.
+    stamp = f"[{datetime.now():%H:%M}][{cfg.name}] "
     stamped = stamp + text.strip()
     summary = stamped.replace("\r", " ").replace("\n", " ").strip()[:120] or "(reply)"
     todo = out.save_todo(summary=summary, description=stamped, priority=1 if needs_input else None)

@@ -214,7 +214,7 @@ def _notify_push(cfg: Config, text: str) -> None:
         req = urllib.request.Request(
             f"https://ntfy.sh/{topic}",
             data=body.encode("utf-8"),
-            headers={"Title": "Claude Code", "Tags": "robot", "Priority": "high"},
+            headers={"Title": f"Claude Code · {cfg.name}", "Tags": "robot", "Priority": "high"},
             method="POST",
         )
         urllib.request.urlopen(req, timeout=8)
@@ -232,7 +232,9 @@ def send_reply(cfg: Config, text: str, *, priority: int = 1, r=None, notify: boo
     # Stamp every reply with local time. The bridge is ASYNC/turn-based, not live:
     # replies can reach the owner a turn or more later, so a timestamp lets both the
     # owner and the voice assistant detect stale/superseded messages.
-    stamp = datetime.now().strftime("[%H:%M] ")
+    # Prefix every reply with time AND project name, so with several projects running
+    # side by side it's immediately clear which one an update is from.
+    stamp = f"[{datetime.now():%H:%M}][{cfg.name}] "
     stamped = stamp + text.strip()
     summary = stamped.replace("\r", " ").replace("\n", " ").strip()[:120] or "(reply)"
     created = r.create(out.id, summary, desc=stamped, priority=priority)

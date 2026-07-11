@@ -1,0 +1,13 @@
+{
+  "name": "beta",
+  "inbox_list": "To Beta",
+  "output_list": "From Beta",
+  "from_name": "beta-phone",
+  "mailbox_dir": "~/.claude/message-protocol/beta",
+  "to_manager": "to-manager.md",
+  "to_phone": "to-phone.md",
+  "ntfy_topic_file": "~/.auth/ntfy-topic.txt",
+  "creds_env": "~/.auth/radicale.env",
+  "cookie_dir": "~/.auth/pyicloud-cookies",
+  "poll_interval": 10
+}

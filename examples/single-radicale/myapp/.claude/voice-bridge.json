@@ -1,0 +1,13 @@
+{
+  "name": "myapp",
+  "inbox_list": "To Myapp",
+  "output_list": "From Myapp",
+  "from_name": "myapp-phone",
+  "mailbox_dir": "~/.claude/message-protocol/myapp",
+  "to_manager": "to-manager.md",
+  "to_phone": "to-phone.md",
+  "ntfy_topic_file": "~/.auth/ntfy-topic.txt",
+  "creds_env": "~/.auth/radicale.env",
+  "cookie_dir": "~/.auth/pyicloud-cookies",
+  "poll_interval": 10
+}

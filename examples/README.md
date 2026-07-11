@@ -1,82 +1,83 @@
-# examples — two working projects behind one phone
+# examples — four worked examples (a 2×2 of single/multi × Radicale/iCloud)
 
-This folder ships **two complete, runnable example projects** plus the single phone-side
-prompt that manages both. Use them as the concrete reference when wiring up a real project.
-Full beginner walkthrough: [`../docs/ONBOARDING.md`](../docs/ONBOARDING.md).
+This folder ships **four complete, self-bootstrapping example projects**, one per quadrant of
+{single project, multiple projects} × {Radicale, iCloud}. Every quadrant is onboarded **hands-off with
+one command** (`claude @SETUP-RADICALE.md` or `claude @SETUP.md`) — the Claude Code agent locates the
+repo, writes the config, provisions what it can, starts the poller, and listens.
+
+Full beginner walkthrough from zero: [`../docs/ONBOARDING.md`](../docs/ONBOARDING.md).
 
 ```
 examples/
-├── README.md                          ← you are here
-├── PHONE-ASSISTANT-PROMPT.md          ← ONE phone prompt that routes to BOTH projects
-├── project-one/
-│   ├── .claude/voice-bridge.json      ← project-one config (distinct lists + mailbox)
-│   └── MANAGER-PROMPT.md              ← paste into a Claude Code session in project-one/
-└── project-two/
-    ├── .claude/voice-bridge.json      ← project-two config (distinct lists + mailbox)
-    └── MANAGER-PROMPT.md              ← paste into a Claude Code session in project-two/
+├── README.md                     ← you are here (the 2×2 index)
+├── PHONE-ASSISTANT-PROMPT.md     ← ONE phone prompt (routing table) — used by BOTH multi examples
+│
+├── single-radicale/   (Ex 1)  ← RECOMMENDED baseline · claude @SETUP-RADICALE.md
+│   ├── WALKTHROUGH.md
+│   └── myapp/.claude/voice-bridge.json      (To Myapp / From Myapp · radicale.env)
+│
+├── single-icloud/     (Ex 2)  ← fallback · claude @SETUP.md
+│   ├── WALKTHROUGH.md
+│   └── myapp/.claude/voice-bridge.json      (To Myapp / From Myapp · icloud.env)
+│
+├── multi-radicale/    (Ex 3)  ← RECOMMENDED for multi-project · claude @SETUP-RADICALE.md ×2
+│   ├── WALKTHROUGH.md
+│   ├── alpha/.claude/voice-bridge.json      (To Alpha / From Alpha · radicale.env)
+│   └── beta/.claude/voice-bridge.json       (To Beta  / From Beta  · radicale.env)
+│
+└── multi-icloud/      (Ex 4)  ← works, but NOT recommended (throttle risk) · claude @SETUP.md ×2
+    ├── WALKTHROUGH.md
+    ├── gamma/.claude/voice-bridge.json      (To Gamma / From Gamma · icloud.env)
+    └── delta/.claude/voice-bridge.json      (To Delta / From Delta · icloud.env)
 ```
 
-## What is distinct per project — and WHY it must be
+---
 
-Each project runs its **own poller** against its **own** pair of Reminders lists. For two
-pollers to run side by side on one PC **without crossing wires**, three things must be
-distinct per project (the two example configs already are):
+## The 2×2 at a glance
 
-| field | project-one | project-two | why distinct |
-|-------|-------------|-------------|--------------|
-| `inbox_list` | `To Project One` | `To Project Two` | each poller reads ONLY its own inbox list, so a phone request lands with exactly one project |
-| `output_list` | `From Project One` | `From Project Two` | replies from each project surface on their own list, so the phone can say which project answered |
-| `mailbox_dir` | `~/.claude/message-protocol/project-one` | `~/.claude/message-protocol/project-two` | **the file mailbox is NOT namespaced** (see below) — distinct dirs keep the two managers from reading each other's `to-manager.md` |
+|                        | **Radicale** (recommended)                          | **iCloud** (fallback)                                       |
+|------------------------|-----------------------------------------------------|------------------------------------------------------------|
+| **SINGLE project**     | **Ex 1 — [single-radicale](single-radicale/WALKTHROUGH.md)**<br>`claude @SETUP-RADICALE.md` | **Ex 2 — [single-icloud](single-icloud/WALKTHROUGH.md)**<br>`claude @SETUP.md` |
+| **MULTIPLE projects**  | **Ex 3 — [multi-radicale](multi-radicale/WALKTHROUGH.md)** ★<br>`claude @SETUP-RADICALE.md` per project | **Ex 4 — [multi-icloud](multi-icloud/WALKTHROUGH.md)** ⚠<br>`claude @SETUP.md` per project |
 
-**The mailbox-collision trap (important).** Inside a config's `mailbox_dir` the poller writes
-`to-manager.md` (inbound) and `to-phone.md` (outbound). Only the tiny dedupe *seen-files* are
-auto-namespaced by project name (`state/<name>-seen.txt`); the **mailbox `.md` files are not**.
-So if both projects used the default `mailbox_dir`, project-one's manager and project-two's
-manager would both read the **same** `to-manager.md` and see each other's messages. Giving each
-project its own `mailbox_dir` (as these examples do) is what keeps them cleanly separated.
+### Comparison — the three questions that decide it
 
-`name`/`from_name` are also distinct (`project-one` / `project-one-phone`, etc.) so the seen-files
-never collide and each mailbox line is tagged with which project's phone it came from.
+| quadrant | self-provisioning? (lists made for you) | manual phone list step? | throttle-safe for multi? |
+|----------|:---------------------------------------:|:-----------------------:|:------------------------:|
+| **Ex 1 · single · Radicale** | **yes** — Claude creates both lists on the server | **none** | n/a (single) |
+| **Ex 2 · single · iCloud**   | no — iCloud forbids list creation | **yes** — make 2 lists on the phone | n/a (single) — one poller is fine |
+| **Ex 3 · multi · Radicale** ★ | **yes** — every list created automatically | **none** | **yes** — Radicale has no per-account limit |
+| **Ex 4 · multi · iCloud** ⚠  | no | **yes** — 2 lists per project, by hand | **NO** — several pollers on one Apple ID caused a real auth storm (503 + forced re-2FA) |
 
-## What is SHARED across projects (and safely so)
+**Bottom line:** Radicale is self-provisioning and throttle-free — use it. iCloud is the fallback if you
+won't run a Radicale server; single-iCloud is fine, but **multi-iCloud carries a real throttle/2FA risk**
+on the shared Apple ID (see Ex 4) — prefer multi-Radicale for more than one project.
 
-`creds_env`, `cookie_dir`, and `ntfy_topic_file` all point at the same `~/.auth` files. One Apple
-login (one trusted session) serves every project's poller — you seed 2FA once, not per project.
+---
 
-## RECOMMENDED — Radicale, which provisions each project with ZERO manual steps
+## What every quadrant shares
 
-The two example configs above use **iCloud**, where the poller can add items to a list but
-**cannot create the list** — so each new iCloud project still needs you to make its two Reminders
-lists on the phone by hand. The **recommended** transport for a multi-project setup is a self-hosted
-**Radicale** CalDAV server, because a CalDAV client *is* allowed to create collections. That makes
-onboarding a project fully self-provisioning:
+- **One command, first launch AND relaunch.** `claude @SETUP-RADICALE.md` / `claude @SETUP.md` — the
+  only branch is whether `.claude/voice-bridge.json` already exists. Details in each `WALKTHROUGH.md`.
+- **Distinct names per project** (`inbox_list`, `output_list`, `mailbox_dir`, `name`, `from_name`) so
+  side-by-side pollers never cross wires. Derived automatically from the folder name. The multi
+  walkthroughs explain the mailbox-collision trap this protects against.
+- **Shared `~/.auth`** — `creds_env`, `cookie_dir`, `ntfy_topic_file` point at the same files, so one
+  account (Radicale or Apple) serves every project's poller.
+- **Reply through the bridge so ntfy fires.** Never write a raw CalDAV todo. Replies go through
+  `send_reply(cfg, text, notify=True)` — via `reminder_bridge.py --reply` (Radicale) or
+  `pyicloud_bridge.py --reply` (iCloud), or a `printf … >> to-phone.md` append the running poller
+  drains. Either path creates the output-list VTODO **and** pushes the ntfy banner.
 
-```
-uv run /path/to/voice-bridge/radicale_bootstrap.py     # run from inside the project folder
-```
+## Multi-project: the phone routes to all projects
 
-In one idempotent step it derives the project's distinct list names from the folder name, writes
-`.claude/voice-bridge.json` (with `creds_env` → `~/.auth/radicale.env`), **and connects to Radicale
-to create the two lists** `To <Title>` / `From <Title>`. Re-running prints `ALREADY PROVISIONED`.
-There is **no phone step** — because every Radicale project shares the ONE Radicale CalDAV account
-already added to the phone, the new lists sync to Reminders automatically.
+Both multi examples use the one shared [`PHONE-ASSISTANT-PROMPT.md`](PHONE-ASSISTANT-PROMPT.md). Its
+**ROUTING TABLE** maps each project to its list pair (`alpha`/`beta` for Ex 3; swap in `gamma`/`delta`
+for Ex 4). Adding a project = one block; rolling back to a single project = keep only the DEFAULT block.
 
-**One account + one `~/.auth`, many projects — only the list names and `mailbox_dir` differ per
-project** (exactly the distinct-fields table above; the shared account is the Radicale one, not an
-Apple one). Drive it hands-off with the `claude @SETUP-RADICALE.md` template (repo root), the
-Radicale sibling of `SETUP.md`. Server-side one-time setup: [`../radicale/OWNER-SETUP.md`](../radicale/OWNER-SETUP.md).
+## One-time account setup (once, for ALL projects of that transport)
 
-Contrast: iCloud (`claude @SETUP.md`) is identical **except** it stops to ask you to create the two
-Reminders lists on the phone by hand; Radicale creates them for you.
-
-## Run it
-
-1. Create the four Reminders lists on the phone (exact names above): `To Project One`,
-   `From Project One`, `To Project Two`, `From Project Two`.
-2. In a Claude Code session opened **in `project-one/`**, paste `project-one/MANAGER-PROMPT.md`.
-3. In a **separate** Claude Code session opened **in `project-two/`**, paste
-   `project-two/MANAGER-PROMPT.md`.
-4. On the phone, save `PHONE-ASSISTANT-PROMPT.md`. Now say "on project one, ..." or
-   "tell project two to ..." and it routes to the right session.
-
-Step-by-step from zero (including `~/.auth` + login): [`../docs/ONBOARDING.md`](../docs/ONBOARDING.md).
+- **Radicale:** run the server, seed `~/.auth/radicale.env`, add the one CalDAV account to the phone —
+  [`../radicale/OWNER-SETUP.md`](../radicale/OWNER-SETUP.md).
+- **iCloud:** `~/.auth/icloud.env` (Apple ID + password) + one-time 2FA seed via `pyicloud_login.py` +
+  `~/.auth/ntfy-topic.txt` — [`../docs/OWNER-SETUP.md`](../docs/OWNER-SETUP.md).

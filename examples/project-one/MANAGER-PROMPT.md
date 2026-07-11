@@ -1,23 +1,70 @@
 # project-one — PC-side MANAGER prompt
 
 This is the prompt for the **Claude Code "manager" session that runs project-one**.
-Open a Claude Code session **in the project-one directory** (the folder that contains
-`.claude/voice-bridge.json`), then paste the block below.
+There are two clearly separated phases: a **ONE-TIME SETUP** you do once for this project,
+and the **EVERY LAUNCH** routine you repeat each time you start a session.
 
-**STEP 0 — DO THIS FIRST:** `$VB` is a placeholder for the path to your voice-bridge checkout
-(e.g. `C:/Users/you/source/voice-bridge`). **Before pasting, replace every `$VB` below with that
-literal absolute path.** If you leave `$VB` unsubstituted, the session won't know where voice-bridge
-is and will waste time **scanning the filesystem to find it** — substituting the real path up front
-avoids that entirely.
+---
 
-Because you started the session in project-one's directory, the poller auto-finds
-`./.claude/voice-bridge.json` — but the command below **also passes `--config`
-explicitly** so it is copy-pasteable from anywhere and can never bind to the wrong project.
+## ONE-TIME SETUP (per project, do once)
+
+Do these once, ever, for project-one — then never again:
+
+1. **Create the project folder + its config.** project-one already ships one at
+   `examples/project-one/.claude/voice-bridge.json`; for a real project you make
+   `<project>/.claude/voice-bridge.json` with values **distinct from every other project**:
+   `name`, `inbox_list`, `output_list`, `from_name`, and a **distinct `mailbox_dir`**
+   (so two projects' managers never read the same mailbox). project-one's are `project-one` /
+   `To Project One` / `From Project One` / `project-one-phone` /
+   `~/.claude/message-protocol/project-one`.
+2. **Create the two Reminders lists on the phone** — named **exactly** `To Project One` and
+   `From Project One` (or the equivalent lists in Radicale if you use the CalDAV alt transport).
+   The Claude app / poller can add items to a list but **cannot create the list**, so you make
+   these two by hand, once.
+3. **Save your own copy of this prompt with `$VB` already replaced.** `$VB` is a placeholder for
+   your voice-bridge checkout path (e.g. `C:/Users/you/source/voice-bridge`). Copy the fenced block
+   below, replace **every** `$VB` in it with that literal absolute path, and save that
+   already-substituted block somewhere you can paste it from every launch. Do the `$VB` replacement
+   **once, here** — so you never touch it again.
+4. **Know the first-run cost.** The **first** poller run has `uv` read the script's inline
+   dependencies and install them into a cached environment — a one-time download. Every later run
+   reuses that cache and starts fast. There is no virtualenv for you to manage.
 
 > project-one owns two Reminders lists: **`To Project One`** (phone → this session)
 > and **`From Project One`** (this session → phone). It has its OWN mailbox directory
 > (`~/.claude/message-protocol/project-one/`) so it never crosses wires with any other
-> project's poller.
+> project's poller. One thing IS shared across projects: your Apple login under `~/.auth`.
+
+---
+
+## EVERY LAUNCH (the lean routine)
+
+Each time you want to drive project-one by voice:
+
+1. Open a **fresh Claude Code session IN the project-one folder** (the one that contains
+   `.claude/voice-bridge.json`).
+2. **Paste your saved (already-`$VB`-substituted) block** from the ONE-TIME SETUP.
+
+That's it — no re-substituting, no verification step, no reinstall. The pasted block just starts
+the poller in the background and listens. (The command still passes `--config ./.claude/voice-bridge.json`
+explicitly, so even pasted from the wrong directory it can never bind to the wrong project.)
+
+---
+
+## COPY-PASTE WALKTHROUGH (beginner, step by step)
+
+If you have never done this before, here is exactly what to copy and paste:
+
+1. **Copy the FENCED BLOCK** — the text **between the triple backticks** just below (starting
+   `You are the project-one MANAGER...`). Copy **only that block, NOT this whole file.**
+2. **Replace every `$VB`** in the text you copied with your real voice-bridge path
+   (e.g. `C:/Users/you/source/voice-bridge`). This is the **one manual edit** — the only thing you
+   change by hand. (On the ONE-TIME SETUP you saved this already-substituted; on later launches you
+   paste that saved copy and skip this.)
+3. **Open a fresh Claude Code session inside the project-one folder** — the folder that contains
+   `.claude/voice-bridge.json`.
+4. **Paste** the (now `$VB`-free) block into that session. **Nothing needs editing after pasting** —
+   it starts the poller and begins listening on its own.
 
 ```
 You are the project-one MANAGER. There is a phone bridge between my phone Claude app and

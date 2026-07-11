@@ -99,38 +99,75 @@ there is no virtualenv for you to manage. (Install `uv` first if you don't have 
 
 ## 4. Start ONE project (project-one)
 
-Do these three things:
+Starting a project has two clearly separated phases: a **ONE-TIME SETUP** you do once per project,
+and an **EVERY LAUNCH** routine you repeat each session. (Section 3 above was the *account-level*
+one-time setup — Apple creds — done once for *all* projects; this one is done once *per project*.)
 
-1. **Make its two lists on the phone.** In the Reminders app, create two lists named exactly
-   `To Project One` and `From Project One`.
-2. **Open a Claude Code session in the project's folder** — the folder that contains
-   `.claude/voice-bridge.json`. Paste the contents of `examples/project-one/MANAGER-PROMPT.md`.
-   That prompt tells the session to confirm its config, start the poller, and watch its mailbox.
-   The exact command it runs (pinned to this project's config) is:
+### 4a. ONE-TIME SETUP (per project, do once)
+
+1. **Create the project folder + its config.** project-one already ships
+   `examples/project-one/.claude/voice-bridge.json`. Its `name`, `inbox_list`, `output_list`,
+   `from_name`, and (crucially) `mailbox_dir` are all **distinct from every other project** so the
+   pollers never cross wires (section 2). For a real project you copy an example config and change
+   those fields — see section 7.
+2. **Make its two lists on the phone.** In the Reminders app, create two lists named **exactly**
+   `To Project One` and `From Project One`. (The app/poller can add items but **cannot create the
+   list** — you make these two by hand, once. Use the equivalent Radicale lists for the CalDAV alt
+   transport.)
+3. **Save your own copy of the manager prompt with `$VB` already replaced.** Open
+   `examples/project-one/MANAGER-PROMPT.md`, copy the fenced block, replace **every** `$VB` in it
+   with your real voice-bridge path (e.g. `C:/Users/you/source/voice-bridge`), and save that
+   already-substituted block where you can paste it each launch. You do the `$VB` edit **once, here**.
+4. **First-run cost (informational).** The **first** poller run has `uv` install the script's inline
+   dependencies into a cached environment — a one-time download. Every later run reuses the cache.
+
+### 4b. EVERY LAUNCH (the lean routine)
+
+1. **Open a fresh Claude Code session in the project-one folder** — the one that contains
+   `.claude/voice-bridge.json`.
+2. **Paste your saved (already-`$VB`-substituted) block.** It just starts the poller in the
+   background and listens — no re-substituting, no verification, no reinstall. The exact command it
+   runs (pinned to this project's config) is:
    ```
    uv run /path/to/voice-bridge/pyicloud_bridge.py --config ./.claude/voice-bridge.json
    ```
    Leave that poller running for the whole session.
-3. **Sanity-check** before trusting it, any time:
-   ```
-   uv run /path/to/voice-bridge/pyicloud_bridge.py --config ./.claude/voice-bridge.json --show-config
-   ```
-   Confirm `name = project-one`, `inbox_list = To Project One`, `output_list = From Project One`,
-   and `mailbox_dir = ...\message-protocol\project-one`.
 
 At this point, anything you add to the `To Project One` list on the phone shows up (within the
 interval) in `~/.claude/message-protocol/project-one/to-manager.md`, and the manager acts on it.
+
+### 4c. COPY-PASTE WALKTHROUGH (beginner, step by step)
+
+Exactly what to copy and paste the very first time:
+
+1. **Copy the FENCED BLOCK** — the text **between the triple backticks** inside
+   `examples/project-one/MANAGER-PROMPT.md` (it starts `You are the project-one MANAGER...`). Copy
+   **only that block, NOT the whole file.**
+2. **Replace every `$VB`** in the copied text with your real voice-bridge path
+   (e.g. `C:/Users/you/source/voice-bridge`). This is the **one manual edit**. (Save this substituted
+   copy — on later launches you paste it and skip this step.)
+3. **Open a fresh Claude Code session inside the project-one folder** (the one with
+   `.claude/voice-bridge.json`).
+4. **Paste** the now `$VB`-free block. **Nothing needs editing after pasting** — it starts the poller
+   and begins listening on its own.
+
+> Optional sanity-check, any time you doubt which project a session binds to (not part of a normal
+> launch): `uv run /path/to/voice-bridge/pyicloud_bridge.py --config ./.claude/voice-bridge.json --show-config`
+> and confirm `name = project-one`, `inbox_list = To Project One`, `output_list = From Project One`,
+> `mailbox_dir = ...\message-protocol\project-one`.
 
 ---
 
 ## 5. Add the SECOND project (project-two) — running side by side
 
-Repeat step 4 for project-two, in a **separate** Claude Code session:
+Repeat section 4 (its ONE-TIME SETUP then EVERY LAUNCH) for project-two, in a **separate** Claude
+Code session:
 
-1. Create `To Project Two` and `From Project Two` on the phone.
-2. Open a Claude Code session **in the project-two folder** and paste
-   `examples/project-two/MANAGER-PROMPT.md`. Its poller command uses project-two's config, so it
-   watches only `To Project Two` and writes only into `~/.claude/message-protocol/project-two/`.
+1. **One-time:** create `To Project Two` and `From Project Two` on the phone, and save your
+   `$VB`-substituted copy of the fenced block from `examples/project-two/MANAGER-PROMPT.md`.
+2. **Each launch:** open a Claude Code session **in the project-two folder** and paste that saved
+   block. Its poller command uses project-two's config, so it watches only `To Project Two` and
+   writes only into `~/.claude/message-protocol/project-two/`.
 
 Because the two projects have distinct list names AND distinct mailbox dirs (section 2), the two
 pollers and two managers run at the same time without ever touching each other's messages.

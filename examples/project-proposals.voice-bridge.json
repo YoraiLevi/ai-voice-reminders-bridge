@@ -1,0 +1,13 @@
+{
+  "name": "project-proposals",
+  "inbox_list": "To Claude",
+  "output_list": "From Claude",
+  "from_name": "owner-phone",
+  "mailbox_dir": "~/.claude/message-protocol",
+  "to_manager": "to-manager.md",
+  "to_phone": "to-phone.md",
+  "ntfy_topic_file": "~/.auth/ntfy-topic.txt",
+  "creds_env": "~/.auth/icloud.env",
+  "cookie_dir": "~/.auth/pyicloud-cookies",
+  "poll_interval": 10
+}

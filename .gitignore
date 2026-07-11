@@ -1,0 +1,15 @@
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Secrets / live CalDAV data never enter git. Credentials, cookies and the ntfy
+# topic live under ~/.auth (outside this repo) by design; these are only belt-and-
+# suspenders in case someone drops a _secrets/ or _data/ here.
+_secrets/
+_data/
+radicale/_secrets/
+radicale/_data/
+
+# A project's own resolved config may contain host/topic specifics — keep local
+# copies out of git. (The examples/ template IS committed.)
+/.claude/voice-bridge.json

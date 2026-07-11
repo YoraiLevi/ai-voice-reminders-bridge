@@ -1,0 +1,312 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["caldav>=3.2,<4", "icalendar>=6,<8"]
+# ///
+"""voice-bridge, CalDAV edition (ALT transport): CalDAV Reminders <-> the
+manager's file mailbox. Config-driven (see config.py). The PRIMARY transport is
+`pyicloud_bridge.py`; use this one with a self-hosted Radicale server (see
+radicale/OWNER-SETUP.md) when the CloudKit private-API path is unavailable.
+
+ASYNC channel: this is delayed, turn-based message-passing, NOT a live call. A
+reply can reach the owner a full turn (or more) later, so every reply is stamped
+with local `[HH:MM]` and the newest message on a topic supersedes older ones.
+
+Every ~interval seconds it:
+  1. reads incomplete VTODOs from the inbox list over CalDAV;
+  2. dedupes by VTODO UID against a per-project seen-file;
+  3. for each NEW item: marks it completed (double idempotency, like
+     reminder-watch) AND appends ONE line to the manager's mailbox in that file's
+     grammar:  - [HH:MM] (<from_name>) <title — notes>
+
+Reply path (manager -> phone): `send_reply(text)` creates a new VTODO in the
+output list with priority 1 ("needs input"). The loop also DRAINs a reply file
+(the config's to_phone) — each new line becomes an Output VTODO.
+
+Exit-code contract:
+  --once : exit 1 = nothing new,  exit 0 = new item(s) appended.
+  loop / --reply / --dry-run / --show-config : 0 on success, non-zero on error.
+
+Never prints or logs the app-specific password (see _caldav.Creds.masked()).
+
+Usage:
+  uv run reminder_bridge.py                 # poll forever (config poll_interval)
+  uv run reminder_bridge.py --once
+  uv run reminder_bridge.py --interval 30
+  uv run reminder_bridge.py --reply "text"  # one output-list VTODO
+  uv run reminder_bridge.py --dry-run       # no network; show the exact line + config
+  uv run reminder_bridge.py --config PATH
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+from _caldav import CredsError, connect, find_list, load_creds, todo_fields
+from config import Config, ConfigError, load_config
+
+
+def _incomplete_todos(cal):
+    """Yield only the not-completed VTODOs from a list.
+
+    iCloud returns 500 on caldav's server-side "exclude completed" filter, so read
+    everything the iCloud-safe way (`objects()`) and drop completed client-side.
+    """
+    for todo in cal.objects(load_objects=True):
+        comp = todo.icalendar_component
+        status = str(comp.get("status") or "").upper()
+        if status == "COMPLETED" or comp.get("completed") is not None:
+            continue
+        yield todo
+
+
+def _mark_complete(todo) -> None:
+    """Mark a VTODO completed by editing its component and saving (object-type
+    agnostic, iCloud-safe — we set STATUS/COMPLETED/PERCENT ourselves and PUT)."""
+    comp = todo.icalendar_component
+    comp["status"] = "COMPLETED"
+    comp["percent-complete"] = 100
+    if "completed" not in comp:
+        comp.add("completed", datetime.now(timezone.utc))
+    todo.save()
+
+
+# --- pure helpers (no network) ---------------------------------------------
+
+def format_mailbox_line(
+    title: str | None, notes: str | None, *, from_name: str, now: datetime | None = None
+) -> str:
+    """Render one to-manager.md line: `- [HH:MM] (<from_name>) <message>`, ONE line."""
+    now = now or datetime.now()
+    hhmm = now.strftime("%H:%M")
+    title = (title or "(no title)").strip()
+    body = (notes or "").replace("\r", " ").replace("\n", " ").strip()
+    msg = f"{title} — {body}" if body else title
+    return f"- [{hhmm}] ({from_name}) {msg}"
+
+
+def _load_seen(path: Path) -> set[str]:
+    if not path.exists():
+        return set()
+    return {ln.strip() for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()}
+
+
+def _append_seen(path: Path, uid: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(uid + "\n")
+
+
+def _append_line(path: Path, line: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(line + "\n")
+
+
+# --- network side ----------------------------------------------------------
+
+def _principal(cfg: Config):
+    return connect(load_creds(cfg))
+
+
+def send_reply(cfg: Config, text: str, *, needs_input: bool = True, principal=None) -> str:
+    """Write one reply as a new VTODO in the output list. priority=1 marks "needs
+    input". Returns the created UID. Raises CredsError/RuntimeError on failure."""
+    principal = principal or _principal(cfg)
+    out = find_list(principal, cfg.output_list)
+    if out is None:
+        raise RuntimeError(
+            f"{cfg.output_list!r} list is not visible over CalDAV. Create it on the "
+            "iPhone (or in Radicale) — see radicale/OWNER-SETUP.md."
+        )
+    # Stamp every reply with local time — the channel is ASYNC/turn-based, so a
+    # timestamp lets the owner + voice assistant detect stale/superseded messages.
+    stamp = datetime.now().strftime("[%H:%M] ")
+    stamped = stamp + text.strip()
+    summary = stamped.replace("\r", " ").replace("\n", " ").strip()[:120] or "(reply)"
+    todo = out.save_todo(summary=summary, description=stamped, priority=1 if needs_input else None)
+    f = todo_fields(todo)
+    return f["uid"] or "(unknown-uid)"
+
+
+def poll_inbox(cfg: Config, *, principal=None, seen_path: Path | None = None, mailbox: Path | None = None) -> int:
+    """One poll cycle. Returns the count of NEW items bridged this cycle.
+
+    Per new VTODO: append its UID to the seen-file, mark it completed, and append
+    one line to the mailbox. seen-file first, so a crash after marking-complete
+    can't re-emit; mark-complete is the second idempotency guard."""
+    seen_path = seen_path or cfg.seen_file
+    mailbox = mailbox or cfg.to_manager
+    principal = principal or _principal(cfg)
+    inbox = find_list(principal, cfg.inbox_list)
+    if inbox is None:
+        raise RuntimeError(
+            f"{cfg.inbox_list!r} list is not visible over CalDAV. Run probe.py — if it "
+            "reports CLOUDKIT-INVISIBLE, switch to the Radicale fallback (radicale/OWNER-SETUP.md)."
+        )
+
+    seen = _load_seen(seen_path)
+    new_count = 0
+    for todo in _incomplete_todos(inbox):
+        f = todo_fields(todo)
+        uid = f["uid"]
+        if not uid or uid in seen:
+            continue
+        _append_seen(seen_path, uid)
+        seen.add(uid)
+        try:
+            _mark_complete(todo)
+        except Exception as exc:
+            print(f"  warn: could not mark {uid} complete: {exc}", file=sys.stderr)
+        line = format_mailbox_line(f["title"], f["notes"], from_name=cfg.from_name)
+        _append_line(mailbox, line)
+        print(f"  bridged -> {line}")
+        new_count += 1
+    return new_count
+
+
+def drain_replies(cfg: Config, *, principal=None) -> int:
+    """Turn each NEW line in the to-phone file into an output-list VTODO. Dedupe by
+    line-number so identical reply texts aren't collapsed. No-op if absent."""
+    reply_file = cfg.to_phone
+    seen_path = cfg.reply_seen_file
+    if not reply_file.exists():
+        return 0
+    lines = reply_file.read_text(encoding="utf-8").splitlines()
+    seen = _load_seen(seen_path)
+    principal = principal or _principal(cfg)
+    sent = 0
+    for idx, raw in enumerate(lines):
+        text = raw.strip()
+        if not text or text.startswith("#"):
+            continue
+        marker = str(idx)
+        if marker in seen:
+            continue
+        try:
+            uid = send_reply(cfg, text, principal=principal)
+        except Exception as exc:
+            print(f"  warn: reply line {idx} not sent: {exc}", file=sys.stderr)
+            continue
+        _append_seen(seen_path, marker)
+        seen.add(marker)
+        print(f"  reply -> output VTODO {uid}: {text[:60]}")
+        sent += 1
+    return sent
+
+
+# --- dry-run (no network, no real mailbox) ---------------------------------
+
+def dry_run(cfg: Config) -> int:
+    """Feed a FAKE VTODO through parse -> mailbox-append and show the EXACT line.
+    Writes to a temp file, not the real mailbox, and touches no network."""
+    import tempfile
+
+    cfg.print_resolved()
+
+    class _FakeComp(dict):
+        pass
+
+    class _FakeTodo:
+        def __init__(self, uid, summary, description):
+            self.icalendar_component = _FakeComp(uid=uid, summary=summary, description=description)
+
+    fake = _FakeTodo(
+        uid="FAKE-UID-1234@voice-bridge",
+        summary="check the aorus fan curve",
+        description="it's been loud since the last BIOS update — look at PWM min",
+    )
+    f = todo_fields(fake)
+    line = format_mailbox_line(f["title"], f["notes"], from_name=cfg.from_name)
+
+    tmp = Path(tempfile.gettempdir()) / "voice-bridge-dryrun-to-manager.md"
+    _append_line(tmp, line)
+
+    print("\n== DRY RUN (no network, no real mailbox write) ==")
+    print(f"  inbox list       : {cfg.inbox_list!r}")
+    print(f"  fake VTODO uid   : {f['uid']}")
+    print("\n  EXACT line that WOULD be appended to the mailbox:")
+    print(f"    {line}")
+    print(f"\n  (written to temp file for inspection: {tmp})")
+    print(f"  (real mailbox would be: {cfg.to_manager})")
+    return 0
+
+
+# --- CLI -------------------------------------------------------------------
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--config", metavar="PATH", help="explicit voice-bridge.json")
+    ap.add_argument("--show-config", action="store_true", help="print the resolved config and exit")
+    ap.add_argument("--once", action="store_true", help="single poll; exit 1=nothing new, 0=new items")
+    ap.add_argument("--interval", type=int, default=None, help="loop cadence in seconds (default: config poll_interval)")
+    ap.add_argument("--reply", metavar="TEXT", help="send one output-list VTODO and exit")
+    ap.add_argument("--no-replies", action="store_true", help="do NOT drain the reply file in the loop")
+    ap.add_argument("--dry-run", action="store_true", help="no network; show resolved config + the exact mailbox line")
+    args = ap.parse_args(argv)
+
+    try:
+        cfg = load_config(args.config)
+    except ConfigError as exc:
+        print(f"config error: {exc}", file=sys.stderr)
+        return 2
+
+    if args.show_config:
+        cfg.print_resolved()
+        return 0
+
+    if args.dry_run:
+        return dry_run(cfg)
+
+    if args.reply is not None:
+        try:
+            uid = send_reply(cfg, args.reply)
+        except (CredsError, RuntimeError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        print(f"sent output-list VTODO {uid}")
+        return 0
+
+    if args.once:
+        try:
+            principal = _principal(cfg)
+            n = poll_inbox(cfg, principal=principal)
+            if not args.no_replies:
+                drain_replies(cfg, principal=principal)
+        except (CredsError, RuntimeError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        return 0 if n > 0 else 1
+
+    # continuous loop
+    interval = args.interval if args.interval is not None else cfg.poll_interval
+    try:
+        creds = load_creds(cfg)
+    except CredsError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    print(f"[{cfg.name}] CalDAV voice-bridge polling every {interval}s ({creds.masked()}); Ctrl-C to stop")
+    while True:
+        try:
+            principal = connect(creds)
+            n = poll_inbox(cfg, principal=principal)
+            if not args.no_replies:
+                drain_replies(cfg, principal=principal)
+            if n:
+                print(f"  [{datetime.now():%H:%M:%S}] {n} new item(s) bridged")
+        except CredsError as exc:
+            print(f"  auth error (will retry): {exc}", file=sys.stderr)
+        except Exception as exc:  # keep the loop alive across transient network faults
+            print(f"  poll error (will retry): {exc}", file=sys.stderr)
+        try:
+            time.sleep(interval)
+        except KeyboardInterrupt:
+            print("\nstopping.")
+            return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

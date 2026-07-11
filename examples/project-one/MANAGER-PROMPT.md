@@ -4,7 +4,12 @@ This is the prompt for the **Claude Code "manager" session that runs project-one
 Open a Claude Code session **in the project-one directory** (the folder that contains
 `.claude/voice-bridge.json`), then paste the block below.
 
-`$VB` = the path to your voice-bridge checkout (e.g. `C:/Users/you/source/voice-bridge`).
+**STEP 0 — DO THIS FIRST:** `$VB` is a placeholder for the path to your voice-bridge checkout
+(e.g. `C:/Users/you/source/voice-bridge`). **Before pasting, replace every `$VB` below with that
+literal absolute path.** If you leave `$VB` unsubstituted, the session won't know where voice-bridge
+is and will waste time **scanning the filesystem to find it** — substituting the real path up front
+avoids that entirely.
+
 Because you started the session in project-one's directory, the poller auto-finds
 `./.claude/voice-bridge.json` — but the command below **also passes `--config`
 explicitly** so it is copy-pasteable from anywhere and can never bind to the wrong project.

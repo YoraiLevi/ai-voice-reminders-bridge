@@ -75,6 +75,11 @@ the same `~/.auth` files, so you log in once and every project's poller uses tha
 
 ## 3. One-time setup (do this once, ever)
 
+> **Using the recommended Radicale path (section 4)?** Skip this Apple-specific setup — your one-time
+> setup is instead: run the Radicale server, seed `~/.auth/radicale.env`, and add the one CalDAV
+> account to the phone, all in [`../radicale/OWNER-SETUP.md`](../radicale/OWNER-SETUP.md). The rest
+> of this section is for the **iCloud** transport only.
+
 You need the Apple credentials in place and a trusted session seeded. This is the same one-time
 setup as the single-project version — see [`OWNER-SETUP.md`](OWNER-SETUP.md) for the full detail.
 In short:
@@ -97,37 +102,75 @@ there is no virtualenv for you to manage. (Install `uv` first if you don't have 
 
 ---
 
-## 4. RECOMMENDED — one file, one command: `claude @SETUP.md`
+## 4. RECOMMENDED — Radicale, fully self-provisioning: `claude @SETUP-RADICALE.md`
 
-For a real project, you do **not** need to hand-edit configs or substitute a `$VB` path. The repo
-ships a single self-configuring template, **`SETUP.md`** (repo root). The whole flow is:
+There are two "one file, one command" templates. **The recommended one is the Radicale template**,
+because it removes the last manual step entirely.
 
-1. Copy `SETUP.md` into your project folder (the one you want to control by voice).
-2. In that folder, run **`claude @SETUP.md`**.
+**Why Radicale is the recommended multi-project path.** The catch with iCloud is that the Claude
+app / poller can put items *into* a Reminders list but **cannot create the list** — so every new
+iCloud project still needs you to open the phone and make two lists by hand. A self-hosted
+**Radicale** CalDAV server has no such restriction: a CalDAV client is allowed to **create
+collections**. So on Radicale, onboarding a project is genuinely **zero manual server/phone steps** —
+the setup creates the two lists *for you*, on the server, and they sync to the phone automatically.
 
-That's it — **the same file and the same command work for the FIRST launch and EVERY relaunch:**
+|                              | **Radicale (recommended)**          | iCloud (`@SETUP.md`)                |
+|------------------------------|-------------------------------------|-------------------------------------|
+| Create the two lists         | **automatic** (server-side)         | **manual** — you make them on the phone |
+| Per-project phone action     | **none**                            | create 2 Reminders lists by hand    |
+| One-time account setup       | one Radicale CalDAV account on the phone | Apple creds + 2FA (section 3)  |
 
-- **First launch:** `SETUP.md` finds the voice-bridge repo once, runs `bootstrap.py`, which derives
-  this project's **distinct** list names from the folder name and writes `.claude/voice-bridge.json`
-  (recording the repo path as `vb_path` so nothing ever searches again). It then tells you the one
-  manual step — create the two Reminders lists it names — and waits for you to confirm.
-- **Every relaunch:** `SETUP.md` sees the config already exists, reads `vb_path` from it (no search,
-  no substitution), and goes straight to starting the poller and listening.
+**One account, many projects — only the list names + `mailbox_dir` differ.** All Radicale projects
+share the **one** Radicale CalDAV account already added to the phone and the **one** `~/.auth`
+(`~/.auth/radicale.env` carries the server URL + user/pass; `~/.auth/ntfy-topic.txt` the push topic).
+A new project changes only its **list names** (`To <Title>` / `From <Title>`) and its
+**`mailbox_dir`** — nothing account-level is re-done.
 
-The **detect step** inside `SETUP.md` is what branches — you never decide "is this the one-time
-setup or a normal launch" by hand. You can preview what `bootstrap.py` would create without
-launching a manager session:
+The flow:
+
+1. Copy **`SETUP-RADICALE.md`** (repo root) into your project folder.
+2. In that folder, run **`claude @SETUP-RADICALE.md`**.
+
+**Same file, same command for the FIRST launch and EVERY relaunch:**
+
+- **First launch:** the template finds the voice-bridge repo once and runs `radicale_bootstrap.py`,
+  which in ONE step derives this project's **distinct** list names from the folder name, writes
+  `.claude/voice-bridge.json` (with `creds_env` → `~/.auth/radicale.env`, and `vb_path` recorded so
+  nothing ever searches again), **and connects to Radicale to create the two VTODO lists**. No phone
+  step.
+- **Every relaunch:** the config already exists, so it reads `vb_path` and goes straight to starting
+  the poller and listening.
+
+You can preview / run the self-provision directly (safe to re-run — idempotent):
 
 ```
-uv run /path/to/voice-bridge/bootstrap.py     # run from inside your project folder
+uv run /path/to/voice-bridge/radicale_bootstrap.py     # from inside your project folder
 ```
 
-It prints `CONFIGURED: <slug>` (first run) or `ALREADY CONFIGURED: <name>` (idempotent re-run), plus
-the resolved fields and the two list names to create. It is safe to re-run.
+It prints `PROVISIONED: <slug>` (first run) or `ALREADY PROVISIONED: <name>` (when the config and
+both lists already exist), plus the resolved fields and the start command. The one-time **server**
+setup (run Radicale, seed `~/.auth/radicale.env`, add the phone's CalDAV account) is in
+[`../radicale/OWNER-SETUP.md`](../radicale/OWNER-SETUP.md) — done once, for all Radicale projects.
 
-The one-time **account** setup in section 3 (Apple creds) is still required once, for all projects.
+### 4-icloud. Alternative — iCloud, one command with a manual list step: `claude @SETUP.md`
+
+If you're on the iCloud transport instead, the repo ships **`SETUP.md`** (repo root) — the same
+"one file, one command" shape, with the one unavoidable difference that **you must create the two
+Reminders lists on the phone by hand** (the poller cannot create iCloud lists):
+
+1. Copy `SETUP.md` into your project folder. 2. Run **`claude @SETUP.md`**.
+
+- **First launch:** `SETUP.md` runs `bootstrap.py`, which derives distinct list names and writes
+  `.claude/voice-bridge.json` (recording `vb_path`), then tells you the **one manual step** — create
+  the two Reminders lists it names — and waits for you to confirm.
+- **Every relaunch:** it reads `vb_path` from the config and goes straight to starting the poller.
+
+Preview it with `uv run /path/to/voice-bridge/bootstrap.py` (prints `CONFIGURED` / `ALREADY
+CONFIGURED` + the two list names to create). The one-time Apple-account setup (section 3) is still
+required once, for all iCloud projects.
+
 The manual per-project flow in sections **4-old through 7** below remains the explicit **fallback**
-if you'd rather drive it by hand (or need to understand exactly what `SETUP.md` automates).
+if you'd rather drive it by hand (or need to understand exactly what the templates automate).
 
 ---
 

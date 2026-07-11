@@ -43,6 +43,32 @@ never collide and each mailbox line is tagged with which project's phone it came
 `creds_env`, `cookie_dir`, and `ntfy_topic_file` all point at the same `~/.auth` files. One Apple
 login (one trusted session) serves every project's poller — you seed 2FA once, not per project.
 
+## RECOMMENDED — Radicale, which provisions each project with ZERO manual steps
+
+The two example configs above use **iCloud**, where the poller can add items to a list but
+**cannot create the list** — so each new iCloud project still needs you to make its two Reminders
+lists on the phone by hand. The **recommended** transport for a multi-project setup is a self-hosted
+**Radicale** CalDAV server, because a CalDAV client *is* allowed to create collections. That makes
+onboarding a project fully self-provisioning:
+
+```
+uv run /path/to/voice-bridge/radicale_bootstrap.py     # run from inside the project folder
+```
+
+In one idempotent step it derives the project's distinct list names from the folder name, writes
+`.claude/voice-bridge.json` (with `creds_env` → `~/.auth/radicale.env`), **and connects to Radicale
+to create the two lists** `To <Title>` / `From <Title>`. Re-running prints `ALREADY PROVISIONED`.
+There is **no phone step** — because every Radicale project shares the ONE Radicale CalDAV account
+already added to the phone, the new lists sync to Reminders automatically.
+
+**One account + one `~/.auth`, many projects — only the list names and `mailbox_dir` differ per
+project** (exactly the distinct-fields table above; the shared account is the Radicale one, not an
+Apple one). Drive it hands-off with the `claude @SETUP-RADICALE.md` template (repo root), the
+Radicale sibling of `SETUP.md`. Server-side one-time setup: [`../radicale/OWNER-SETUP.md`](../radicale/OWNER-SETUP.md).
+
+Contrast: iCloud (`claude @SETUP.md`) is identical **except** it stops to ask you to create the two
+Reminders lists on the phone by hand; Radicale creates them for you.
+
 ## Run it
 
 1. Create the four Reminders lists on the phone (exact names above): `To Project One`,

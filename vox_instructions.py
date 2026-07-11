@@ -129,6 +129,18 @@ def set_bootstrap(cal) -> str:
     return summary
 
 
+LIVE_STATE_PREFIX = "Vox Instructions - LIVE STATE (what's happening right now)"
+
+
+def set_live_state(cal, text: str) -> str:
+    """Publish a CONDENSED live-state summary as its own list item so Vox (and the owner) can
+    query 'what's happening right now' directly from Reminders. The full board lives in the repo
+    (.meta/live-state.md); this is the short, phone-readable mirror the manager refreshes."""
+    summary = f"{LIVE_STATE_PREFIX} (updated {_now()})"
+    _replace_item(cal, LIVE_STATE_PREFIX, summary, text.strip() or "(no live state set)")
+    return summary
+
+
 def _parse_routing(desc: str) -> dict:
     rows: dict[str, tuple[str, str]] = {}
     for line in (desc or "").splitlines():
@@ -225,11 +237,17 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--config", required=True, help="a voice-bridge.json (for Radicale creds + this project)")
     ap.add_argument("--register", action="store_true", help="also add/update THIS project's routing row")
+    ap.add_argument("--live-state-file", metavar="PATH", help="refresh the LIVE STATE item from this file's contents")
     args = ap.parse_args(argv)
 
     cfg = load_config(args.config)
     principal = connect(load_creds(cfg))
     cal = ensure_list(principal)
+    if args.live_state_file:
+        import os
+        text = open(os.path.expanduser(args.live_state_file), encoding="utf-8").read()
+        print("live state   :", set_live_state(cal, text))
+        return 0
     print("global rules :", set_global_rules(cal))
     print("bootstrap    :", set_bootstrap(cal))
     if args.register:

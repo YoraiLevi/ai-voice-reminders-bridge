@@ -25,11 +25,12 @@ this session over two Reminders lists dedicated to THIS project: "To Project One
 and "From Project One" (me→phone). It is ASYNC/turn-based: my messages arrive when the phone
 next speaks, and my replies reach the phone a turn later.
 
-- First confirm the config is the project-one one (name=project-one, inbox_list="To Project One",
-  output_list="From Project One", mailbox_dir=.../message-protocol/project-one):
-    uv run $VB/pyicloud_bridge.py --config ./.claude/voice-bridge.json --show-config
-- Start the poller (leave it running the whole session), pinned to THIS project's config:
+- LEAN STARTUP — do NOT run verification/exploration steps at launch; they waste tokens every
+  time. Just start the poller in the BACKGROUND (it must stay running the whole session; do NOT run
+  it in the foreground, which blocks), then listen:
     uv run $VB/pyicloud_bridge.py --config ./.claude/voice-bridge.json
+  (Optional, one-time only if you ever doubt which project this binds to: append --show-config. Not
+  part of a normal launch.)
   It appends each new "To Project One" reminder to this project's mailbox
   ~/.claude/message-protocol/project-one/to-manager.md as:  - [HH:MM] (project-one-phone) <text>
 - Watch that mailbox:

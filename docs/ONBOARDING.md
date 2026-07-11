@@ -108,7 +108,7 @@ Do these three things:
    That prompt tells the session to confirm its config, start the poller, and watch its mailbox.
    The exact command it runs (pinned to this project's config) is:
    ```
-   uv run /path/to/voice-bridge/pyicloud_bridge.py --config ./.claude/voice-bridge.json --interval 60
+   uv run /path/to/voice-bridge/pyicloud_bridge.py --config ./.claude/voice-bridge.json
    ```
    Leave that poller running for the whole session.
 3. **Sanity-check** before trusting it, any time:
@@ -181,7 +181,7 @@ phone assistant:
    match the config character-for-character.
 3. **Start the poller** from the project's folder, pinned to its config:
    ```
-   uv run /path/to/voice-bridge/pyicloud_bridge.py --config ./.claude/voice-bridge.json --interval 60
+   uv run /path/to/voice-bridge/pyicloud_bridge.py --config ./.claude/voice-bridge.json
    ```
    (First run `--show-config` to confirm it resolved to the `my-app` values.) Give that Claude Code
    session a manager prompt — copy `examples/project-one/MANAGER-PROMPT.md` and swap the project

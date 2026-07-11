@@ -24,7 +24,7 @@ next speaks, and my replies reach the phone a turn later.
   output_list="From Project One", mailbox_dir=.../message-protocol/project-one):
     uv run $VB/pyicloud_bridge.py --config ./.claude/voice-bridge.json --show-config
 - Start the poller (leave it running the whole session), pinned to THIS project's config:
-    uv run $VB/pyicloud_bridge.py --config ./.claude/voice-bridge.json --interval 60
+    uv run $VB/pyicloud_bridge.py --config ./.claude/voice-bridge.json
   It appends each new "To Project One" reminder to this project's mailbox
   ~/.claude/message-protocol/project-one/to-manager.md as:  - [HH:MM] (project-one-phone) <text>
 - Watch that mailbox:

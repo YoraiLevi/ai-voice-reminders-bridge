@@ -101,11 +101,22 @@ def build_config(slug: str, title: str) -> dict:
 
 def _make_vtodo_list(principal, name: str) -> str:
     """Create a VTODO-capable calendar named `name`; return `exists` or `created`.
-    Guarded by an existence check, so calling it repeatedly is safe (idempotent)."""
+    Guarded by an existence check, so calling it repeatedly is safe (idempotent).
+
+    A newly-created list is SEEDED with one placeholder VTODO — an empty CalDAV list
+    does not sync to the iPhone Reminders app until it holds at least one item, so
+    without this seed the owner would have to add a first reminder by hand before the
+    new lists appear on the phone."""
     if find_list(principal, name) is not None:
         return "exists"
     cal_id = name.lower().replace(" ", "-")
     principal.make_calendar(name=name, cal_id=cal_id, supported_calendar_component_set=["VTODO"])
+    try:
+        cal = find_list(principal, name)
+        if cal is not None:
+            cal.save_todo(summary=f"{name} is live — the voice bridge created this list. Safe to delete this item.")
+    except Exception:
+        pass  # seeding is best-effort; the list itself was created successfully
     return "created"
 
 

@@ -112,7 +112,34 @@ def _principal(cfg: Config):
     return connect(load_creds(cfg))
 
 
-def send_reply(cfg: Config, text: str, *, needs_input: bool = True, principal=None) -> str:
+def _notify_push(cfg: Config, text: str) -> None:
+    """Best-effort ntfy push so the phone gets a banner on a reply — the CalDAV path
+    has no push of its own. Topic from cfg.ntfy_topic_file; no-op if absent; never raises.
+    Body kept short + word-boundary (iOS banners clip ~150 chars mid-word)."""
+    try:
+        topic_file = cfg.ntfy_topic_file
+        if not topic_file or not topic_file.exists():
+            return
+        topic = topic_file.read_text(encoding="utf-8").strip()
+        if not topic:
+            return
+        import urllib.request
+
+        body = " ".join(text.split())
+        if len(body) > 150:
+            body = body[:149].rsplit(" ", 1)[0].rstrip() + "…"
+        req = urllib.request.Request(
+            f"https://ntfy.sh/{topic}",
+            data=body.encode("utf-8"),
+            headers={"Title": "Claude Code", "Tags": "robot", "Priority": "high"},
+            method="POST",
+        )
+        urllib.request.urlopen(req, timeout=8)
+    except Exception:
+        pass  # notification is best-effort; never break the reply on it
+
+
+def send_reply(cfg: Config, text: str, *, needs_input: bool = True, notify: bool = True, principal=None) -> str:
     """Write one reply as a new VTODO in the output list. priority=1 marks "needs
     input". Returns the created UID. Raises CredsError/RuntimeError on failure."""
     principal = principal or _principal(cfg)
@@ -128,6 +155,8 @@ def send_reply(cfg: Config, text: str, *, needs_input: bool = True, principal=No
     stamped = stamp + text.strip()
     summary = stamped.replace("\r", " ").replace("\n", " ").strip()[:120] or "(reply)"
     todo = out.save_todo(summary=summary, description=stamped, priority=1 if needs_input else None)
+    if notify:
+        _notify_push(cfg, summary)
     f = todo_fields(todo)
     return f["uid"] or "(unknown-uid)"
 

@@ -185,18 +185,15 @@ def main(argv: list[str] | None = None) -> int:
 
     all_existed = all(s == "exists" for s in statuses.values())
 
-    # --- 3b. self-register this project into Vox's global routing table --------
-    # Best-effort: a failure here must NOT break onboarding (the To/From lists are
-    # already created). See vox_instructions.py.
-    try:
-        import vox_instructions
-
-        conf = vox_instructions.upsert_routing_row(principal, cfg.name, cfg.inbox_list, cfg.output_list)
-        state = "CONFIRMED" if conf["verified"] else "NOT VERIFIED - re-run vox_instructions.py --register"
-        print(f"  Vox routing   : {state} - {cfg.name} = {cfg.inbox_list} / {cfg.output_list} "
-              f"({conf['total_rows']} rows, {conf['attempts']} attempt(s))")
-    except Exception as exc:  # pragma: no cover - network / best-effort
-        print(f"  Vox routing   : SKIPPED ({exc}) — run vox_instructions.py --register later", file=sys.stderr)
+    # --- 3b. Vox routing registration -----------------------------------------
+    # The Vox Instructions list (incl. the routing table) now lives on iCLOUD, not CalDAV,
+    # so it can't be written from this CalDAV bootstrap. Register this project's routing row
+    # as a separate step against the iCloud config:
+    print(
+        f"  Vox routing   : register on iCloud ->  uv run {_repo_path_str()}/vox_instructions.py "
+        f"--config <iCloud voice-bridge.json> --register   "
+        f"(adds  {cfg.name} = {cfg.inbox_list} / {cfg.output_list})"
+    )
 
     # --- 4. report -------------------------------------------------------------
     print()

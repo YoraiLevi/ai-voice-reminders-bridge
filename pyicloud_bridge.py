@@ -278,7 +278,11 @@ def _notify_push(cfg: Config, text: str, *, click: str | None = None) -> None:
         if len(body) > 150:
             body = body[:149].rsplit(" ", 1)[0].rstrip() + "…"
 
-        headers = {"Title": f"Claude Code · {cfg.name}", "Tags": "robot", "Priority": "high"}
+        headers = {
+            "Title": cfg.ntfy_title.replace("{name}", cfg.name),
+            "Tags": cfg.ntfy_tags,
+            "Priority": cfg.ntfy_priority,
+        }
         if click:
             headers["Click"] = click
         req = urllib.request.Request(

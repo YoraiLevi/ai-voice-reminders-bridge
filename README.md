@@ -122,6 +122,9 @@ Every field is optional and falls back to the default below, so a minimal config
 | `to_phone` | `"to-phone.md"` | reply file the loop drains (relative to `mailbox_dir`) |
 | `ntfy_topic_file` | `"~/.auth/ntfy-topic.txt"` | file holding the ntfy topic |
 | `ntfy_server` | `"https://ntfy.sh"` | ntfy server banners POST to (override for self-hosted ntfy) |
+| `ntfy_title` | `"Vox · {name}"` | banner title; `{name}` is replaced with `name` |
+| `ntfy_tags` | `"robot"` | ntfy tags (banner icon), comma-separated |
+| `ntfy_priority` | `"high"` | ntfy priority (`max`/`high`/`default`/`low`/`min`) |
 | `creds_env` | `"~/.auth/icloud.env"` | `KEY=value` creds file (`radicale.env` for Radicale) |
 | `cookie_dir` | `"~/.auth/pyicloud-cookies"` | pyicloud trusted-session cache |
 | `poll_interval` | `10` | loop cadence (seconds) |

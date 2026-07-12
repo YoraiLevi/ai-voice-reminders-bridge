@@ -50,6 +50,11 @@ DEFAULTS: dict[str, Any] = {
     "ntfy_topic_file": "~/.auth/ntfy-topic.txt",
     # ntfy server that banners are POSTed to (override for a self-hosted ntfy).
     "ntfy_server": "https://ntfy.sh",
+    # ntfy banner presentation (all overridable). `{name}` in the title is
+    # replaced with this config's `name`; tags/priority are ntfy's own values.
+    "ntfy_title": "Vox · {name}",
+    "ntfy_tags": "robot",
+    "ntfy_priority": "high",
     "creds_env": "~/.auth/icloud.env",
     "cookie_dir": "~/.auth/pyicloud-cookies",
     # Poll cadence in seconds.
@@ -90,6 +95,9 @@ class Config:
     reply_seen_file: Path
     ntfy_topic_file: Path
     ntfy_server: str
+    ntfy_title: str
+    ntfy_tags: str
+    ntfy_priority: str
     creds_env: Path
     cookie_dir: Path
     poll_interval: int
@@ -112,6 +120,9 @@ class Config:
             "reply_seen_file": str(self.reply_seen_file),
             "ntfy_topic_file": str(self.ntfy_topic_file),
             "ntfy_server": self.ntfy_server,
+            "ntfy_title": self.ntfy_title,
+            "ntfy_tags": self.ntfy_tags,
+            "ntfy_priority": self.ntfy_priority,
             "creds_env": str(self.creds_env),
             "cookie_dir": str(self.cookie_dir),
             "poll_interval": str(self.poll_interval),
@@ -178,6 +189,9 @@ def load_config(path: str | Path | None = None) -> Config:
         reply_seen_file=state_dir / f"{slug}-reply-seen.txt",
         ntfy_topic_file=_expand(merged["ntfy_topic_file"]),
         ntfy_server=str(merged["ntfy_server"]).rstrip("/"),
+        ntfy_title=str(merged["ntfy_title"]),
+        ntfy_tags=str(merged["ntfy_tags"]),
+        ntfy_priority=str(merged["ntfy_priority"]),
         creds_env=_expand(merged["creds_env"]),
         cookie_dir=_expand(merged["cookie_dir"]),
         poll_interval=int(merged["poll_interval"]),

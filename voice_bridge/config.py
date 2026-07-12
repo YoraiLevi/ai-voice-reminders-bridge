@@ -32,8 +32,9 @@ DEFAULT_REL_PATH = Path(".claude") / "voice-bridge.json"
 
 # Fields whose default is DERIVED from another resolved field (state_dir); a user may
 # still override them explicitly. Kept out of DEFAULTS so derivation is unambiguous.
+# creds_env is derived separately (its name depends on the transport: icloud.env /
+# radicale.env), so only these two are fixed-name state files.
 _STATE_DERIVED = {
-    "creds_env": "icloud.env",
     "cookie_dir": "pyicloud-cookies",
     "ntfy_topic_file": "ntfy-topic.txt",
 }
@@ -67,7 +68,7 @@ DEFAULTS: dict[str, Any] = {
 }
 
 _INT_FIELDS = {"ntfy_body_limit", "reply_summary_limit", "poll_interval"}
-_ALLOWED_KEYS = set(DEFAULTS) | set(_STATE_DERIVED)
+_ALLOWED_KEYS = set(DEFAULTS) | set(_STATE_DERIVED) | {"creds_env"}
 
 
 class ConfigError(RuntimeError):
@@ -165,6 +166,41 @@ def parse_overrides(pairs: list[str] | None) -> dict[str, Any]:
     return out
 
 
+def default_config_path() -> Path:
+    """Where a project's config lives by default (cwd/.claude/voice-bridge.json)."""
+    return Path.cwd() / DEFAULT_REL_PATH
+
+
+def read_raw(path: Path) -> dict[str, Any]:
+    """The config file's JSON as-written (not resolved). Missing file -> {}."""
+    if not path.exists():
+        return {}
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def write_raw(path: Path, data: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+
+def set_value(path: Path, key: str, value: str) -> None:
+    """Validate + coerce one KEY=VALUE (via parse_overrides) and persist it into the
+    config file, preserving the rest. Unknown key raises ValueError."""
+    coerced = parse_overrides([f"{key}={value}"])
+    data = read_raw(path)
+    data.update(coerced)
+    write_raw(path, data)
+
+
+def field_help() -> list[tuple[str, str]]:
+    """(field, default) pairs for `config --help` — every settable key."""
+    rows = [(k, repr(v)) for k, v in DEFAULTS.items()]
+    rows.append(("creds_env", "{state_dir}/{transport}.env"))
+    for k, v in _STATE_DERIVED.items():
+        rows.append((k, "{state_dir}/" + v))
+    return rows
+
+
 def _find_config_path(explicit: str | Path | None) -> Path | None:
     if explicit:
         return _expand(explicit)
@@ -210,6 +246,10 @@ def load_config(
             return _expand(explicit)
         return state_dir / _STATE_DERIVED[key]
 
+    transport = str(merged["transport"])
+    creds_explicit = data.get("creds_env") or (overrides or {}).get("creds_env")
+    creds_env = _expand(creds_explicit) if creds_explicit else state_dir / f"{transport}.env"
+
     slug = _slug(spoke)
     seen_dir = state_dir / "seen"
 
@@ -223,7 +263,7 @@ def load_config(
         output_list_id=str(merged.get("output_list_id", "")),
         mailbox_dir=mailbox_dir,
         state_dir=state_dir,
-        transport=str(merged["transport"]),
+        transport=transport,
         ntfy_server=str(merged["ntfy_server"]).rstrip("/"),
         ntfy_title=str(merged["ntfy_title"]),
         ntfy_tags=str(merged["ntfy_tags"]),
@@ -231,7 +271,7 @@ def load_config(
         ntfy_body_limit=int(merged["ntfy_body_limit"]),
         reply_summary_limit=int(merged["reply_summary_limit"]),
         poll_interval=int(merged["poll_interval"]),
-        creds_env=_state_path("creds_env"),
+        creds_env=creds_env,
         cookie_dir=_state_path("cookie_dir"),
         ntfy_topic_file=_state_path("ntfy_topic_file"),
         our_inbox=mailbox_dir / f"to-{spoke}.md",

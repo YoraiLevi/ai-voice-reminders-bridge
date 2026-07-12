@@ -1,0 +1,195 @@
+"""The `voice-bridge` command — argparse subcommands over the package. Uniform exit
+codes: 0 success · 1 soft-negative · 2 usage/config/guard error."""
+
+from __future__ import annotations
+
+import argparse
+from importlib.resources import files
+from pathlib import Path
+
+from . import doctor as doctor_mod
+from . import login as login_mod
+from . import ntfy
+from . import setup as setup_mod
+from .config import (
+    ConfigError,
+    default_config_path,
+    field_help,
+    load_config,
+    parse_overrides,
+    set_value,
+)
+from .factory import make_transport
+from .runner import run_command
+
+_TRANSPORTS = ("icloud", "radicale")
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="voice-bridge", description="A voice spoke for a file-mailbox."
+    )
+    p.add_argument("--config", metavar="PATH", help="explicit voice-bridge.json")
+    sub = p.add_subparsers(dest="cmd")
+
+    r = sub.add_parser("run", help="ensure everything, then bridge (the main command)")
+    r.add_argument("--mailbox")
+    r.add_argument("--transport", choices=_TRANSPORTS)
+    r.add_argument("--require-mailbox", action="store_true")
+    r.add_argument("--interval", type=int)
+    r.add_argument("--once", action="store_true")
+    r.add_argument("--dry-run", action="store_true")
+    r.add_argument("--set", action="append", dest="overrides", metavar="KEY=VALUE")
+
+    s = sub.add_parser("setup", help="provision the transport (config + lists)")
+    s.add_argument("--transport", choices=_TRANSPORTS, default="icloud")
+    s.add_argument("--set", action="append", dest="overrides", metavar="KEY=VALUE")
+
+    d = sub.add_parser("doctor", help="survey the setup; --fix repairs safe items")
+    d.add_argument("--fix", action="store_true")
+
+    sub.add_parser("lists", help="enumerate transport lists with their ids")
+
+    pk = sub.add_parser("peek", help="show messages in a box")
+    pk.add_argument("--box", choices=("inbox", "outbox"), default="inbox")
+    pk.add_argument("--completed", action="store_true")
+    pk.add_argument("-n", type=int, dest="limit")
+
+    n = sub.add_parser("notify", help="push a phone banner")
+    n.add_argument("text")
+    n.add_argument("--click", metavar="URL")
+
+    c = sub.add_parser("config", help="show/get/set settings")
+    csub = c.add_subparsers(dest="op")
+    csub.add_parser("show")
+    csub.add_parser("fields", help="list every settable field and its default")
+    cg = csub.add_parser("get")
+    cg.add_argument("key")
+    cs = csub.add_parser("set")
+    cs.add_argument("key")
+    cs.add_argument("value")
+
+    li = sub.add_parser("icloud-login", help="one-time iCloud 2FA")
+    li.add_argument("--code")
+    li.add_argument("--code-file")
+    li.add_argument("--code-stdin", action="store_true")
+
+    sub.add_parser("vox-prompt", help="print the phone prompt with your list names")
+    return p
+
+
+def _overrides(args) -> dict:
+    return parse_overrides(getattr(args, "overrides", None))
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = _build_parser()
+    args = parser.parse_args(argv)
+    if not args.cmd:
+        parser.print_help()
+        return 2
+
+    try:
+        return _dispatch(args)
+    except ConfigError as exc:
+        print(f"config error: {exc}")
+        return 2
+    except ValueError as exc:  # e.g. bad --set key
+        print(f"error: {exc}")
+        return 2
+
+
+def _dispatch(args) -> int:  # noqa: C901 - a flat command table
+    cmd = args.cmd
+    cfg_path = args.config
+
+    if cmd == "run":
+        return run_command(
+            mailbox=args.mailbox,
+            transport=args.transport,
+            require_mailbox=args.require_mailbox,
+            interval=args.interval,
+            once=args.once,
+            dry_run=args.dry_run,
+            config_path=cfg_path,
+            overrides=_overrides(args),
+        )
+
+    if cmd == "setup":
+        return setup_mod.run_setup(
+            config_path=cfg_path, transport=args.transport, overrides=_overrides(args)
+        )
+
+    if cmd == "config":
+        return _config_cmd(args, cfg_path)
+
+    if cmd == "vox-prompt":
+        cfg = load_config(cfg_path)
+        tmpl = files("voice_bridge").joinpath("prompts/vox.md").read_text(encoding="utf-8")
+        print(
+            tmpl.replace("{inbox_list}", cfg.inbox_list).replace("{output_list}", cfg.output_list)
+        )
+        return 0
+
+    # commands that need a transport
+    cfg = load_config(cfg_path)
+
+    if cmd == "doctor":
+        return doctor_mod.run(cfg, fix=args.fix)
+
+    if cmd == "notify":
+        if ntfy.push(cfg, args.text, click=args.click):
+            print("banner sent.")
+            return 0
+        print(f"error: no ntfy topic at {cfg.ntfy_topic_file}")
+        return 2
+
+    if cmd == "lists":
+        t = make_transport(cfg)
+        t.connect()
+        configured = {cfg.inbox_list, cfg.output_list}
+        for ref in t.list_todo_lists():
+            mark = " *" if ref.name in configured else ""
+            print(f"  {ref.name}{mark}\n      id: {ref.id}")
+        return 0
+
+    if cmd == "peek":
+        t = make_transport(cfg)
+        t.connect()
+        name = cfg.inbox_list if args.box == "inbox" else cfg.output_list
+        lst = t.resolve_list(name, cfg.inbox_list_id if args.box == "inbox" else cfg.output_list_id)
+        items = t.read_completed(lst) if args.completed else t.read_incomplete(lst)
+        for it in items[: args.limit] if args.limit else items:
+            print(f"  - {it.title}" + (f" — {it.notes}" if it.notes else ""))
+        return 0
+
+    if cmd == "icloud-login":
+        return login_mod.icloud_login(
+            cfg, code=args.code, code_file=args.code_file, code_stdin=args.code_stdin
+        )
+
+    return 2
+
+
+def _config_cmd(args, cfg_path) -> int:
+    op = getattr(args, "op", None)
+    if op == "fields":
+        for key, default in field_help():
+            print(f"  {key:<22} {default}")
+        return 0
+    if op == "set":
+        path = Path(cfg_path) if cfg_path else default_config_path()
+        set_value(path, args.key, args.value)
+        print(f"set {args.key} = {args.value}")
+        return 0
+    if op == "get":
+        val = load_config(cfg_path).as_dict().get(args.key)
+        if val is None:
+            print(f"error: unknown field {args.key!r}")
+            return 2
+        print(val)
+        return 0
+    # default / show
+    for k, v in load_config(cfg_path).as_dict().items():
+        print(f"  {k:<22} : {v}")
+    return 0

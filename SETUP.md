@@ -72,6 +72,8 @@ branches are **(a) which transport** (iCloud or Radicale) and **(b) STEP 1's det
    | `ntfy_title` | `Vox · {name}` | banner title; `{name}` is replaced with `name` |
    | `ntfy_tags` | `robot` | ntfy tags (banner icon), comma-separated |
    | `ntfy_priority` | `high` | ntfy priority (`max`/`high`/`default`/`low`/`min`) |
+   | `ntfy_body_limit` | `-1` | ntfy banner body char cap; `-1` = no clipping |
+   | `reply_summary_limit` | `-1` | output-list reminder title char cap; `-1` = no clipping |
    | `creds_env` | `~/.auth/<transport>.env` | `KEY=value` creds file (set by transport) |
    | `cookie_dir` | `~/.auth/pyicloud-cookies` | pyicloud trusted-session cache |
    | `poll_interval` | `10` | loop cadence (seconds) |

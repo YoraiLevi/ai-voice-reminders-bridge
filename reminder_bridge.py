@@ -150,8 +150,9 @@ def _notify_push(cfg: Config, text: str, *, click: str | None = None) -> None:
         import urllib.request
 
         body = " ".join(text.split())
-        if len(body) > 150:
-            body = body[:149].rsplit(" ", 1)[0].rstrip() + "…"
+        lim = cfg.ntfy_body_limit
+        if lim > 0 and len(body) > lim:
+            body = body[: lim - 1].rsplit(" ", 1)[0].rstrip() + "…"
         headers = {
             "Title": cfg.ntfy_title.replace("{name}", cfg.name),
             "Tags": cfg.ntfy_tags,
@@ -240,7 +241,9 @@ def send_reply(
     url = _first_url(text)
     body = _frontload_link(text.strip(), url)
     stamped = stamp + body
-    summary = stamped.replace("\r", " ").replace("\n", " ").strip()[:120] or "(reply)"
+    flat = stamped.replace("\r", " ").replace("\n", " ").strip()
+    lim = cfg.reply_summary_limit
+    summary = (flat[:lim] if lim > 0 else flat) or "(reply)"
     if native_alarm:
         todo = out.save_todo(ical=_alarmed_todo_ics(summary, stamped, needs_input))
     else:

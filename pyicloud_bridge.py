@@ -275,8 +275,9 @@ def _notify_push(cfg: Config, text: str, *, click: str | None = None) -> None:
         # short and complete (word-boundary), so nothing looks silently cut off; the
         # full reply text lives in the output-list reminder anyway.
         body = " ".join(text.split())
-        if len(body) > 150:
-            body = body[:149].rsplit(" ", 1)[0].rstrip() + "…"
+        lim = cfg.ntfy_body_limit
+        if lim > 0 and len(body) > lim:
+            body = body[: lim - 1].rsplit(" ", 1)[0].rstrip() + "…"
 
         headers = {
             "Title": cfg.ntfy_title.replace("{name}", cfg.name),
@@ -312,7 +313,9 @@ def send_reply(cfg: Config, text: str, *, priority: int = 1, r=None, notify: boo
     url = _first_url(text)
     body = _frontload_link(text.strip(), url)
     stamped = stamp + body
-    summary = stamped.replace("\r", " ").replace("\n", " ").strip()[:120] or "(reply)"
+    flat = stamped.replace("\r", " ").replace("\n", " ").strip()
+    lim = cfg.reply_summary_limit
+    summary = (flat[:lim] if lim > 0 else flat) or "(reply)"
     # Native iOS Reminders alarm: a timed due_date ~1 min out fires a banner+sound on
     # the phone (option-B parity with the Radicale/CalDAV path). Use a NAIVE LOCAL
     # wall-clock time — pyicloud mangles a tz-aware datetime (a tz-aware local time

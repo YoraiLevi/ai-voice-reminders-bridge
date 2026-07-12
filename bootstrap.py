@@ -107,7 +107,7 @@ def _parse_overrides(pairs: list[str] | None, *, allowed: set[str]) -> dict:
         key = key.strip()
         if key not in allowed:
             raise ValueError(f"--set unknown key {key!r}; allowed: {', '.join(sorted(allowed))}")
-        out[key] = int(value) if key == "poll_interval" else value
+        out[key] = int(value) if key in ("poll_interval", "ntfy_body_limit", "reply_summary_limit") else value
     return out
 
 

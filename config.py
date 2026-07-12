@@ -55,6 +55,9 @@ DEFAULTS: dict[str, Any] = {
     "ntfy_title": "Vox · {name}",
     "ntfy_tags": "robot",
     "ntfy_priority": "high",
+    # Char caps for truncation surfaces; -1 (or <=0) = NO clipping.
+    "ntfy_body_limit": -1,       # ntfy banner body (iOS banners clip ~150 mid-word)
+    "reply_summary_limit": -1,   # output-list reminder TITLE
     "creds_env": "~/.auth/icloud.env",
     "cookie_dir": "~/.auth/pyicloud-cookies",
     # Poll cadence in seconds.
@@ -98,6 +101,8 @@ class Config:
     ntfy_title: str
     ntfy_tags: str
     ntfy_priority: str
+    ntfy_body_limit: int
+    reply_summary_limit: int
     creds_env: Path
     cookie_dir: Path
     poll_interval: int
@@ -123,6 +128,8 @@ class Config:
             "ntfy_title": self.ntfy_title,
             "ntfy_tags": self.ntfy_tags,
             "ntfy_priority": self.ntfy_priority,
+            "ntfy_body_limit": str(self.ntfy_body_limit),
+            "reply_summary_limit": str(self.reply_summary_limit),
             "creds_env": str(self.creds_env),
             "cookie_dir": str(self.cookie_dir),
             "poll_interval": str(self.poll_interval),
@@ -192,6 +199,8 @@ def load_config(path: str | Path | None = None) -> Config:
         ntfy_title=str(merged["ntfy_title"]),
         ntfy_tags=str(merged["ntfy_tags"]),
         ntfy_priority=str(merged["ntfy_priority"]),
+        ntfy_body_limit=int(merged["ntfy_body_limit"]),
+        reply_summary_limit=int(merged["reply_summary_limit"]),
         creds_env=_expand(merged["creds_env"]),
         cookie_dir=_expand(merged["cookie_dir"]),
         poll_interval=int(merged["poll_interval"]),

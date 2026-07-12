@@ -66,10 +66,10 @@ Full compare (all changes this session):
    _(original:_ The canonical Vox Instructions list is now on iCloud, but the
    self-provisioning tooling still writes to Radicale/CalDAV. Needs an iCloud-aware path (or a documented
    split). *This is the biggest gap.*
-2. **Dual-send isn't a single helper.** Alarm-worthy replies are sent to iCloud + backup by hand; should be
-   one `send_reply` that fans out.
-3. **`TROUBLESHOOTING.md` not written** — the foreseeable-bug/troubleshooting review Yorai asked for
-   (ghost-list churn, dangling-entry 404, ~60-day 2FA re-trust, the tz gotcha, one-poller-per-account).
+2. ~~Dual-send single helper.~~ **CLOSED — working as intended (owner decision 08:31).** The two channels stay
+   SEPARATE by design: iCloud+ntfy = fast primary for day-to-day; backup/CalDAV = pure fallback (not a parallel
+   companion). Do NOT merge them.
+3. ~~`TROUBLESHOOTING.md` not written.~~ **DONE** — `docs/TROUBLESHOOTING.md` (9 gotchas, symptom→cause→fix→diagnose).
 4. **Auto-heal is inbox-only.** "From Claude" recreation isn't auto-healed (uses the pinned id).
 5. **Onboarding docs** (`SETUP-RADICALE.md`, examples) still describe the single-channel model — need
    updating for the dual-channel + id-pin design.

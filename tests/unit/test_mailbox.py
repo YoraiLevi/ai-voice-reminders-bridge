@@ -1,0 +1,47 @@
+"""Mailbox contract: line grammar, join/eject, dedupe, and clip (incl. -1 = no clip)."""
+
+from __future__ import annotations
+
+from voice_bridge import mailbox
+
+
+def test_line_grammar_and_flattening(fixed_clock):
+    line = mailbox.format_mailbox_line("hello\nthere   world", from_name="vox", now=fixed_clock)
+    assert line == "- [08:48] (vox) hello there world"  # one physical line
+
+
+def test_join_and_eject_lines(fixed_clock):
+    assert mailbox.join_line("vox", now=fixed_clock) == "- [08:48] (vox) joined — async voice spoke"
+    assert mailbox.eject_line("vox", now=fixed_clock) == "- [08:48] (vox) stopping"
+
+
+def test_append_and_load_roundtrip(tmp_path):
+    f = tmp_path / "sub" / "to-manager.md"  # parent auto-created
+    mailbox.append_line(f, "- [08:48] (vox) hi")
+    assert f.read_text(encoding="utf-8") == "- [08:48] (vox) hi\n"
+
+
+def test_seen_dedupe(tmp_path):
+    seen = tmp_path / "seen.txt"
+    assert mailbox.load_seen(seen) == set()
+    mailbox.mark_seen(seen, "item-1")
+    mailbox.mark_seen(seen, "item-2")
+    assert mailbox.load_seen(seen) == {"item-1", "item-2"}
+
+
+def test_clip_no_clip_when_limit_nonpositive():
+    text = "x" * 300
+    assert mailbox.clip(text, -1) == text
+    assert mailbox.clip(text, 0) == text
+
+
+def test_clip_word_boundary_with_ellipsis():
+    text = "word " * 60  # 300 chars
+    out = mailbox.clip(text, 150)
+    assert len(out) <= 150
+    assert out.endswith("…")
+
+
+def test_clip_hard_cut_without_ellipsis():
+    out = mailbox.clip("x" * 300, 120, ellipsis=False)
+    assert out == "x" * 120

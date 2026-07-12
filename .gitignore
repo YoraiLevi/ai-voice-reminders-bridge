@@ -13,3 +13,12 @@ radicale/_data/
 # A project's own resolved config may contain host/topic specifics — keep local
 # copies out of git. (The examples/ template IS committed.)
 /.claude/voice-bridge.json
+
+# Python packaging / test build outputs
+.venv/
+dist/
+build/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/

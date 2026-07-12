@@ -179,37 +179,64 @@ def _lists_by_title(r) -> dict:
     return {l.title: l for l in r.lists()}
 
 
-def _require_list(r, title: str, list_id: str = ""):
-    """Return the list object. If `list_id` (a CloudKit record id like 'List/UUID')
-    is given, resolve by EXACT id and ignore title — the robust fix for orphaned/ghost
-    Reminders lists that share a title (they linger server-side, hidden from the phone
-    UI, but the raw API still returns them, and a title lookup can silently pick the
-    wrong one). Empty list_id -> resolve by title (warn if the title is duplicated)."""
+def _pending_count(r, list_obj) -> int:
+    """Number of INCOMPLETE reminders in a list. The live list the phone writes to has
+    unread items; ghost/orphaned duplicates are empty — so this distinguishes them."""
+    try:
+        res = r.list_reminders(list_obj.id)
+        items = res if isinstance(res, list) else list(getattr(res, "reminders", res) or [])
+
+        def done(x):
+            return bool(x.get("completed")) if isinstance(x, dict) else bool(getattr(x, "completed", False))
+
+        return sum(1 for x in items if not done(x))
+    except Exception:
+        return 0
+
+
+def _require_list(r, title: str, list_id: str = "", *, auto_heal: bool = False):
+    """Return the list object.
+
+    Resolution order:
+    1. AUTO-HEAL (when auto_heal=True, used for the INBOX): if several lists share the
+       title (ghosts left behind when the owner deletes+recreates a list on the phone,
+       each getting a NEW CloudKit id), pick the one with UNREAD items — that's the live
+       list the phone is actually writing to; ghosts are empty. This SELF-HEALS a
+       recreated list without needing a manual re-pin.
+    2. PINNED id (`list_id`, a 'List/UUID'): exact match, ignoring title — robust against
+       same-titled ghosts. If the pinned id has vanished (list recreated), fall through.
+    3. TITLE: first match (warn if duplicated and not auto-healing).
+    """
     lists = list(r.lists())
+    same = [lst for lst in lists if lst.title == title]
+
+    if auto_heal and len(same) > 1:
+        counts = [(lst, _pending_count(r, lst)) for lst in same]
+        best, n = max(counts, key=lambda t: t[1])
+        if n > 0:
+            return best  # the list with unread items = the live one
+
     if list_id:
         for lst in lists:
             if lst.id == list_id:
                 return lst
-        raise BridgeError(
-            f"pinned list id {list_id!r} (for {title!r}) is not visible via pyicloud. "
-            "Check the id, or clear it from the config to fall back to title lookup."
-        )
-    matches = [lst for lst in lists if lst.title == title]
-    if not matches:
+        # pinned id vanished (list recreated) -> fall through to title resolution
+
+    if not same:
         raise BridgeError(
             f"{title!r} list is not visible via pyicloud. This pyicloud build "
             "exposes no create-list API (r has create() for reminders only), so "
             "the list must be created ONCE on the iPhone Reminders app (or Claude "
             "iOS). Create it, then retry."
         )
-    if len(matches) > 1:
+    if len(same) > 1 and not auto_heal:
         import sys as _sys
         print(
-            f"WARNING: {len(matches)} lists titled {title!r} (ghosts?); using the first. "
-            "Pin its id via inbox_list_id/output_list_id in the config to disambiguate.",
+            f"WARNING: {len(same)} lists titled {title!r} (ghosts?); using the first. "
+            "Pin its id via inbox_list_id/output_list_id, or rely on auto_heal.",
             file=_sys.stderr,
         )
-    return matches[0]
+    return same[0]
 
 
 def _incomplete(r, list_obj) -> list:
@@ -334,7 +361,7 @@ def poll_inbox(cfg: Config, *, r=None, seen_path: Path | None = None, mailbox: P
     seen_path = seen_path or cfg.seen_file
     mailbox = mailbox or cfg.to_manager
     r = r or connect(cfg)
-    inbox = _require_list(r, cfg.inbox_list, cfg.inbox_list_id)
+    inbox = _require_list(r, cfg.inbox_list, cfg.inbox_list_id, auto_heal=True)
 
     seen = _load_seen(seen_path)
     new_count = 0
@@ -399,7 +426,7 @@ def selftest(cfg: Config) -> int:
     import tempfile
 
     r = connect(cfg)
-    inbox = _require_list(r, cfg.inbox_list, cfg.inbox_list_id)
+    inbox = _require_list(r, cfg.inbox_list, cfg.inbox_list_id, auto_heal=True)
     titles = set(_lists_by_title(r))
     print("== SELFTEST (live account, temp mailbox) ==")
     print(f"  lists visible: {sorted(titles)}")

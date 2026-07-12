@@ -49,12 +49,31 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from config import Config, ConfigError, load_config
+
+# Native iOS Reminders alarm on every reply (option-B parity with the CalDAV path):
+# a timed due_date this far in the FUTURE makes iOS Reminders fire a banner+sound.
+# Small lead so it's still pending when the phone syncs the new reminder.
+ALARM_LEAD_SECONDS = 60
+_URL_RE = re.compile(r"https?://\S+")
+
+
+def _first_url(text: str) -> str | None:
+    m = _URL_RE.search(text)
+    return m.group(0).rstrip(").,;]") if m else None
+
+
+def _frontload_link(body: str, url: str | None) -> str:
+    """Put the link at the very START of the reminder body (first tappable thing)."""
+    if not url or body.lstrip().startswith(url):
+        return body
+    return f"{url}\n\n{body}"
 
 
 class BridgeError(RuntimeError):
@@ -207,12 +226,14 @@ def _mark_complete(r, rem) -> None:
     r.update(rem)
 
 
-def _notify_push(cfg: Config, text: str) -> None:
-    """Best-effort push to ntfy.sh so the phone gets a REAL banner.
+def _notify_push(cfg: Config, text: str, *, click: str | None = None) -> None:
+    """Best-effort push to ntfy.sh so the phone gets a REAL, INSTANT banner.
 
-    iOS Reminders alarms can't be attached via the pyicloud API (a due-date alone
-    fires no notification), so we push to ntfy instead. Topic is read from the
-    config's ntfy_topic_file; no-op if absent. Never raises.
+    ntfy is Apple-independent, so it's the reliable/fast notification for the iCloud
+    channel (send_reply also sets a timed due_date to try for a NATIVE Reminders
+    alarm too, but whether the pyicloud API triggers one is unverified — ntfy is the
+    guaranteed banner). Topic from ntfy_topic_file; no-op if absent; never raises.
+    `click` (a URL) sets the ntfy Click header for one-tap link open.
     """
     try:
         topic_file = cfg.ntfy_topic_file
@@ -230,10 +251,13 @@ def _notify_push(cfg: Config, text: str) -> None:
         if len(body) > 150:
             body = body[:149].rsplit(" ", 1)[0].rstrip() + "…"
 
+        headers = {"Title": f"Claude Code · {cfg.name}", "Tags": "robot", "Priority": "high"}
+        if click:
+            headers["Click"] = click
         req = urllib.request.Request(
             f"https://ntfy.sh/{topic}",
             data=body.encode("utf-8"),
-            headers={"Title": f"Claude Code · {cfg.name}", "Tags": "robot", "Priority": "high"},
+            headers=headers,
             method="POST",
         )
         urllib.request.urlopen(req, timeout=8)
@@ -254,11 +278,19 @@ def send_reply(cfg: Config, text: str, *, priority: int = 1, r=None, notify: boo
     # Prefix every reply with time AND project name, so with several projects running
     # side by side it's immediately clear which one an update is from.
     stamp = f"[{datetime.now():%H:%M}][{cfg.name}] "
-    stamped = stamp + text.strip()
+    url = _first_url(text)
+    body = _frontload_link(text.strip(), url)
+    stamped = stamp + body
     summary = stamped.replace("\r", " ").replace("\n", " ").strip()[:120] or "(reply)"
-    created = r.create(out.id, summary, desc=stamped, priority=priority)
+    # Native iOS Reminders alarm: a timed due_date ~1 min out fires a banner+sound on
+    # the phone (option-B parity with the Radicale/CalDAV path). Use a NAIVE LOCAL
+    # wall-clock time — pyicloud mangles a tz-aware datetime (a tz-aware local time
+    # fired the alarm exactly one UTC-offset EARLY, e.g. 3h behind at UTC+3). Naive
+    # local is sent as-is and iOS reads it as local wall-clock. (PITFALL: tz here.)
+    due = datetime.now() + timedelta(seconds=ALARM_LEAD_SECONDS)
+    created = r.create(out.id, summary, desc=stamped, priority=priority, due_date=due)
     if notify:
-        _notify_push(cfg, summary)
+        _notify_push(cfg, summary, click=url)
     return created.id or "(unknown-id)"
 
 

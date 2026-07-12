@@ -10,6 +10,23 @@ link plus a spoken walkthrough.
 One machine, **one project**, and your choice of **two buses**: self-hosted **Radicale**
 (recommended) or **iCloud** Reminders (fallback).
 
+## Quick start — paste this into a Claude Code session in your project folder
+
+```
+Set up a voice bridge for THIS project (the current folder): read
+https://github.com/YoraiLevi/ai-voice-reminders-bridge/blob/HEAD/SETUP.md and follow it.
+Before creating any config, pause and ASK me (show the options + defaults, then wait):
+(1) transport — radicale (self-hosted CalDAV, recommended) or icloud (Apple Reminders, fallback);
+(2) names — AUTO (derive "To <Folder>" / "From <Folder>" from this folder's name) or custom
+    (I'll give the project name + both list names).
+Then provision per SETUP.md with my answers (if custom, write ./.claude/voice-bridge.json from
+the matching examples/ sample first), start the poller in the background, and listen.
+```
+
+That one paste does the whole setup: it asks your two choices, provisions the config (and, on
+Radicale, the two lists), starts the poller, and begins listening. Everything else stays on
+sensible [defaults](#config-schema).
+
 > **This channel is ASYNCHRONOUS — not a live call.** It is delayed, turn-based
 > message-passing: a reply can reach the phone a full turn (or more) later, every message
 > is timestamped `[HH:MM]`, and the newest message on a topic supersedes older ones. The

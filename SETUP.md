@@ -1,5 +1,18 @@
 # SETUP — one file, one command: `claude @SETUP.md`
 
+> **Human: the fastest way in is the paste line** — drop this into a Claude Code session
+> opened in your project folder, and it runs everything below for you:
+> ```
+> Set up a voice bridge for THIS project (the current folder): read
+> https://github.com/YoraiLevi/ai-voice-reminders-bridge/blob/HEAD/SETUP.md and follow it.
+> Before creating any config, pause and ASK me (show the options + defaults, then wait):
+> (1) transport — radicale (self-hosted CalDAV, recommended) or icloud (Apple Reminders, fallback);
+> (2) names — AUTO (derive "To <Folder>" / "From <Folder>" from this folder's name) or custom
+>     (I'll give the project name + both list names).
+> Then provision per SETUP.md with my answers (if custom, write ./.claude/voice-bridge.json from
+> the matching examples/ sample first), start the poller in the background, and listen.
+> ```
+
 **You are the MANAGER session for the project in the CURRENT folder.** These instructions
 are for **you, the Claude Code agent**, not the human. Follow them top to bottom.
 
@@ -22,6 +35,19 @@ branches are **(a) which transport** (iCloud or Radicale) and **(b) STEP 1's det
 
 ## STEP 2 — FIRST-TIME PROVISION (only when STEP 1 found no config)
 
+0. **ASK the human two things and WAIT** (if the paste line already told you, you still
+   confirm the answers here — never assume). Show the options and defaults:
+   - **Transport:** `radicale` (self-hosted CalDAV — recommended) or `icloud` (Apple
+     Reminders — fallback)?
+   - **Names:** `AUTO` (derive `To <Folder>` / `From <Folder>` and `name` from this folder's
+     name — the default) or **custom** (the human gives a project name + both list names)?
+
+   Then, for the chosen path:
+   - **AUTO** → continue with the bootstrap below; it derives the names for you.
+   - **custom** → copy `<vb>/examples/voice-bridge.<transport>.json` to
+     `./.claude/voice-bridge.json`, edit `name` / `inbox_list` / `output_list` to the human's
+     values, THEN run the same bootstrap command below. It detects the existing config and
+     provisions exactly those names (on Radicale it creates those two lists).
 1. **Locate the voice-bridge repo once.** Check `~/source/voice-bridge` first; otherwise a
    bounded search under `~/source` and `~` for a directory containing `bootstrap.py` +
    `pyicloud_bridge.py`. Stop at the first hit. Call it `<vb>`.

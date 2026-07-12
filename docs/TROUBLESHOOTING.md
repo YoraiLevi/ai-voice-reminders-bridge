@@ -15,13 +15,20 @@ picture: `ARCHITECTURE.md`.
 ## 1. Messages silently stop arriving (the whole poll dies on one bad item)
 - **Symptom:** the CalDAV poller logs `NotFoundError 404` every cycle; the owner's messages stop
   reaching the manager, but SENDING replies still works.
-- **Cause:** a Radicale collection kept a **dangling index entry** — a deleted `.ics` still listed in
-  the collection. `objects(load_objects=True)` bulk-loads every item and 404s on the ghost, which
-  aborts the ENTIRE poll, so no message is bridged.
-- **Fix (shipped):** `reminder_bridge._incomplete_todos` loads each item individually and **skips**
-  any that error on load (commit `a439544`).
-- **Diagnose:** enumerate the list with `objects(load_objects=False)`, then `.load()` each in a
-  try/except and print the one whose URL 404s.
+- **Cause (ROOT-CAUSED — see issue #1):** the "dangling entry" is a **Radicale deletion tombstone** —
+  an empty-etag history record Radicale keeps for a deleted item, for up to 30 days
+  (`max_sync_token_age`). The **phone** creates it: iOS clears a completed reminder → sends a CalDAV
+  `DELETE` → Radicale removes the `.ics` but retains a history tombstone. The bridge's `objects()` is
+  aliased (caldav 3.2.1) to a **sync-collection REPORT**, which on every initial sync re-lists the
+  tombstone as a `404` member; `load_objects=True` then GETs it, 404s, and aborts the WHOLE poll. The
+  poller itself never deletes — `_mark_complete` only PUTs `STATUS:COMPLETED`.
+- **Fix (shipped, correct & PERMANENT):** `reminder_bridge._incomplete_todos` loads each item
+  individually and **skips** un-loadable ones (`a439544`). This isn't a temporary patch — tombstones
+  are normal steady state, so the skip-guard is load-bearing forever. Optional cleaner fix: enumerate
+  the inbox with a **calendar-query** (`cal.todos(include_completed=True)`) instead of `objects()` —
+  a calendar-query reads the live directory only and never returns tombstones (see issue #1).
+- **Diagnose:** enumerate with `objects(load_objects=False)`, `.load()` each in try/except, print the
+  404'ing href; on disk it's an empty-etag file under `…/.Radicale.cache/history/` with no sibling `.ics`.
 
 ## 2. The "ghost list" problem (recreating a Reminders list strands the poller)
 - **Symptom:** the owner sees his messages in "To Claude" but the manager never gets them; the poller

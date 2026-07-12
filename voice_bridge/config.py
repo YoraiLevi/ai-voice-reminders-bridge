@@ -41,11 +41,11 @@ _STATE_DERIVED = {
 # Every fixed-default field. `config --help` renders from this + _STATE_DERIVED.
 DEFAULTS: dict[str, Any] = {
     # identity / routing
-    "spoke_name": "vox",       # our inbox is  to-<spoke_name>.md
-    "route_to": "manager",     # peer inbox is to-<route_to>.md
-    "from_name": "",           # "" -> derived = spoke_name (the mailbox-line tag)
+    "spoke_name": "vox",  # our inbox is  to-<spoke_name>.md
+    "route_to": "manager",  # peer inbox is to-<route_to>.md
+    "from_name": "",  # "" -> derived = spoke_name (the mailbox-line tag)
     # phone bus
-    "inbox_list": "Vox-Message-Inbox",    # phone -> us (dictations)
+    "inbox_list": "Vox-Message-Inbox",  # phone -> us (dictations)
     "output_list": "Vox-Message-Outbox",  # us -> phone (replies)
     "inbox_list_id": "",
     "output_list_id": "",
@@ -54,13 +54,13 @@ DEFAULTS: dict[str, Any] = {
     # our private state (ours) — "" state_dir -> XDG default
     "state_dir": "",
     # transport
-    "transport": "icloud",     # icloud | radicale
+    "transport": "icloud",  # icloud | radicale
     # ntfy
     "ntfy_server": "https://ntfy.sh",
     "ntfy_title": "Vox",
     "ntfy_tags": "robot",
     "ntfy_priority": "high",
-    "ntfy_body_limit": -1,     # -1 = no clip
+    "ntfy_body_limit": -1,  # -1 = no clip
     # tuning
     "reply_summary_limit": -1,  # -1 = no clip
     "poll_interval": 10,
@@ -113,9 +113,9 @@ class Config:
     cookie_dir: Path
     ntfy_topic_file: Path
     # derived mailbox files
-    our_inbox: Path       # to-<spoke_name>.md   (messages TO us)
-    peer_inbox: Path      # to-<route_to>.md     (messages we SEND)
-    seen_file: Path       # our dedupe bookkeeping (private, under state_dir)
+    our_inbox: Path  # to-<spoke_name>.md   (messages TO us)
+    peer_inbox: Path  # to-<route_to>.md     (messages we SEND)
+    seen_file: Path  # our dedupe bookkeeping (private, under state_dir)
     reply_seen_file: Path
     source: str = "defaults"
 
@@ -158,7 +158,9 @@ def parse_overrides(pairs: list[str] | None) -> dict[str, Any]:
         key, _, value = p.partition("=")
         key = key.strip()
         if key not in _ALLOWED_KEYS:
-            raise ValueError(f"--set unknown key {key!r}; allowed: {', '.join(sorted(_ALLOWED_KEYS))}")
+            raise ValueError(
+                f"--set unknown key {key!r}; allowed: {', '.join(sorted(_ALLOWED_KEYS))}"
+            )
         out[key] = int(value) if key in _INT_FIELDS else value
     return out
 
@@ -175,7 +177,9 @@ def _find_config_path(explicit: str | Path | None) -> Path | None:
     return None
 
 
-def load_config(path: str | Path | None = None, *, overrides: dict[str, Any] | None = None) -> Config:
+def load_config(
+    path: str | Path | None = None, *, overrides: dict[str, Any] | None = None
+) -> Config:
     """Build a resolved Config. Missing file -> defaults; present-but-broken -> raise.
     `overrides` (e.g. from --set) win over the file and defaults."""
     cfg_path = _find_config_path(path)

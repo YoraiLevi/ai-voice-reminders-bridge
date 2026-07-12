@@ -33,16 +33,18 @@ def test_state_paths_derive_under_state_dir(sample_config):
 
 
 def test_spoke_name_override_reroutes_files(tmp_path, tmp_mailbox):
-    cfg = load_config(overrides={"spoke_name": "vox-work", "route_to": "w3"},
-                      path=_write(tmp_path, tmp_mailbox))
+    cfg = load_config(
+        overrides={"spoke_name": "vox-work", "route_to": "w3"}, path=_write(tmp_path, tmp_mailbox)
+    )
     assert cfg.our_inbox.name == "to-vox-work.md"
     assert cfg.peer_inbox.name == "to-w3.md"
     assert cfg.from_name == "vox-work"
 
 
 def test_overrides_win_over_file(tmp_path, tmp_mailbox):
-    cfg = load_config(overrides={"poll_interval": 30, "inbox_list": "Custom"},
-                      path=_write(tmp_path, tmp_mailbox))
+    cfg = load_config(
+        overrides={"poll_interval": 30, "inbox_list": "Custom"}, path=_write(tmp_path, tmp_mailbox)
+    )
     assert cfg.poll_interval == 30
     assert cfg.inbox_list == "Custom"
 
@@ -72,7 +74,10 @@ def test_bad_json_raises_config_error(tmp_path):
 # --- helpers ---------------------------------------------------------------
 def _write(tmp_path, tmp_mailbox):
     import json
+
     p = tmp_path / "voice-bridge.json"
-    p.write_text(json.dumps({"mailbox_dir": str(tmp_mailbox), "state_dir": str(tmp_path / "state")}),
-                 encoding="utf-8")
+    p.write_text(
+        json.dumps({"mailbox_dir": str(tmp_mailbox), "state_dir": str(tmp_path / "state")}),
+        encoding="utf-8",
+    )
     return p

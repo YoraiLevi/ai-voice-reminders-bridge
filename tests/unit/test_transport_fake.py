@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from voice_bridge.transport import FakeTransport, ListRef, Transport
+from voice_bridge.transport import FakeTransport, Transport
 
 
 def test_fake_is_a_transport(fake_transport):

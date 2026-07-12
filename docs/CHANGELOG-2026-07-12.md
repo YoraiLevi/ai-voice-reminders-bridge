@@ -62,7 +62,8 @@ Full compare (all changes this session):
   best-practice research). `be4cc238` (private repo `YoraiLevi/project-proposals`).
 
 ## PENDING — to graduate this properly (not yet done)
-1. **`vox_instructions.py` is CalDAV-only.** The canonical Vox Instructions list is now on iCloud, but the
+1. ~~**`vox_instructions.py` is CalDAV-only.**~~ **DONE (commit a6f37a5)** — rewritten to write to iCloud.
+   _(original:_ The canonical Vox Instructions list is now on iCloud, but the
    self-provisioning tooling still writes to Radicale/CalDAV. Needs an iCloud-aware path (or a documented
    split). *This is the biggest gap.*
 2. **Dual-send isn't a single helper.** Alarm-worthy replies are sent to iCloud + backup by hand; should be

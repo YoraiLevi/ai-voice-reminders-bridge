@@ -1,8 +1,8 @@
 # voice-bridge — target architecture (design spec)
 
-Status: **design, pre-build.** This is the spec the package build targets. It supersedes the
-script-based layout once the package lands; until then the scripts in the repo root are the
-working implementation.
+Status: **BUILT.** The package (`voice_bridge/`) implements this spec; the legacy root scripts
+have been deleted. 64 tests green (unit/contract/integration/e2e). This doc is now the
+architecture reference for the shipped package.
 
 ## 1. What it is
 

@@ -343,6 +343,15 @@ wheels = [
 ]
 
 [[package]]
+name = "defusedxml"
+version = "0.7.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/0f/d5/c66da9b79e5bdb124974bfe172b4daf3c984ebd9c2a06e2b8a4dc7331c72/defusedxml-0.7.1.tar.gz", hash = "sha256:1bb3032db185915b62d7c6209c5a8792be6a32ab2fedacc84e01b52c51aa3e69", size = 75520, upload-time = "2021-03-08T10:59:26.269Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/07/6c/aa3f2f849e01cb6a001cd8554a88d4c77c5c1a31c95bdf1cf9301e6d9ef4/defusedxml-0.7.1-py2.py3-none-any.whl", hash = "sha256:a352e7e428770286cc899e2542b6cdaedb2b4953ff269a210103ec58f6198a61", size = 25604, upload-time = "2021-03-08T10:59:24.45Z" },
+]
+
+[[package]]
 name = "dnspython"
 version = "2.8.0"
 source = { registry = "https://pypi.org/simple" }
@@ -569,6 +578,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/5c/7b/e3bf53326e0753bee11813337b1391179582ba5c6851b13e0d9502d15a50/keyrings_alt-5.0.2.tar.gz", hash = "sha256:8f097ebe9dc8b185106502b8cdb066c926d2180e13b4689fd4771a3eab7d69fb", size = 29229, upload-time = "2024-08-14T01:09:28.12Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/4a/0d/9c59313ab43d0858a9a665e80763bd830dc78d5f379afc3815e123c486c2/keyrings.alt-5.0.2-py3-none-any.whl", hash = "sha256:6be74693192f3f37bbb752bfac9b86e6177076b17d2ac12a390f1d6abff8ac7c", size = 17930, upload-time = "2024-08-14T01:09:26.785Z" },
+]
+
+[[package]]
+name = "libpass"
+version = "1.9.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/2a/f6/210563eef148773ef835d21c0fa1e8a43c5b10fceb1f63d5d650635b81da/libpass-1.9.3.tar.gz", hash = "sha256:7830b9323d9ba96a841ad698a8dec1d43a2b0b7f1c855c76772e7972c1c6d959", size = 692901, upload-time = "2025-10-09T14:26:28.363Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ed/a6/ff00d926a9f4ece9e0732bcea1c3e8e9280390f48cec53f237e21f220082/libpass-1.9.3-py3-none-any.whl", hash = "sha256:3cbeb14d22086660e92c30d787ea981973d67394e81c8c870e1a83cfe1c84353", size = 307118, upload-time = "2025-10-09T14:26:25.551Z" },
 ]
 
 [[package]]
@@ -851,6 +869,15 @@ wheels = [
 ]
 
 [[package]]
+name = "pika"
+version = "1.4.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/f7/09/8c42dd00c4b3e09ebd174455d30823c261eefef9d2b7e94ae9ca779704c1/pika-1.4.1.tar.gz", hash = "sha256:e851f3e4992adfbf8eb64e9b86d94e3382f92ba0200055abedbb29676b8e713b", size = 154268, upload-time = "2026-05-22T18:01:24.855Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7f/7b/a09c0d378ee8604220902c58103104b2304ef99744c4b7fc45312d280484/pika-1.4.1-py3-none-any.whl", hash = "sha256:2daae7bd422a0fc4f4879fd48c9a1932ed74a0bc7172e1e5f9bde63a101ed074", size = 164962, upload-time = "2026-05-22T18:01:23.429Z" },
+]
+
+[[package]]
 name = "pluggy"
 version = "1.6.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1060,6 +1087,15 @@ wheels = [
 ]
 
 [[package]]
+name = "pytz"
+version = "2026.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/ff/46/dd499ec9038423421951e4fad73051febaa13d2df82b4064f87af8b8c0c3/pytz-2026.2.tar.gz", hash = "sha256:0e60b47b29f21574376f218fe21abc009894a2321ea16c6754f3cad6eb7cdd6a", size = 320861, upload-time = "2026-05-04T01:35:29.667Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ec/dd/96da98f892250475bdf2328112d7468abdd4acc7b902b6af23f4ed958ea0/pytz-2026.2-py2.py3-none-any.whl", hash = "sha256:04156e608bee23d3792fd45c94ae47fae1036688e75032eea2e3bf0323d1f126", size = 510141, upload-time = "2026-05-04T01:35:27.408Z" },
+]
+
+[[package]]
 name = "pywin32-ctypes"
 version = "0.2.3"
 source = { registry = "https://pypi.org/simple" }
@@ -1193,6 +1229,22 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/ef/d5/39d1e849dccf2e8a5ca77b0b64ac3b79f5fb615f899105b36c5db1008780/qh3-1.9.3-pp311-pypy311_pp73-musllinux_1_1_i686.whl", hash = "sha256:8b8d29967291d4eaa033c6ed83e3868f6f5f73716c9b7bc092f1cb6674895d5a", size = 2230615, upload-time = "2026-07-08T06:47:07.294Z" },
     { url = "https://files.pythonhosted.org/packages/ad/8f/9a6fb6592bb96089ce86dea0750db4e40c31ca6afa42d5949f370e34ffa4/qh3-1.9.3-pp311-pypy311_pp73-musllinux_1_1_x86_64.whl", hash = "sha256:ec509a5329005dc05f3a74502e648b461cf0121151d2c4130c8be7f77068a9e0", size = 2587292, upload-time = "2026-07-08T06:47:09.935Z" },
     { url = "https://files.pythonhosted.org/packages/24/5c/3490279b7e4aef162a314086d2ef35027e6bdc683e53993c7af0cbedb6e6/qh3-1.9.3-pp311-pypy311_pp73-win_amd64.whl", hash = "sha256:f6bc9e333e3dfbc7e7518d121d22be0502c2636d26640e951872964dfd1afa38", size = 2123340, upload-time = "2026-07-08T06:47:11.927Z" },
+]
+
+[[package]]
+name = "radicale"
+version = "3.7.6"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "defusedxml" },
+    { name = "libpass" },
+    { name = "pika" },
+    { name = "requests" },
+    { name = "vobject" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/d6/ed/2fde9d7d73b438898f644b0705edf9a89ad4fd7b3609e0fe850c35103073/radicale-3.7.6.tar.gz", hash = "sha256:366e8337588267e9b7af189f3ac527c5f9a8d7dd6d2e3e5796b49933bc72609c", size = 256326, upload-time = "2026-07-07T06:39:52.637Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f2/de/346091ed3ca360cf0442e8cfa1105a8f932a2b8838ae268d0964e08a93cb/radicale-3.7.6-py3-none-any.whl", hash = "sha256:0be33dedc540bf24714c83a425a36cbfa524184a075f42d0d849019f95c080fb", size = 296855, upload-time = "2026-07-07T06:39:51.049Z" },
 ]
 
 [[package]]
@@ -1359,6 +1411,20 @@ wheels = [
 ]
 
 [[package]]
+name = "vobject"
+version = "0.9.9"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "python-dateutil" },
+    { name = "pytz" },
+    { name = "six" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/d0/8a/15c34b3d27c43fc81a467d0f66577afc5542326804c42f30557e31c3259e/vobject-0.9.9.tar.gz", hash = "sha256:ac44e5d7e2079d84c1d52c50a615b9bec4b1ba958608c4c7fe40cbf33247b38e", size = 1208905, upload-time = "2024-12-16T07:29:39.178Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/68/20/6bba813bbd498c28edbbcf8253a6398cf4266ecf7bfa6129835c0a2bfbb1/vobject-0.9.9-py2.py3-none-any.whl", hash = "sha256:0fbdb982065cf4d1843a5d5950c88510041c6de026bda49c3502721de1c6ac3d", size = 47526, upload-time = "2024-12-16T07:31:08.493Z" },
+]
+
+[[package]]
 name = "voice-bridge"
 version = "0.1.0"
 source = { editable = "." }
@@ -1374,8 +1440,11 @@ caldav = [
     { name = "icalendar" },
 ]
 dev = [
+    { name = "caldav" },
+    { name = "icalendar" },
     { name = "mypy" },
     { name = "pytest" },
+    { name = "radicale" },
     { name = "ruff" },
 ]
 icloud = [
@@ -1386,12 +1455,15 @@ icloud = [
 requires-dist = [
     { name = "caldav", marker = "extra == 'all'", specifier = ">=3.2,<4" },
     { name = "caldav", marker = "extra == 'caldav'", specifier = ">=3.2,<4" },
+    { name = "caldav", marker = "extra == 'dev'", specifier = ">=3.2,<4" },
     { name = "icalendar", marker = "extra == 'all'", specifier = ">=6,<8" },
     { name = "icalendar", marker = "extra == 'caldav'", specifier = ">=6,<8" },
+    { name = "icalendar", marker = "extra == 'dev'", specifier = ">=6,<8" },
     { name = "mypy", marker = "extra == 'dev'" },
     { name = "pyicloud", marker = "extra == 'all'" },
     { name = "pyicloud", marker = "extra == 'icloud'" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
+    { name = "radicale", marker = "extra == 'dev'", specifier = ">=3,<4" },
     { name = "ruff", marker = "extra == 'dev'" },
 ]
 provides-extras = ["icloud", "caldav", "all", "dev"]

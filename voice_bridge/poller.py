@@ -45,7 +45,11 @@ def poll_inbox(cfg: Config, t: Transport, *, now: datetime | None = None) -> int
             continue
         text = f"{item.title} — {item.notes}" if item.notes else item.title
         append_line(cfg.peer_inbox, format_mailbox_line(text, from_name=cfg.from_name, now=now))
-        mark_seen(cfg.seen_file, item.id)
+        mark_seen(cfg.seen_file, item.id)  # seen-file FIRST: a crash after this can't re-emit
+        try:
+            t.complete(inbox, item.id)  # then clear it off the phone's list (secondary guard)
+        except Exception:
+            pass
         n += 1
     return n
 

@@ -151,34 +151,15 @@ messages arrive when the phone next speaks, and my replies reach the phone a tur
 ---
 
 ## 3. Ops notes
-- **Start/stop:** the poller is just `uv run pyicloud_bridge.py`. Kill it to stop.
-  For always-on, wrap it in a Task Scheduler task at logon (not yet packaged).
-- **List names are exact** and come from the config. pyicloud can read/write lists
-  but CANNOT create them — new lists must be made in the iPhone Reminders app.
-- **Alt transport:** if Apple breaks the private API, the Radicale/CalDAV bridge
-  (`reminder_bridge.py` + `radicale/`) is the documented alternative — same mailbox
-  contract, one env var swap. It needs no periodic re-trust but requires adding a
-  CalDAV account on the phone. See `radicale/OWNER-SETUP.md`.
-- **60-day watch:** watch for the "session needs 2FA" error so the bridge is
-  re-trusted before the token silently lapses.
-
-## 4. Vox Instructions list (global, auto-updating)
-Instead of re-pasting Vox's prompt into every new phone chat, a single **global**
-`Vox Instructions` Reminders list holds Vox's current instructions, and Vox reads it at
-the start of each chat. It carries **two** items, each overwritten wholesale on update
-(version-stamped in the title):
-- **GLOBAL RULES** — Vox's operating prompt (sourced from section 1 above, one source of truth).
-- **ROUTING TABLE** — one line per project: `<project> = <To-list> / <From-list>`.
-
-It is **global, not per-project**: Vox's rules are identical everywhere; only the list-pair
-mapping differs, and that's just a routing row. **Self-provisioning:** `radicale_bootstrap.py`
-calls `vox_instructions.upsert_routing_row(...)` after creating a project's lists, so onboarding
-a project auto-registers it. Refresh/seed manually with
-`uv run vox_instructions.py --config <cfg> --register`.
-
-**The one manual step** (unavoidable bootstrap — the list can't tell Vox to read itself) is ONE
-line in Vox's phone-side prompt:
-> *At the start of every new conversation, silently read the most recent items in the Reminders
-> list named "Vox Instructions" — it holds your current operating rules and the project routing
-> table (which project maps to which To/From lists). Follow it as your up-to-date instructions; if
-> it's unavailable, fall back to what you already have.*
+- **Start/stop:** the poller is just `uv run pyicloud_bridge.py` (iCloud) or
+  `uv run reminder_bridge.py` (Radicale). Kill it to stop. For always-on, wrap it in a
+  Task Scheduler task at logon (not packaged).
+- **List names are exact** and come from the config. Over iCloud, pyicloud can read/write
+  lists but CANNOT create them — new lists must be made in the iPhone Reminders app. Over
+  Radicale, `bootstrap.py --transport radicale` creates them for you.
+- **Two buses, one contract:** iCloud (`pyicloud_bridge.py`) is the fallback; Radicale
+  (`reminder_bridge.py` + `radicale/`) is the robust default — same mailbox contract, one
+  `creds_env` swap. Radicale needs no periodic re-trust but requires adding a CalDAV account
+  on the phone. See `radicale/OWNER-SETUP.md`. Full contract: [`../PROTOCOL.md`](../PROTOCOL.md).
+- **iCloud 60-day watch:** watch for the "session needs 2FA" error so the bridge is
+  re-trusted (`pyicloud_login.py`) before the token silently lapses.

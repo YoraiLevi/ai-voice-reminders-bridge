@@ -4,9 +4,9 @@ Written to be read aloud. It covers every moving piece, how they connect, how da
 end, and exactly how the auto-heal poller works.
 
 ## The goal
-Let Yorai talk to Claude Code (his coding agent on the PC) by voice, through the Claude app on his
+Let the owner talk to Claude Code (his coding agent on the PC) by voice, through the Claude app on his
 phone, as if he's talking straight to it. **Vox** is the phone-side voice assistant that acts as the
-invisible interpreter between Yorai and the PC.
+invisible interpreter between the owner and the PC.
 
 ## The core idea
 Neither side talks to the other directly. Instead they pass notes through two shared to-do lists that
@@ -14,9 +14,9 @@ both can reach — a mailbox. The phone drops requests in **"To Claude"**; the P
 **"From Claude"**. That's the whole contract.
 
 ## The moving pieces (apps + data stores)
-- **Vox** — the voice assistant living in the Claude iOS app on the phone. It hears Yorai, silently
+- **Vox** — the voice assistant living in the Claude iOS app on the phone. It hears the owner, silently
   writes his requests into "To Claude", reads replies out of "From Claude", and speaks them back. To
-  Yorai it feels like one continuous conversation with Claude Code.
+  the owner it feels like one continuous conversation with Claude Code.
 - **The two lists (the bus)** — "To Claude" (phone → PC) and "From Claude" (PC → phone).
 - **Dual channel (for the MANAGER only)** — the manager's mailbox lists exist on TWO transports at once:
   - **FAST = iCloud Reminders** (Apple's native Reminders, reached through Apple's private web API via a
@@ -43,7 +43,7 @@ both can reach — a mailbox. The phone drops requests in **"To Claude"**; the P
 - **The routing table** — one line per project: `project = To-list / From-list`. It lets Vox send a
   request to the RIGHT project when several run side by side.
 - **Workers (w1/w2/w3)** — separate Claude Code sessions, each with its OWN To/From lists (e.g. "To W3")
-  on the BACKUP channel, so they can self-join without ever touching Yorai's Apple credentials.
+  on the BACKUP channel, so they can self-join without ever touching the owner's Apple credentials.
 - **Config files** — each project has a `voice-bridge.json` naming its lists, the pinned list ids, its
   mailbox folder, and where credentials live.
 
@@ -61,15 +61,15 @@ So the mental model is **NOT** "iCloud primary, Radicale backup." It is: **iClou
 lane; Radicale = the single home for BOTH the manager's fallback AND every worker's permanent channel.**
 
 ## Data flow, end to end
-1. Yorai speaks. Vox silently writes the request into **"To Claude"** (iCloud).
+1. The owner speaks. Vox silently writes the request into **"To Claude"** (iCloud).
 2. The iCloud **poller** (PC) reads it, appends one line to the **mailbox file**, marks the reminder done.
 3. The **manager** (Claude Code) is watching that file — it wakes, does the work.
 4. The manager writes the reply into **"From Claude"** (iCloud) AND pushes an **ntfy** banner. For
    alarm-worthy replies it ALSO writes a copy to **"From Backup"** (CalDAV), which fires a **native alarm**.
-5. Vox reads "From Claude", and speaks the reply to Yorai. Loop closes.
+5. Vox reads "From Claude", and speaks the reply to the owner. Loop closes.
 
 ## The auto-heal poller — exactly how it finds the right list
-**The problem it solves:** when Yorai deletes and recreates "To Claude" on his phone, the new list gets a
+**The problem it solves:** when the owner deletes and recreates "To Claude" on his phone, the new list gets a
 brand-new internal id, and the OLD one lingers as an invisible "ghost" — the phone hides it, but the API
 still returns it. A poller pinned to the old id would then read the wrong, empty list and miss messages.
 
@@ -90,7 +90,7 @@ creation or modified time, so unread-count is the usable signal.)
   picks the one with more.
 - It applies to the INBOX ("To Claude"). The OUTPUT ("From Claude") uses the pinned id, because
   unread-count doesn't indicate liveness for a list the PC writes to (replies get read). From Claude
-  moves rarely (Yorai reads it, doesn't recreate it).
+  moves rarely (the owner reads it, doesn't recreate it).
 
 ## Why this shape
 - **Two channels** because each transport has one thing the other lacks: iCloud is fast but its API can't

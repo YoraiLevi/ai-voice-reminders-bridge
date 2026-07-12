@@ -62,7 +62,7 @@ except Exception:  # pragma: no cover - config.py is a sibling; this is a safety
 
 
 def _title(slug: str) -> str:
-    """`project-proposals` -> `Project Proposals` (Title-cased, space-joined)."""
+    """`example-project` -> `Example Project` (Title-cased, space-joined)."""
     return " ".join(word.capitalize() for word in slug.split("-") if word) or "Voice Bridge"
 
 

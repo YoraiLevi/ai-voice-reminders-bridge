@@ -54,11 +54,11 @@ Both bridge into the same **file mailbox** (`~/.claude/message-protocol/` by
 default): inbound reminders become lines in `to-manager.md`; the manager replies by
 appending to `to-phone.md`, which the warm loop drains into the output list.
 
-## Quickstart (for THIS repo's project, project-proposals)
+## Quickstart (for THIS repo's project, example-project)
 
 ```bash
 # 1. Drop the config into the project you want to bridge (or point env at it):
-cp examples/project-proposals.voice-bridge.json /path/to/project/.claude/voice-bridge.json
+cp examples/example-project.voice-bridge.json /path/to/project/.claude/voice-bridge.json
 # ...or:  export VOICE_BRIDGE_CONFIG=/abs/path/to/voice-bridge.json
 
 # 2. One-time: put creds under ~/.auth and seed the trusted session (see below).
@@ -112,7 +112,7 @@ Derived (not set directly): the dedupe seen-files live at
 `<mailbox_dir>/state/<slug(name)>-seen.txt` and `…-reply-seen.txt`, so several
 projects can share one `mailbox_dir` without colliding.
 
-See `examples/project-proposals.voice-bridge.json` for a ready file matching this
+See `examples/example-project.voice-bridge.json` for a ready file matching this
 repo's live setup ("To Claude" / "From Claude", default mailbox + `~/.auth` creds).
 
 ## How a project consumes it
@@ -173,7 +173,7 @@ all three at once:
 | `probe.py` | GO/NO-GO CalDAV feasibility probe (read-only) |
 | `reminder_bridge.py` | **alt** transport (CalDAV/Radicale): same contract, different bus |
 | `radicale/` | self-hosted CalDAV server (config, launcher, user + list bootstrap) + its OWNER-SETUP |
-| `examples/project-proposals.voice-bridge.json` | ready config matching this repo's live setup |
+| `examples/example-project.voice-bridge.json` | ready config matching this repo's live setup |
 | `docs/BRIDGE-INSTRUCTIONS.md` | the phone-side + PC-side prompt templates (async rules included) |
 | `docs/OWNER-SETUP.md` | owner credential + list + login walkthrough |
 

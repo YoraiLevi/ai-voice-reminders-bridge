@@ -184,8 +184,8 @@ reply_seen_file=state_dir / f"{slug}-reply-seen.txt",
 ```
 
 `_slug()` lowercases the project `name` and turns any run of non-alphanumerics into a
-single dash. So a project named "project-proposals" gets
-`state/project-proposals-seen.txt`, and a different project gets its own file. The
+single dash. So a project named "example-project" gets
+`state/example-project-seen.txt`, and a different project gets its own file. The
 seen-files are *derived*, never set directly in the JSON. (Note the honest limit here,
 covered in the routing section: it's the *seen-files* that are namespaced, not the
 mailbox files themselves.)

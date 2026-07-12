@@ -62,7 +62,7 @@ Re-run this step only when the bridge later reports "session needs 2FA" (~every
 Copy the example config into the project you want to bridge:
 
 ```
-cp examples/project-proposals.voice-bridge.json /path/to/project/.claude/voice-bridge.json
+cp examples/example-project.voice-bridge.json /path/to/project/.claude/voice-bridge.json
 ```
 
 Edit `name` and the list names if needed. Verify the resolved settings:

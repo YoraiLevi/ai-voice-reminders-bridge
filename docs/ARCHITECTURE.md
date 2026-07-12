@@ -18,12 +18,14 @@ both can reach — a mailbox. The phone drops requests in **"To Claude"**; the P
   writes his requests into "To Claude", reads replies out of "From Claude", and speaks them back. To
   Yorai it feels like one continuous conversation with Claude Code.
 - **The two lists (the bus)** — "To Claude" (phone → PC) and "From Claude" (PC → phone).
-- **Dual channel** — those lists exist on TWO transports at once:
+- **Dual channel (for the MANAGER only)** — the manager's mailbox lists exist on TWO transports at once:
   - **FAST = iCloud Reminders** (Apple's native Reminders, reached through Apple's private web API via a
-    library called *pyicloud*). This is the PRIMARY channel — it syncs fast.
+    library called *pyicloud*). This is the manager's PRIMARY day-to-day channel — it syncs fast, and it
+    notifies via ntfy. This is where "To Claude" / "From Claude" live.
   - **BACKUP = Radicale** (a small self-hosted CalDAV server running on the PC, reached over Tailscale
-    HTTPS). Its lists are renamed **"To Backup" / "From Backup"**. Kept as a fallback AND for native
-    alarms (see below). Workers also live here.
+    HTTPS). The manager's backup lists here are renamed **"To Backup" / "From Backup"**. Used ONLY as a
+    fallback if the iCloud fast lane fails, AND for native alarms (see below). It does NOT fire on every
+    message — the two channels are intentionally separate, not a parallel dual-send.
 - **The pollers** (small Python loops on the PC) — they watch the lists. Every ~10 seconds the iCloud
   poller reads "To Claude", writes each NEW message into a plain text file (the manager's mailbox), then
   marks that reminder done. The backup poller does the same for "To Backup".
@@ -44,6 +46,19 @@ both can reach — a mailbox. The phone drops requests in **"To Claude"**; the P
   on the BACKUP channel, so they can self-join without ever touching Yorai's Apple credentials.
 - **Config files** — each project has a `voice-bridge.json` naming its lists, the pinned list ids, its
   mailbox folder, and where credentials live.
+
+## What lives on Radicale (two DISTINCT things — read this precisely)
+Radicale is the ONE self-hosted CalDAV system, and it hosts **two different kinds of channels** — don't
+collapse it to "just the manager's backup":
+1. **The manager's fallback channel** — "To Backup" / "From Backup". A pure fallback for the manager, used
+   only if the iCloud fast lane fails, plus the native-alarm path. The manager's *primary* is iCloud+ntfy.
+2. **The standalone worker channels** — "To W3" / "From W3" (and any other worker). These live on Radicale
+   **permanently, as the worker's ONLY channel.** Workers were never meant to be on iCloud and need no fast
+   lane: keeping them on Radicale means only ONE iCloud poller exists (no Apple credentials in worker
+   sessions, no multi-poller 2FA/503 auth-storm).
+
+So the mental model is **NOT** "iCloud primary, Radicale backup." It is: **iCloud = the manager's fast
+lane; Radicale = the single home for BOTH the manager's fallback AND every worker's permanent channel.**
 
 ## Data flow, end to end
 1. Yorai speaks. Vox silently writes the request into **"To Claude"** (iCloud).

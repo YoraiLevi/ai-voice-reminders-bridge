@@ -3,6 +3,15 @@
 Hard-won gotchas from building the dual-channel system. Each: **symptom → cause → fix → how to
 diagnose.** A new agent should read this before debugging the bridge.
 
+## Channel model (get this right before debugging routing)
+Radicale is the ONE CalDAV system and hosts **two distinct kinds of channels**: (1) the MANAGER's
+*fallback* lists "To Backup"/"From Backup" (used only if the iCloud fast lane fails, + native alarms) —
+the manager's PRIMARY is iCloud+ntfy; and (2) the **worker channels** "To W3"/"From W3" etc., which live
+on Radicale **permanently as each worker's ONLY channel** (workers never touch iCloud — that keeps a
+single iCloud poller and avoids the multi-poller 2FA/503 storm). So it is NOT "iCloud primary, Radicale
+backup" — Radicale is the single home for BOTH the manager's fallback AND all worker channels. Full
+picture: `ARCHITECTURE.md`.
+
 ## 1. Messages silently stop arriving (the whole poll dies on one bad item)
 - **Symptom:** the CalDAV poller logs `NotFoundError 404` every cycle; the owner's messages stop
   reaching the manager, but SENDING replies still works.

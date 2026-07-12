@@ -15,12 +15,13 @@ One machine, **one project**, and your choice of **two buses**: self-hosted **Ra
 ```
 Set up a voice bridge for THIS project (the current folder): read
 https://github.com/YoraiLevi/ai-voice-reminders-bridge/blob/HEAD/SETUP.md and follow it.
-Before creating any config, pause and ASK me (show the options + defaults, then wait):
+Before creating any config, pause and ASK me, then wait:
 (1) transport — radicale (self-hosted CalDAV, recommended) or icloud (Apple Reminders, fallback);
-(2) names — AUTO (derive "To <Folder>" / "From <Folder>" from this folder's name) or custom
-    (I'll give the project name + both list names).
-Then provision per SETUP.md with my answers (if custom, write ./.claude/voice-bridge.json from
-the matching examples/ sample first), start the poller in the background, and listen.
+(2) settings — show me EVERY config field with its default (name, inbox_list, output_list,
+    from_name, mailbox_dir, to_manager, to_phone, ntfy_topic_file, cookie_dir, poll_interval,
+    and the optional list-id pins) and let me accept all or override any.
+Then provision per SETUP.md, passing one --set KEY=VALUE per field I overrode, start the poller
+in the background, and listen.
 ```
 
 That one paste does the whole setup: it asks your two choices, provisions the config (and, on

@@ -95,6 +95,22 @@ def _expand_config_arg(p: str) -> Path:
     return Path(os.path.expanduser(p)).expanduser()
 
 
+def _parse_overrides(pairs: list[str] | None, *, allowed: set[str]) -> dict:
+    """Turn repeated `--set KEY=VALUE` into a validated dict. Every KEY must be a known
+    config field (so a typo fails loudly instead of writing a silently-ignored key);
+    `poll_interval` is coerced to int so it lands as a JSON number, not a string."""
+    out: dict = {}
+    for p in pairs or []:
+        if "=" not in p:
+            raise ValueError(f"--set expects KEY=VALUE, got: {p!r}")
+        key, _, value = p.partition("=")
+        key = key.strip()
+        if key not in allowed:
+            raise ValueError(f"--set unknown key {key!r}; allowed: {', '.join(sorted(allowed))}")
+        out[key] = int(value) if key == "poll_interval" else value
+    return out
+
+
 def _title_from_config(data: dict, cwd: Path) -> str:
     """Recover the Title from an existing config's inbox_list (`To <Title>`)."""
     return data.get("inbox_list", "To ").partition("To ")[2] or _title(_slug(cwd.name))
@@ -217,7 +233,22 @@ def main(argv: list[str] | None = None) -> int:
         "radicale: config + auto-create the two lists on the server.",
     )
     ap.add_argument("--config", metavar="PATH", help="explicit voice-bridge.json (default: ./.claude/voice-bridge.json)")
+    ap.add_argument(
+        "--set",
+        action="append",
+        dest="overrides",
+        metavar="KEY=VALUE",
+        help="override any config field (repeatable), e.g. --set inbox_list='To Web' "
+        "--set from_name=web-phone --set poll_interval=30. Defaults fill the rest. "
+        "Known keys: " + ", ".join(sorted(DEFAULTS)) + ".",
+    )
     args = ap.parse_args(argv)
+
+    try:
+        overrides = _parse_overrides(args.overrides, allowed=set(DEFAULTS))
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
 
     cwd = Path.cwd()
     cfg_path = _expand_config_arg(args.config) if args.config else (cwd / DEFAULT_REL_PATH)
@@ -225,6 +256,11 @@ def main(argv: list[str] | None = None) -> int:
     # --- config: keep an existing one, else derive names from the folder and write it ---
     config_preexisted = cfg_path.exists()
     if config_preexisted:
+        if overrides:
+            print(
+                f"note: --set ignored — {cfg_path} already exists; edit it directly to change fields.",
+                file=sys.stderr,
+            )
         try:
             data = json.loads(cfg_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError as exc:
@@ -236,8 +272,11 @@ def main(argv: list[str] | None = None) -> int:
         title = _title(slug)
         creds_env = "~/.auth/radicale.env" if args.transport == "radicale" else "~/.auth/icloud.env"
         data = build_config(slug, title, creds_env=creds_env)
+        # Explicit --set overrides win over the folder-derived / transport defaults.
+        data.update(overrides)
         cfg_path.parent.mkdir(parents=True, exist_ok=True)
         cfg_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+        title = _title_from_config(data, cwd)  # re-derive in case inbox_list was overridden
 
     if args.transport == "radicale":
         return _provision_radicale(cfg_path, data, config_preexisted)

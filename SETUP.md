@@ -5,12 +5,13 @@
 > ```
 > Set up a voice bridge for THIS project (the current folder): read
 > https://github.com/YoraiLevi/ai-voice-reminders-bridge/blob/HEAD/SETUP.md and follow it.
-> Before creating any config, pause and ASK me (show the options + defaults, then wait):
+> Before creating any config, pause and ASK me, then wait:
 > (1) transport — radicale (self-hosted CalDAV, recommended) or icloud (Apple Reminders, fallback);
-> (2) names — AUTO (derive "To <Folder>" / "From <Folder>" from this folder's name) or custom
->     (I'll give the project name + both list names).
-> Then provision per SETUP.md with my answers (if custom, write ./.claude/voice-bridge.json from
-> the matching examples/ sample first), start the poller in the background, and listen.
+> (2) settings — show me EVERY config field with its default (name, inbox_list, output_list,
+>     from_name, mailbox_dir, to_manager, to_phone, ntfy_topic_file, cookie_dir, poll_interval,
+>     and the optional list-id pins) and let me accept all or override any.
+> Then provision per SETUP.md, passing one --set KEY=VALUE per field I overrode, start the poller
+> in the background, and listen.
 > ```
 
 **You are the MANAGER session for the project in the CURRENT folder.** These instructions
@@ -35,19 +36,34 @@ branches are **(a) which transport** (iCloud or Radicale) and **(b) STEP 1's det
 
 ## STEP 2 — FIRST-TIME PROVISION (only when STEP 1 found no config)
 
-0. **ASK the human two things and WAIT** (if the paste line already told you, you still
-   confirm the answers here — never assume). Show the options and defaults:
-   - **Transport:** `radicale` (self-hosted CalDAV — recommended) or `icloud` (Apple
-     Reminders — fallback)?
-   - **Names:** `AUTO` (derive `To <Folder>` / `From <Folder>` and `name` from this folder's
-     name — the default) or **custom** (the human gives a project name + both list names)?
+0. **ASK the human for the settings and WAIT.** First ask **transport** (`radicale` —
+   self-hosted CalDAV, recommended; or `icloud` — Apple Reminders, fallback). Then present
+   **every config field with its default** and let the human accept all or override any
+   (they need not touch most — the defaults are sane). Show this table (the default column
+   is what you use if they don't override):
 
-   Then, for the chosen path:
-   - **AUTO** → continue with the bootstrap below; it derives the names for you.
-   - **custom** → copy `<vb>/examples/voice-bridge.<transport>.json` to
-     `./.claude/voice-bridge.json`, edit `name` / `inbox_list` / `output_list` to the human's
-     values, THEN run the same bootstrap command below. It detects the existing config and
-     provisions exactly those names (on Radicale it creates those two lists).
+   | field | default | meaning |
+   |-------|---------|---------|
+   | `name` | folder slug | project label; also namespaces the seen-files |
+   | `inbox_list` | `To <Folder>` | list the phone writes to (phone → PC) |
+   | `output_list` | `From <Folder>` | list replies go to (PC → phone) |
+   | `inbox_list_id` / `output_list_id` | *(unset)* | optional: pin a list by CloudKit record id (ghost-list fix) |
+   | `from_name` | `<slug>-phone` | tag in each mailbox line `- [HH:MM] (from_name) …` |
+   | `mailbox_dir` | `~/.claude/message-protocol/<slug>` | the manager's file mailbox |
+   | `to_manager` | `to-manager.md` | inbound file (relative to `mailbox_dir`) |
+   | `to_phone` | `to-phone.md` | reply file the loop drains (relative to `mailbox_dir`) |
+   | `ntfy_topic_file` | `~/.auth/ntfy-topic.txt` | file holding the ntfy topic |
+   | `creds_env` | `~/.auth/<transport>.env` | `KEY=value` creds file (set by transport) |
+   | `cookie_dir` | `~/.auth/pyicloud-cookies` | pyicloud trusted-session cache |
+   | `poll_interval` | `10` | loop cadence (seconds) |
+
+   Then run the bootstrap below, passing **one `--set KEY=VALUE` per field the human
+   overrode** (omit `--set` entirely if they accepted all defaults). Unknown keys are
+   rejected, so pass only fields from the table. Example:
+   ```
+   uv run <vb>/bootstrap.py --transport radicale \
+       --set inbox_list='To Web' --set output_list='From Web' --set poll_interval=30
+   ```
 1. **Locate the voice-bridge repo once.** Check `~/source/voice-bridge` first; otherwise a
    bounded search under `~/source` and `~` for a directory containing `bootstrap.py` +
    `pyicloud_bridge.py`. Stop at the first hit. Call it `<vb>`.

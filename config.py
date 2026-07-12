@@ -34,6 +34,12 @@ DEFAULTS: dict[str, Any] = {
     # The two Reminders lists that are the contract with the phone.
     "inbox_list": "To Claude",     # phone -> PC   (requests you add on the phone)
     "output_list": "From Claude",  # PC -> phone   (replies surfaced back)
+    # Optional: pin a list by its exact CloudKit record id (e.g. "List/UUID"). When set,
+    # the iCloud bridge resolves the list by id and IGNORES title — the robust fix for
+    # orphaned/ghost Reminders lists that share a title (they linger server-side, hidden
+    # from the phone UI, but the raw API still returns them). Empty = resolve by title.
+    "inbox_list_id": "",
+    "output_list_id": "",
     # The tag written into each mailbox line: "- [HH:MM] (<from_name>) <msg>".
     "from_name": "owner-phone",
     # The manager's file mailbox + the two channel files inside it.
@@ -72,6 +78,8 @@ class Config:
     name: str
     inbox_list: str
     output_list: str
+    inbox_list_id: str
+    output_list_id: str
     from_name: str
     mailbox_dir: Path
     to_manager: Path
@@ -91,6 +99,8 @@ class Config:
             "name": self.name,
             "inbox_list": self.inbox_list,
             "output_list": self.output_list,
+            "inbox_list_id": self.inbox_list_id,
+            "output_list_id": self.output_list_id,
             "from_name": self.from_name,
             "mailbox_dir": str(self.mailbox_dir),
             "to_manager": str(self.to_manager),
@@ -152,6 +162,8 @@ def load_config(path: str | Path | None = None) -> Config:
         name=str(merged["name"]),
         inbox_list=str(merged["inbox_list"]),
         output_list=str(merged["output_list"]),
+        inbox_list_id=str(merged.get("inbox_list_id", "")),
+        output_list_id=str(merged.get("output_list_id", "")),
         from_name=str(merged["from_name"]),
         mailbox_dir=mailbox_dir,
         to_manager=mailbox_dir / merged["to_manager"],

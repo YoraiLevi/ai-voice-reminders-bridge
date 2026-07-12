@@ -160,18 +160,37 @@ def _lists_by_title(r) -> dict:
     return {l.title: l for l in r.lists()}
 
 
-def _require_list(r, title: str):
-    """Return the list object for `title`, or raise a BridgeError that names the
-    list-existence caveat (pyicloud has no create-list call in this version)."""
-    lst = _lists_by_title(r).get(title)
-    if lst is None:
+def _require_list(r, title: str, list_id: str = ""):
+    """Return the list object. If `list_id` (a CloudKit record id like 'List/UUID')
+    is given, resolve by EXACT id and ignore title — the robust fix for orphaned/ghost
+    Reminders lists that share a title (they linger server-side, hidden from the phone
+    UI, but the raw API still returns them, and a title lookup can silently pick the
+    wrong one). Empty list_id -> resolve by title (warn if the title is duplicated)."""
+    lists = list(r.lists())
+    if list_id:
+        for lst in lists:
+            if lst.id == list_id:
+                return lst
+        raise BridgeError(
+            f"pinned list id {list_id!r} (for {title!r}) is not visible via pyicloud. "
+            "Check the id, or clear it from the config to fall back to title lookup."
+        )
+    matches = [lst for lst in lists if lst.title == title]
+    if not matches:
         raise BridgeError(
             f"{title!r} list is not visible via pyicloud. This pyicloud build "
             "exposes no create-list API (r has create() for reminders only), so "
             "the list must be created ONCE on the iPhone Reminders app (or Claude "
             "iOS). Create it, then retry."
         )
-    return lst
+    if len(matches) > 1:
+        import sys as _sys
+        print(
+            f"WARNING: {len(matches)} lists titled {title!r} (ghosts?); using the first. "
+            "Pin its id via inbox_list_id/output_list_id in the config to disambiguate.",
+            file=_sys.stderr,
+        )
+    return matches[0]
 
 
 def _incomplete(r, list_obj) -> list:
@@ -228,7 +247,7 @@ def send_reply(cfg: Config, text: str, *, priority: int = 1, r=None, notify: boo
     the created reminder id.
     """
     r = r or connect(cfg)
-    out = _require_list(r, cfg.output_list)
+    out = _require_list(r, cfg.output_list, cfg.output_list_id)
     # Stamp every reply with local time. The bridge is ASYNC/turn-based, not live:
     # replies can reach the owner a turn or more later, so a timestamp lets both the
     # owner and the voice assistant detect stale/superseded messages.
@@ -283,7 +302,7 @@ def poll_inbox(cfg: Config, *, r=None, seen_path: Path | None = None, mailbox: P
     seen_path = seen_path or cfg.seen_file
     mailbox = mailbox or cfg.to_manager
     r = r or connect(cfg)
-    inbox = _require_list(r, cfg.inbox_list)
+    inbox = _require_list(r, cfg.inbox_list, cfg.inbox_list_id)
 
     seen = _load_seen(seen_path)
     new_count = 0
@@ -348,7 +367,7 @@ def selftest(cfg: Config) -> int:
     import tempfile
 
     r = connect(cfg)
-    inbox = _require_list(r, cfg.inbox_list)
+    inbox = _require_list(r, cfg.inbox_list, cfg.inbox_list_id)
     titles = set(_lists_by_title(r))
     print("== SELFTEST (live account, temp mailbox) ==")
     print(f"  lists visible: {sorted(titles)}")

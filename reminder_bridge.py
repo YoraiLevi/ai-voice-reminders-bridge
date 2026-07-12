@@ -65,9 +65,20 @@ def _incomplete_todos(cal):
 
     iCloud returns 500 on caldav's server-side "exclude completed" filter, so read
     everything the iCloud-safe way (`objects()`) and drop completed client-side.
+
+    Loads each object INDIVIDUALLY and SKIPS any that error on load. A Radicale
+    collection can retain a DANGLING index entry pointing at a deleted resource;
+    loading it 404s, and a bulk `load_objects=True` would then fail the WHOLE poll
+    on that one bad item — silently blocking EVERY new message. Per-item load +
+    skip keeps the poll alive despite an orphaned entry.
     """
-    for todo in cal.objects(load_objects=True):
-        comp = todo.icalendar_component
+    for todo in cal.objects(load_objects=False):
+        try:
+            comp = todo.icalendar_component  # lazy-loads here; 404s on a dangling entry
+        except Exception as exc:
+            print(f"  skip un-loadable item ({type(exc).__name__}): {getattr(todo, 'url', '?')}",
+                  file=sys.stderr)
+            continue
         status = str(comp.get("status") or "").upper()
         if status == "COMPLETED" or comp.get("completed") is not None:
             continue

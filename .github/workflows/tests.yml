@@ -33,5 +33,5 @@ jobs:
           python-version: "3.12"
       - name: Ruff (lint + format check)
         run: |
-          uv run --extra dev ruff check voice_bridge tests
-          uv run --extra dev ruff format --check voice_bridge tests
+          uv run --extra dev ruff check .
+          uv run --extra dev ruff format --check .

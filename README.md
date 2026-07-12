@@ -4,22 +4,30 @@ Talk to a **Claude Code session on your PC from your phone** — by voice or tex
 using **Apple Reminders (or any CalDAV list) as a shared message bus**. The Claude
 iPhone app drops a task into a list; a small poller on the PC picks it up, hands it to
 your local Claude Code "manager" session, and the manager's replies come back to a
-second list on your phone. Long content (designs, docs) is delivered as a tappable gist
-link plus a spoken walkthrough.
+second list on your phone. The voice persona on the phone is **Vox** — the default
+lists are `To Vox` / `From Vox`.
 
-One machine, **one project**, and your choice of **two buses**: self-hosted **Radicale**
-(recommended) or **iCloud** Reminders (fallback).
+One machine, **one project**, and your choice of **two buses**: **iCloud** Reminders
+(default) or self-hosted **Radicale**.
+
+- **iCloud** — fast; needs your Apple ID + password in `~/.auth/icloud.env` and a one-time
+  2FA code.
+- **Radicale** — no Apple password, but slower to sync and needs a VPN/tunnel so the phone
+  can reach your server, plus a CalDAV account added on the iPhone.
 
 ## Quick start — paste this into a Claude Code session in your project folder
 
 ```
 Set up a voice bridge for THIS project (the current folder): read
 https://github.com/YoraiLevi/ai-voice-reminders-bridge/blob/HEAD/SETUP.md and follow it.
-Before creating any config, pause and ASK me, then wait:
-(1) transport — radicale (self-hosted CalDAV, recommended) or icloud (Apple Reminders, fallback);
-(2) settings — show me EVERY config field with its default (name, inbox_list, output_list,
-    from_name, mailbox_dir, to_manager, to_phone, ntfy_topic_file, cookie_dir, poll_interval,
-    and the optional list-id pins) and let me accept all or override any.
+First ensure a local voice-bridge checkout exists — ask me for a path to it, to clone it,
+or a single dir to search; do NOT assume one. Then, before creating any config, ASK me, then wait:
+(1) transport — icloud (default; Apple Reminders, needs Apple ID+password in a file + 2FA)
+    or radicale (self-hosted CalDAV; no Apple password but slower + needs a VPN/tunnel and a
+    CalDAV account on the iPhone);
+(2) settings — show me EVERY config field with its default (name defaults to "vox" → lists
+    "To Vox"/"From Vox", from_name, mailbox_dir, to_manager, to_phone, ntfy_topic_file,
+    cookie_dir, poll_interval, and the optional list-id pins) and let me accept all or override any.
 Then provision per SETUP.md, passing one --set KEY=VALUE per field I overrode, start the poller
 in the background, and listen.
 ```
@@ -39,9 +47,9 @@ sensible [defaults](#config-schema).
 ```
  iPhone (Claude app / Reminders)          PC (Claude Code manager session)
  ┌───────────────────────────┐            ┌────────────────────────────────────┐
- │  inbox list  "To Claude"  │ ─ phone →  │  poller                             │
+ │  inbox list  "To Vox"     │ ─ phone →  │  poller                             │
  │                           │            │    └─ appends to  to-manager.md ────┼─▶ manager reads
- │  output list "From Claude"│ ◀─ PC ───  │  drains  to-phone.md → output list ◀┼── manager appends reply
+ │  output list "From Vox"   │ ◀─ PC ───  │  drains  to-phone.md → output list ◀┼── manager appends reply
  └───────────────────────────┘            └────────────────────────────────────┘
         (timestamped, async — a reply may land a turn later)
 ```
@@ -50,26 +58,27 @@ Both buses share the same **file mailbox** (`~/.claude/message-protocol/` by def
 inbound reminders become lines in `to-manager.md`; the manager replies by appending to
 `to-phone.md`, which the poller drains into the output list.
 
-- **Radicale (recommended) — `reminder_bridge.py` + `radicale/`:** a tiny self-hosted
-  CalDAV server both phone and PC see. A CalDAV client may create lists, so setup is
-  self-provisioning. See `radicale/OWNER-SETUP.md`.
-- **iCloud (fallback) — `pyicloud_bridge.py`:** Apple's CloudKit Reminders store via the
+- **iCloud (default) — `pyicloud_bridge.py`:** Apple's CloudKit Reminders store via the
   pyicloud private web API. Needs a one-time 2FA login (`pyicloud_login.py`) cached ~60
   days, and the two lists must be created by hand on the phone. `probe.py` checks whether
   a given account is reachable over CalDAV before you rely on it.
+- **Radicale — `reminder_bridge.py` + `radicale/`:** a tiny self-hosted CalDAV server both
+  phone and PC see. A CalDAV client may create lists, so setup is self-provisioning (no
+  phone-side list step), at the cost of running the server + a phone CalDAV account. See
+  `radicale/OWNER-SETUP.md`.
 
 ## Quickstart
 
 ```bash
 # 1. From the project folder you want to control by voice, provision it.
-#    Radicale (recommended — creates the two lists for you):
-uv run /path/to/voice-bridge/bootstrap.py --transport radicale
-#    ...or iCloud (writes config; make the two lists by hand on the phone):
+#    iCloud (default — writes config; make the two lists by hand on the phone):
 uv run /path/to/voice-bridge/bootstrap.py
+#    ...or Radicale (creates the two lists for you):
+uv run /path/to/voice-bridge/bootstrap.py --transport radicale
 
 # 2. Start the poller matching your transport (leave it running):
-uv run /path/to/voice-bridge/reminder_bridge.py  --config ./.claude/voice-bridge.json  # Radicale
 uv run /path/to/voice-bridge/pyicloud_bridge.py  --config ./.claude/voice-bridge.json  # iCloud
+uv run /path/to/voice-bridge/reminder_bridge.py  --config ./.claude/voice-bridge.json  # Radicale
 ```
 
 Or just point a fresh Claude Code session at [`SETUP.md`](SETUP.md) (`claude @SETUP.md`)
@@ -104,14 +113,15 @@ Every field is optional and falls back to the default below, so a minimal config
 | field | default | meaning |
 |-------|---------|---------|
 | `name` | `"voice-bridge"` | project label; also namespaces the seen-files |
-| `inbox_list` | `"To Claude"` | list the phone writes to (phone → PC) |
-| `output_list` | `"From Claude"` | list replies go to (PC → phone) |
+| `inbox_list` | `"To Vox"` | list the phone writes to (phone → PC) |
+| `output_list` | `"From Vox"` | list replies go to (PC → phone) |
 | `inbox_list_id` / `output_list_id` | `""` | optional: pin a list by CloudKit record id (ghost-list fix) |
 | `from_name` | `"owner-phone"` | tag in each mailbox line `- [HH:MM] (from_name) …` |
 | `mailbox_dir` | `"~/.claude/message-protocol"` | the manager's file mailbox |
 | `to_manager` | `"to-manager.md"` | inbound file (relative to `mailbox_dir`) |
 | `to_phone` | `"to-phone.md"` | reply file the loop drains (relative to `mailbox_dir`) |
 | `ntfy_topic_file` | `"~/.auth/ntfy-topic.txt"` | file holding the ntfy topic |
+| `ntfy_server` | `"https://ntfy.sh"` | ntfy server banners POST to (override for self-hosted ntfy) |
 | `creds_env` | `"~/.auth/icloud.env"` | `KEY=value` creds file (`radicale.env` for Radicale) |
 | `cookie_dir` | `"~/.auth/pyicloud-cookies"` | pyicloud trusted-session cache |
 | `poll_interval` | `10` | loop cadence (seconds) |
@@ -131,13 +141,29 @@ Secrets are read only from files under `~/.auth`; nothing secret is committed or
   under `~/.auth/pyicloud-cookies/` for ~60 days. Full walkthrough: `docs/OWNER-SETUP.md`.
 - **ntfy:** `~/.auth/ntfy-topic.txt` — one line, your private ntfy.sh topic (phone banners).
 
-## The ntfy + gist content-delivery pattern
+## Sending a phone notification (ntfy)
 
-`deliver_content.sh <markdown-file> "one-line summary"` does three things at once:
-publishes the Markdown as an unlisted **GitHub gist** (the readable artifact), pushes a
-**tappable ntfy notification** whose tap opens the gist, and drops the **full text + link
-into the output list** so the phone assistant can read a short spoken walkthrough. `gh`
-must be authed; the ntfy topic comes from the config's `ntfy_topic_file`.
+Push a banner to your phone. The topic comes from your config's `ntfy_topic_file` — so this
+honours whatever you configured, nothing is hardcoded:
+
+```bash
+uv run /path/to/voice-bridge/pyicloud_bridge.py --config ./.claude/voice-bridge.json \
+    --notify "Build finished ✅"
+```
+
+Attach a URL to make the banner **tappable** — tapping opens the link (a PR, a doc, any URL
+you already have), so there's nothing to publish yourself:
+
+```bash
+uv run …/pyicloud_bridge.py --config … --notify "Design ready — tap to open the PR" \
+    --click "https://github.com/you/repo/pull/42"
+```
+
+(Use `reminder_bridge.py` instead on the Radicale transport — same flags.) The `--click` URL
+is the owner's easy button: hand it any link and the notification becomes a one-tap open.
+**If you need to surface long content and have no URL for it, ask the owner first whether to
+publish it as a *private* gist** (`gh gist create --private file.md`) purely to obtain a link
+— don't publish anything silently.
 
 ## Files
 
@@ -152,7 +178,6 @@ must be authed; the ntfy topic comes from the config's `ntfy_topic_file`.
 | `reminder_bridge.py` | Radicale/CalDAV transport — same mailbox contract |
 | `_caldav.py` | shared CalDAV plumbing (creds, connect, list discovery) |
 | `probe.py` | read-only GO/NO-GO CalDAV feasibility probe |
-| `deliver_content.sh` | gist + ntfy + voice content delivery |
 | `radicale/` | self-hosted CalDAV server (config, launcher, user + list bootstrap) + OWNER-SETUP |
 | `docs/BRIDGE-INSTRUCTIONS.md` | phone-side + PC-side prompt templates |
 | `examples/` | one ready config per transport |

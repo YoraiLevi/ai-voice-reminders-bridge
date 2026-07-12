@@ -268,8 +268,10 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         title = _title_from_config(data, cwd)
     else:
-        slug = _slug(cwd.name)
-        title = _title(slug)
+        # Default persona is "Vox" (the voice system's brand), not the folder name.
+        # Override with --set name=... / --set inbox_list=... to use anything else.
+        slug = "vox"
+        title = "Vox"
         creds_env = "~/.auth/radicale.env" if args.transport == "radicale" else "~/.auth/icloud.env"
         data = build_config(slug, title, creds_env=creds_env)
         # Explicit --set overrides win over the folder-derived / transport defaults.

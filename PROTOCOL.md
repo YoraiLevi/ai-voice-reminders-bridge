@@ -51,12 +51,14 @@ bypass `send_reply`.
 
 The mailbox contract above is identical across both transports; only the bus differs:
 
-- **iCloud** (`pyicloud_bridge.py`) — Apple's CloudKit Reminders via the pyicloud private
-  API. Needs a one-time 2FA login (`pyicloud_login.py`), cached ~60 days. Cannot create
-  lists (make them by hand on the phone).
-- **Radicale** (`reminder_bridge.py` + `radicale/`) — a self-hosted CalDAV server both
-  the phone and PC see. Can create lists (self-provisioning via `bootstrap.py
-  --transport radicale`). The robust default.
+- **iCloud** (`pyicloud_bridge.py`) — the **default**. Apple's CloudKit Reminders via the
+  pyicloud private API. Needs Apple ID + password in `~/.auth/icloud.env` and a one-time 2FA
+  login (`pyicloud_login.py`), cached ~60 days. Fast; cannot create lists (make them by hand
+  on the phone).
+- **Radicale** (`reminder_bridge.py` + `radicale/`) — a self-hosted CalDAV server both the
+  phone and PC see. No Apple password and can create lists (self-provisioning via
+  `bootstrap.py --transport radicale`), but slower to sync and needs a VPN/tunnel + a CalDAV
+  account on the iPhone.
 
 Switching buses is a `creds_env` swap in the config — the manager side is unchanged.
 

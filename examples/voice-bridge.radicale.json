@@ -1,7 +1,7 @@
 {
-  "name": "voice-bridge",
-  "inbox_list": "To Claude",
-  "output_list": "From Claude",
+  "name": "vox",
+  "inbox_list": "To Vox",
+  "output_list": "From Vox",
   "from_name": "owner-phone",
   "mailbox_dir": "~/.claude/message-protocol",
   "to_manager": "to-manager.md",

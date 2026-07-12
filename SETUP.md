@@ -5,11 +5,15 @@
 > ```
 > Set up a voice bridge for THIS project (the current folder): read
 > https://github.com/YoraiLevi/ai-voice-reminders-bridge/blob/HEAD/SETUP.md and follow it.
-> Before creating any config, pause and ASK me, then wait:
-> (1) transport — radicale (self-hosted CalDAV, recommended) or icloud (Apple Reminders, fallback);
-> (2) settings — show me EVERY config field with its default (name, inbox_list, output_list,
->     from_name, mailbox_dir, to_manager, to_phone, ntfy_topic_file, cookie_dir, poll_interval,
->     and the optional list-id pins) and let me accept all or override any.
+> First ensure a local voice-bridge checkout exists — ask me for a path to it, to clone it,
+> or a single dir to search; do NOT assume one. Then, before creating any config, pause and
+> ASK me, then wait:
+> (1) transport — icloud (default; Apple Reminders, needs Apple ID+password in a file + 2FA)
+>     or radicale (self-hosted CalDAV; no Apple password but slower + needs a VPN/tunnel and a
+>     CalDAV account on the iPhone);
+> (2) settings — show me EVERY config field with its default (name defaults to "vox" → lists
+>     "To Vox"/"From Vox", from_name, mailbox_dir, to_manager, to_phone, ntfy_topic_file,
+>     cookie_dir, poll_interval, and the optional list-id pins) and let me accept all or override any.
 > Then provision per SETUP.md, passing one --set KEY=VALUE per field I overrode, start the poller
 > in the background, and listen.
 > ```
@@ -36,58 +40,67 @@ branches are **(a) which transport** (iCloud or Radicale) and **(b) STEP 1's det
 
 ## STEP 2 — FIRST-TIME PROVISION (only when STEP 1 found no config)
 
-0. **ASK the human for the settings and WAIT.** First ask **transport** (`radicale` —
-   self-hosted CalDAV, recommended; or `icloud` — Apple Reminders, fallback). Then present
-   **every config field with its default** and let the human accept all or override any
-   (they need not touch most — the defaults are sane). Show this table (the default column
-   is what you use if they don't override):
+0. **GET A VOICE-BRIDGE CHECKOUT** (the scripts run from a local clone — never assume a
+   machine-specific path). ASK the human which, then set `<vb>` to the result:
+   - **path** — they give the path to an existing checkout → use it.
+   - **clone** — clone now to a dir they pick (suggest `~/voice-bridge`):
+     `git clone https://github.com/YoraiLevi/ai-voice-reminders-bridge ~/voice-bridge`
+   - **search** — they give ONE root dir to search for a directory containing `bootstrap.py`
+     + `pyicloud_bridge.py`. No default root; never scan all of `~`.
+
+1. **ASK the human for the settings and WAIT.** First ask **transport**:
+   - **`icloud`** (default) — Apple Reminders. Needs your Apple ID + password in
+     `~/.auth/icloud.env` and a one-time 2FA code. Fast to sync.
+   - **`radicale`** — self-hosted CalDAV. No Apple password, but slower to sync and needs a
+     VPN/tunnel so the phone can reach the server, plus a CalDAV account added on the iPhone.
+
+   Then present **every config field with its default** and let the human accept all or
+   override any (they need not touch most — the defaults are sane):
 
    | field | default | meaning |
    |-------|---------|---------|
-   | `name` | folder slug | project label; also namespaces the seen-files |
-   | `inbox_list` | `To <Folder>` | list the phone writes to (phone → PC) |
-   | `output_list` | `From <Folder>` | list replies go to (PC → phone) |
+   | `name` | `vox` | project label; also namespaces the seen-files |
+   | `inbox_list` | `To Vox` | list the phone writes to (phone → PC) |
+   | `output_list` | `From Vox` | list replies go to (PC → phone) |
    | `inbox_list_id` / `output_list_id` | *(unset)* | optional: pin a list by CloudKit record id (ghost-list fix) |
-   | `from_name` | `<slug>-phone` | tag in each mailbox line `- [HH:MM] (from_name) …` |
-   | `mailbox_dir` | `~/.claude/message-protocol/<slug>` | the manager's file mailbox |
+   | `from_name` | `vox-phone` | tag in each mailbox line `- [HH:MM] (from_name) …` |
+   | `mailbox_dir` | `~/.claude/message-protocol/vox` | the manager's file mailbox |
    | `to_manager` | `to-manager.md` | inbound file (relative to `mailbox_dir`) |
    | `to_phone` | `to-phone.md` | reply file the loop drains (relative to `mailbox_dir`) |
    | `ntfy_topic_file` | `~/.auth/ntfy-topic.txt` | file holding the ntfy topic |
+   | `ntfy_server` | `https://ntfy.sh` | ntfy server banners POST to (override for self-hosted ntfy) |
    | `creds_env` | `~/.auth/<transport>.env` | `KEY=value` creds file (set by transport) |
    | `cookie_dir` | `~/.auth/pyicloud-cookies` | pyicloud trusted-session cache |
    | `poll_interval` | `10` | loop cadence (seconds) |
 
-   Then run the bootstrap below, passing **one `--set KEY=VALUE` per field the human
-   overrode** (omit `--set` entirely if they accepted all defaults). Unknown keys are
-   rejected, so pass only fields from the table. Example:
+   Then run the bootstrap, passing **one `--set KEY=VALUE` per field the human overrode**
+   (omit `--set` entirely if they accepted all defaults). Unknown keys are rejected, so pass
+   only fields from the table. Example:
    ```
-   uv run <vb>/bootstrap.py --transport radicale \
-       --set inbox_list='To Web' --set output_list='From Web' --set poll_interval=30
+   uv run <vb>/bootstrap.py --set inbox_list='To Web' --set output_list='From Web' --set poll_interval=30
    ```
-1. **Locate the voice-bridge repo once.** Check `~/source/voice-bridge` first; otherwise a
-   bounded search under `~/source` and `~` for a directory containing `bootstrap.py` +
-   `pyicloud_bridge.py`. Stop at the first hit. Call it `<vb>`.
-2. **Run the bootstrap** from THIS project's folder (your cwd). Pick the transport:
 
-   **Radicale (recommended — self-provisioning, no phone step):**
-   ```
-   uv run <vb>/bootstrap.py --transport radicale
-   ```
-   In one step it writes `./.claude/voice-bridge.json`, connects to Radicale, and CREATES
-   the two lists `To <Title>` / `From <Title>`. They sync to the phone via the one shared
-   Radicale CalDAV account. Idempotent — a second run prints `ALREADY PROVISIONED`.
+2. **Run the bootstrap** from THIS project's folder (your cwd), for the chosen transport:
 
-   **iCloud (fallback):**
+   **iCloud (default):**
    ```
-   uv run <vb>/bootstrap.py
+   uv run <vb>/bootstrap.py [--set …]
    ```
-   It writes the config and prints `SETUP_DONE lists_needed=To <Title>|From <Title>`.
-   iCloud FORBIDS creating lists over the API, so **tell the human the one manual step**:
-   open the phone's Reminders app and create two lists named EXACTLY `To <Title>` and
-   `From <Title>`. **Wait for the human to confirm** before continuing.
+   It writes the config and prints `SETUP_DONE lists_needed=To Vox|From Vox` (or your custom
+   names). iCloud FORBIDS creating lists over the API, so **tell the human the one manual
+   step**: open the phone's Reminders app and create two lists named EXACTLY `To Vox` and
+   `From Vox`. **Wait for the human to confirm** before continuing.
+
+   **Radicale (self-provisioning, no phone step):**
+   ```
+   uv run <vb>/bootstrap.py --transport radicale [--set …]
+   ```
+   In one step it writes the config, connects to Radicale, and CREATES the two lists
+   `To Vox` / `From Vox`. They sync to the phone via the one shared Radicale CalDAV account.
+   Idempotent — a second run prints `ALREADY PROVISIONED`.
 
    > Prerequisite (one-time, per transport): the credentials + session under `~/.auth`.
-   > Radicale: `radicale/OWNER-SETUP.md`. iCloud: `docs/OWNER-SETUP.md`.
+   > iCloud: `docs/OWNER-SETUP.md`. Radicale: `radicale/OWNER-SETUP.md`.
 
 ---
 
@@ -133,9 +146,12 @@ matches the transport (`creds_env` tells you: `radicale.env` → Radicale, `iclo
     ```
 - **Auto-fetch missing content.** If a request refers to something you don't have, go get
   it (read the file, run the command) rather than replying "I don't have that."
-- **Sending long CONTENT for review** (a design, a doc): write it to a Markdown file, then
-  `<vb_path>/deliver_content.sh <file> "one-line summary"` — it publishes a gist, pushes a
-  tappable link, and drops the summary+link into the output list.
+- **Notifying / sending a link:** push a phone banner through the bridge (topic comes from
+  the config's `ntfy_topic_file` — nothing hardcoded):
+  `uv run <vb_path>/<poller>.py --config ./.claude/voice-bridge.json --notify "your message"`.
+  Add `--click <url>` to make it tappable (a PR, a committed file, any link you already have).
+  **If long content needs a link and none exists, ASK the owner** whether to publish it as a
+  *private* gist (`gh gist create --private <file>`) purely to get a URL — never publish silently.
 - **iCloud only — if the poller prints "session needs 2FA":** run
   `uv run <vb_path>/pyicloud_login.py` once (the human supplies the 6-digit code), then continue.
 

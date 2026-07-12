@@ -282,7 +282,7 @@ def _notify_push(cfg: Config, text: str, *, click: str | None = None) -> None:
         if click:
             headers["Click"] = click
         req = urllib.request.Request(
-            f"https://ntfy.sh/{topic}",
+            f"{cfg.ntfy_server}/{topic}",
             data=body.encode("utf-8"),
             headers=headers,
             method="POST",
@@ -502,6 +502,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--once", action="store_true", help="single poll; exit 1=nothing new, 0=new items")
     ap.add_argument("--interval", type=int, default=None, help="loop cadence in seconds (default: config poll_interval)")
     ap.add_argument("--reply", metavar="TEXT", help="create one output-list reminder and exit")
+    ap.add_argument("--notify", metavar="TEXT", help="push ONE ntfy banner (topic from config's ntfy_topic_file) and exit")
+    ap.add_argument("--click", metavar="URL", help="with --notify: URL the banner opens when tapped (ntfy Click header)")
     ap.add_argument("--selftest", action="store_true", help="live end-to-end proof into a temp mailbox")
     args = ap.parse_args(argv)
 
@@ -532,6 +534,14 @@ def main(argv: list[str] | None = None) -> int:
             print(f"error: {exc}", file=sys.stderr)
             return 2
         print(f"sent output-list reminder {rid}")
+        return 0
+
+    if args.notify is not None:
+        if not cfg.ntfy_topic_file.exists():
+            print(f"error: no ntfy topic at {cfg.ntfy_topic_file} (set ntfy_topic_file)", file=sys.stderr)
+            return 2
+        _notify_push(cfg, args.notify, click=args.click)
+        print(f"pushed ntfy banner to topic in {cfg.ntfy_topic_file}")
         return 0
 
     if args.once:

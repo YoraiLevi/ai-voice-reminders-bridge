@@ -31,15 +31,15 @@ picture: `ARCHITECTURE.md`.
   404'ing href; on disk it's an empty-etag file under `…/.Radicale.cache/history/` with no sibling `.ics`.
 
 ## 2. The "ghost list" problem (recreating a Reminders list strands the poller)
-- **Symptom:** the owner sees his messages in "To Claude" but the manager never gets them; the poller
-  is reading an empty list. Multiple "To Claude" ids appear via the API though the phone shows one.
+- **Symptom:** the owner sees his messages in "To Vox" but the manager never gets them; the poller
+  is reading an empty list. Multiple "To Vox" ids appear via the API though the phone shows one.
 - **Cause:** deleting + recreating a list on the phone gives it a **brand-new CloudKit id**; the old
   one lingers as an **invisible ghost** (the phone UI hides it, the raw API still returns it). A poller
   pinned to the old id reads the wrong, empty list.
 - **Fix (shipped):** `pyicloud_bridge._require_list(auto_heal=True)` picks the same-titled list with
   **unread items** (the live one; ghosts are empty), with the pinned id as fallback (`ce561cd`,
   `a439544`).
-- **Diagnose:** list every "To Claude"/"From Claude" with its id + pending count; the live one has the
+- **Diagnose:** list every "To Vox"/"From Vox" with its id + pending count; the live one has the
   unread items.
 - **Prevention:** don't delete+recreate the To/From lists — clear items inside them instead.
 
@@ -80,7 +80,7 @@ picture: `ARCHITECTURE.md`.
   `.../<project>`).
 
 ## 8. pyicloud can't create / delete / rename LISTS (only reminders)
-- **Implication:** the "To Claude"/"From Claude"/"Vox Instructions" lists must be **created once by
+- **Implication:** the "To Vox"/"From Vox"/"Vox Instructions" lists must be **created once by
   hand** in the iOS Reminders app; ghosts can't be API-deleted (only their items). This is why the
   auto-heal + id-pin approach exists instead of "just delete the duplicates."
 
@@ -91,6 +91,6 @@ picture: `ARCHITECTURE.md`.
 ## Quick health checks
 - **Fast channel up?** `uv run pyicloud_bridge.py --config <iCloud cfg> --once` (exit 0 = new item(s),
   1 = nothing new; a 2FA/auth error surfaces here).
-- **Which To Claude is live?** list all same-titled lists + pending counts (the live one has unread).
+- **Which To Vox is live?** list all same-titled lists + pending counts (the live one has unread).
 - **Radicale reachable?** connect via `_caldav` and `find_list` the inbox/output; a dangling-entry 404
   on read means run the item-by-item enumeration (see #1).

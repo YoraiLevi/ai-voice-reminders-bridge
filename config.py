@@ -30,10 +30,10 @@ from typing import Any
 # --- defaults --------------------------------------------------------------
 
 DEFAULTS: dict[str, Any] = {
-    "name": "voice-bridge",
+    "name": "vox",
     # The two Reminders lists that are the contract with the phone.
-    "inbox_list": "To Claude",     # phone -> PC   (requests you add on the phone)
-    "output_list": "From Claude",  # PC -> phone   (replies surfaced back)
+    "inbox_list": "To Vox",     # phone -> PC   (requests you add on the phone)
+    "output_list": "From Vox",  # PC -> phone   (replies surfaced back)
     # Optional: pin a list by its exact CloudKit record id (e.g. "List/UUID"). When set,
     # the iCloud bridge resolves the list by id and IGNORES title — the robust fix for
     # orphaned/ghost Reminders lists that share a title (they linger server-side, hidden
@@ -48,6 +48,8 @@ DEFAULTS: dict[str, Any] = {
     "to_phone": "to-phone.md",      # manager appends replies here; loop drains them
     # Secrets/session live under ~/.auth (NEVER in the repo).
     "ntfy_topic_file": "~/.auth/ntfy-topic.txt",
+    # ntfy server that banners are POSTed to (override for a self-hosted ntfy).
+    "ntfy_server": "https://ntfy.sh",
     "creds_env": "~/.auth/icloud.env",
     "cookie_dir": "~/.auth/pyicloud-cookies",
     # Poll cadence in seconds.
@@ -87,6 +89,7 @@ class Config:
     seen_file: Path
     reply_seen_file: Path
     ntfy_topic_file: Path
+    ntfy_server: str
     creds_env: Path
     cookie_dir: Path
     poll_interval: int
@@ -108,6 +111,7 @@ class Config:
             "seen_file": str(self.seen_file),
             "reply_seen_file": str(self.reply_seen_file),
             "ntfy_topic_file": str(self.ntfy_topic_file),
+            "ntfy_server": self.ntfy_server,
             "creds_env": str(self.creds_env),
             "cookie_dir": str(self.cookie_dir),
             "poll_interval": str(self.poll_interval),
@@ -173,6 +177,7 @@ def load_config(path: str | Path | None = None) -> Config:
         seen_file=state_dir / f"{slug}-seen.txt",
         reply_seen_file=state_dir / f"{slug}-reply-seen.txt",
         ntfy_topic_file=_expand(merged["ntfy_topic_file"]),
+        ntfy_server=str(merged["ntfy_server"]).rstrip("/"),
         creds_env=_expand(merged["creds_env"]),
         cookie_dir=_expand(merged["cookie_dir"]),
         poll_interval=int(merged["poll_interval"]),

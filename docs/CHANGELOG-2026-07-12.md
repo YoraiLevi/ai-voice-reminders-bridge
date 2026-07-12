@@ -48,7 +48,7 @@ Full compare (all changes this session):
 ### `docs/ARCHITECTURE.md` — NEW
 - Full plain-spoken architecture (components, data flow, auto-heal). `bc2d7be`.
 
-## Config / runtime changes (in the project-proposals repo, `.claude/`)
+## Config / runtime changes (in a private companion repo, `.claude/`)
 - `voice-bridge.json` (iCloud): pinned `inbox_list_id`/`output_list_id` to the live iCloud lists; distinct
   `mailbox_dir` = `~/.claude/message-protocol/icloud`.
 - `radicale.voice-bridge.json`: `inbox_list`/`output_list` → **"To Backup"/"From Backup"** (renamed).
@@ -59,7 +59,7 @@ Full compare (all changes this session):
 
 ## Project-proposals repo
 - `CLAUDE.md` + `.meta/live-state.md`: formalized the **manager LIVE STATE protocol** (grounded in PM
-  best-practice research). `be4cc238` (private repo `YoraiLevi/project-proposals`).
+  best-practice research). `be4cc238` (in a private companion repo).
 
 ## PENDING — to graduate this properly (not yet done)
 1. ~~**`vox_instructions.py` is CalDAV-only.**~~ **DONE (commit a6f37a5)** — rewritten to write to iCloud.

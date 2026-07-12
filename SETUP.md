@@ -1,106 +1,166 @@
 # SETUP — one file, one command: `claude @SETUP.md`
 
-**You are the MANAGER session for the project in the CURRENT folder.** These instructions are for
-**you, the Claude Code agent**, not the human. Follow them top to bottom.
+> **Human: the fastest way in is the paste line** — drop this into a Claude Code session
+> opened in your project folder, and it runs everything below for you:
+> ```
+> Set up a voice bridge for THIS project (the current folder): read
+> https://github.com/YoraiLevi/ai-voice-reminders-bridge/blob/HEAD/SETUP.md and follow it.
+> First ensure a local voice-bridge checkout exists — ask me for a path to it, to clone it,
+> or a single dir to search; do NOT assume one. Then, before creating any config, pause and
+> ASK me, then wait:
+> (1) transport — icloud (default; Apple Reminders, needs Apple ID+password in a file + 2FA)
+>     or radicale (self-hosted CalDAV; no Apple password but slower + needs a VPN/tunnel and a
+>     CalDAV account on the iPhone);
+> (2) settings — show me EVERY config field with its default (name defaults to "vox" → lists
+>     "To Vox"/"From Vox", from_name, mailbox_dir, to_manager, to_phone, ntfy_topic_file,
+>     cookie_dir, poll_interval, and the optional list-id pins) and let me accept all or override any.
+> Then provision per SETUP.md, passing one --set KEY=VALUE per field I overrode, start the poller
+> in the background, and listen.
+> ```
 
-This ONE file works identically for the **first launch** (auto-configures this project) and for
-**every relaunch** (detects it's already configured and just starts). The human copies this single
-file into any new project folder and runs `claude @SETUP.md` — the same file, the same command,
-every time. **The detect step below is what branches** first-launch vs relaunch; there is no manual
-one-time-vs-every-launch decision for the human to make, and no `$VB` to hand-substitute.
+**You are the MANAGER session for the project in the CURRENT folder.** These instructions
+are for **you, the Claude Code agent**, not the human. Follow them top to bottom.
 
-Do the steps in order. Keep it lean — do not run verification/exploration you are not told to run.
+This ONE file handles both transports and both first-launch and relaunch. The only
+branches are **(a) which transport** (iCloud or Radicale) and **(b) STEP 1's detect**
+(first launch vs relaunch). Keep it lean — do not run exploration you are not told to run.
+
+> Read [`PROTOCOL.md`](PROTOCOL.md) once — it is the contract (async, newest-supersedes,
+> the one reply path). The operating rules at the bottom of this file are its short form.
 
 ---
 
 ## STEP 1 — DETECT (always first)
 
-Check whether this project is already configured:
-
-- If **`./.claude/voice-bridge.json` exists** → this is a **relaunch**. Read that file, take
-  `vb_path` from it (this is the voice-bridge repo path — **do NOT search the filesystem for it**),
-  and skip straight to **STEP 3 (START)**. If the file exists but somehow has no `vb_path`, only
-  then fall through to STEP 2's locate-the-repo action to find it once.
-- If **`./.claude/voice-bridge.json` does NOT exist** → this is a **first launch**. Go to **STEP 2**.
+- If **`./.claude/voice-bridge.json` exists** → **relaunch**. Read it, take `vb_path` and
+  `mailbox_dir` from it (do NOT search the filesystem), and skip to **STEP 3 (START)**.
+- If it does **NOT** exist → **first launch**. Go to **STEP 2**.
 
 ---
 
-## STEP 2 — FIRST-TIME SETUP (only when STEP 1 found no config)
+## STEP 2 — FIRST-TIME PROVISION (only when STEP 1 found no config)
 
-1. **Locate the voice-bridge repo ONCE.** Check the common path first, then fall back to a bounded
-   search. Stop at the first hit:
-   - `~/source/voice-bridge` (most likely);
-   - otherwise a **bounded** search under `~/source` and `~` for a directory containing BOTH
-     `bootstrap.py` AND `pyicloud_bridge.py` (that pair identifies the repo). Do not scan the whole
-     disk — a few likely roots, shallow depth.
-2. **Run the bootstrap** from THIS project's folder (your cwd), using the repo path you just found
-   as `<vb>`:
+0. **GET A VOICE-BRIDGE CHECKOUT** (the scripts run from a local clone — never assume a
+   machine-specific path). ASK the human which, then set `<vb>` to the result:
+   - **path** — they give the path to an existing checkout → use it.
+   - **clone** — clone now to a dir they pick (suggest `~/voice-bridge`):
+     `git clone https://github.com/YoraiLevi/ai-voice-reminders-bridge ~/voice-bridge`
+   - **search** — they give ONE root dir to search for a directory containing `bootstrap.py`
+     + `pyicloud_bridge.py`. No default root; never scan all of `~`.
+
+1. **ASK the human for the settings and WAIT.** First ask **transport**:
+   - **`icloud`** (default) — Apple Reminders. Needs your Apple ID + password in
+     `~/.auth/icloud.env` and a one-time 2FA code. Fast to sync.
+   - **`radicale`** — self-hosted CalDAV. No Apple password, but slower to sync and needs a
+     VPN/tunnel so the phone can reach the server, plus a CalDAV account added on the iPhone.
+
+   Then present **every config field with its default** and let the human accept all or
+   override any (they need not touch most — the defaults are sane):
+
+   | field | default | meaning |
+   |-------|---------|---------|
+   | `name` | `vox` | project label; also namespaces the seen-files |
+   | `inbox_list` | `To Vox` | list the phone writes to (phone → PC) |
+   | `output_list` | `From Vox` | list replies go to (PC → phone) |
+   | `inbox_list_id` / `output_list_id` | *(unset)* | optional: pin a list by CloudKit record id (ghost-list fix) |
+   | `from_name` | `vox-phone` | tag in each mailbox line `- [HH:MM] (from_name) …` |
+   | `mailbox_dir` | `~/.claude/message-protocol/vox` | the manager's file mailbox |
+   | `to_manager` | `to-manager.md` | inbound file (relative to `mailbox_dir`) |
+   | `to_phone` | `to-phone.md` | reply file the loop drains (relative to `mailbox_dir`) |
+   | `ntfy_topic_file` | `~/.auth/ntfy-topic.txt` | file holding the ntfy topic |
+   | `ntfy_server` | `https://ntfy.sh` | ntfy server banners POST to (override for self-hosted ntfy) |
+   | `ntfy_title` | `Vox · {name}` | banner title; `{name}` is replaced with `name` |
+   | `ntfy_tags` | `robot` | ntfy tags (banner icon), comma-separated |
+   | `ntfy_priority` | `high` | ntfy priority (`max`/`high`/`default`/`low`/`min`) |
+   | `ntfy_body_limit` | `-1` | ntfy banner body char cap; `-1` = no clipping |
+   | `reply_summary_limit` | `-1` | output-list reminder title char cap; `-1` = no clipping |
+   | `creds_env` | `~/.auth/<transport>.env` | `KEY=value` creds file (set by transport) |
+   | `cookie_dir` | `~/.auth/pyicloud-cookies` | pyicloud trusted-session cache |
+   | `poll_interval` | `10` | loop cadence (seconds) |
+
+   Then run the bootstrap, passing **one `--set KEY=VALUE` per field the human overrode**
+   (omit `--set` entirely if they accepted all defaults). Unknown keys are rejected, so pass
+   only fields from the table. Example:
    ```
-   uv run <vb>/bootstrap.py
+   uv run <vb>/bootstrap.py --set inbox_list='To Web' --set output_list='From Web' --set poll_interval=30
    ```
-   It writes `./.claude/voice-bridge.json` (deriving this project's distinct list names from the
-   folder name) and records `vb_path` into it, then prints a final line of the form:
+
+2. **Run the bootstrap** from THIS project's folder (your cwd), for the chosen transport:
+
+   **iCloud (default):**
    ```
-   SETUP_DONE lists_needed=To <Title>|From <Title>
+   uv run <vb>/bootstrap.py [--set …]
    ```
-   (bootstrap is idempotent — if it prints `ALREADY CONFIGURED` instead, just continue.)
-3. **Tell the human the one manual step and WAIT.** The poller **cannot create Reminders lists**.
-   Read the two names from that `lists_needed=...` line and tell the human, in plain words, to open
-   the phone's Reminders app and create two lists named **exactly** `To <Title>` and `From <Title>`
-   (a Radicale equivalent works too, for the CalDAV alt transport). **Wait for the human to confirm
-   the two lists exist** before continuing. Once confirmed, go to **STEP 3**.
+   It writes the config and prints `SETUP_DONE lists_needed=To Vox|From Vox` (or your custom
+   names). iCloud FORBIDS creating lists over the API, so **tell the human the one manual
+   step**: open the phone's Reminders app and create two lists named EXACTLY `To Vox` and
+   `From Vox`. **Wait for the human to confirm** before continuing.
+
+   **Radicale (self-provisioning, no phone step):**
+   ```
+   uv run <vb>/bootstrap.py --transport radicale [--set …]
+   ```
+   In one step it writes the config, connects to Radicale, and CREATES the two lists
+   `To Vox` / `From Vox`. They sync to the phone via the one shared Radicale CalDAV account.
+   Idempotent — a second run prints `ALREADY PROVISIONED`.
+
+   > Prerequisite (one-time, per transport): the credentials + session under `~/.auth`.
+   > iCloud: `docs/OWNER-SETUP.md`. Radicale: `radicale/OWNER-SETUP.md`.
 
 ---
 
 ## STEP 3 — START (every launch — first launch AND relaunch land here)
 
-The config now exists. Read `vb_path` and `mailbox_dir` from `./.claude/voice-bridge.json`.
+Read `vb_path` and `mailbox_dir` from `./.claude/voice-bridge.json`. Use the poller that
+matches the transport (`creds_env` tells you: `radicale.env` → Radicale, `icloud.env` → iCloud).
 
-1. **Start the poller in the BACKGROUND** (it must stay running the whole session — do NOT run it in
-   the foreground, which blocks). The `--config` is always passed explicitly, so even started from
-   the wrong directory it can never bind to the wrong project:
+1. **Start the poller in the BACKGROUND** (it must stay running the whole session; do NOT
+   run it in the foreground, which blocks). `--config` is always passed explicitly, so it
+   can never bind to the wrong project:
    ```
-   uv run <vb_path>/pyicloud_bridge.py --config ./.claude/voice-bridge.json
+   uv run <vb_path>/reminder_bridge.py  --config ./.claude/voice-bridge.json   # Radicale
+   uv run <vb_path>/pyicloud_bridge.py  --config ./.claude/voice-bridge.json   # iCloud
    ```
-2. **Arm a Monitor** on this project's inbound mailbox (`<mailbox_dir>/to-manager.md`, using the
-   `mailbox_dir` from the config), persistent, so a new line wakes you:
+2. **Arm a Monitor** on this project's inbound mailbox, persistent, so a new line wakes you:
    ```
    Monitor(command: tail -f -n0 <mailbox_dir>/to-manager.md,
            description: "phone->PC bridge", persistent: true)
    ```
-3. **LISTEN.** Each new inbound line looks like `- [HH:MM] (<from_name>) <text>` — it is a request
-   from the phone for THIS project. Do the work, then reply.
+3. **LISTEN.** Each new inbound line is `- [HH:MM] (<from_name>) <text>` — a request from
+   the phone. Do the work, then reply.
 
-### Standard operating rules (carry these — they are the contract, not optional)
+### Standard operating rules (the contract — see PROTOCOL.md)
 
-- **Async / turn-based, not live.** Messages arrive when the phone next speaks; your replies reach
-  the phone a turn later. Everything is timestamped for exactly this reason.
-- **Newest supersedes.** If several inbound lines stack up, the newest instruction wins over an
-  older conflicting one.
-- **Clarify misheard terms.** Inbound text is VOICE transcription and may contain misheard words
-  (e.g. "dot claude" → "dot cloud"). When a technical term, file/config name, or proper noun looks
-  wrong or ambiguous, **STOP and ask through the bridge before acting** — a wrong premise scales
-  into wrong work.
-- **Self-contained replies.** Make every reply COMPLETE and self-contained — full detail and
-  context, never shorthand — so the phone assistant never has to guess on a follow-up. Reply paths
-  (both write into `output_list`):
-  - SHORT single line — instant local append; the warm poller drains it within one interval:
+- **Async / turn-based, not live.** Messages arrive when the phone next speaks; replies
+  reach the phone a turn later. Everything is timestamped for this reason.
+- **Newest supersedes.** If inbound lines stack up, the newest instruction wins.
+- **Clarify misheard terms.** Inbound text is VOICE transcription and may contain misheard
+  words (e.g. "dot claude" → "dot cloud"). When a technical term, file/config name, or
+  proper noun looks wrong, STOP and ask through the bridge before acting.
+- **Self-contained replies.** Make every reply COMPLETE — full detail and context — so the
+  phone assistant never has to guess on a follow-up.
+- **REPLY via the bridge so the ntfy banner fires.** Never write a raw CalDAV/Reminders
+  todo. Two supported ways:
+  - SHORT single line — append it; the running poller drains it within one interval:
     ```
     printf '%s\n' 'your message' >> <mailbox_dir>/to-phone.md
     ```
   - LONGER / multi-line — send directly (the append is line-based and would split it):
     ```
-    uv run <vb_path>/pyicloud_bridge.py --config ./.claude/voice-bridge.json --reply "your full message"
+    uv run <vb_path>/<poller>.py --config ./.claude/voice-bridge.json --reply "your full message"
     ```
-- **Auto-fetch missing content.** If a request refers to something you don't have in context, go get
+- **Auto-fetch missing content.** If a request refers to something you don't have, go get
   it (read the file, run the command) rather than replying "I don't have that."
-- **Sending long CONTENT for review** (a design, a doc): write it to a Markdown file, then
-  `<vb_path>/deliver_content.sh <file> "one-line summary"` — it publishes a gist, pushes a tappable
-  link, and drops the summary+link into `output_list`.
-- **If the poller prints "session needs 2FA":** run `uv run <vb_path>/pyicloud_login.py` once (the
-  human supplies the 6-digit code), then continue.
+- **Notifying / sending a link:** push a phone banner through the bridge (topic comes from
+  the config's `ntfy_topic_file` — nothing hardcoded):
+  `uv run <vb_path>/<poller>.py --config ./.claude/voice-bridge.json --notify "your message"`.
+  Add `--click <url>` to make it tappable (a PR, a committed file, any link you already have).
+  **If long content needs a link and none exists, ASK the owner** whether to publish it as a
+  *private* gist (`gh gist create --private <file>`) purely to get a URL — never publish silently.
+- **iCloud only — if the poller prints "session needs 2FA":** run
+  `uv run <vb_path>/pyicloud_login.py` once (the human supplies the 6-digit code), then continue.
 
 ---
 
-**Remember: same file, same command (`claude @SETUP.md`), every launch.** STEP 1's detect is the
-only branch — first launch runs STEP 2 once, every launch runs STEP 3.
+**Remember: same file, same command (`claude @SETUP.md`), every launch.** Transport is
+chosen once at STEP 2; STEP 1's detect is the only per-launch branch.

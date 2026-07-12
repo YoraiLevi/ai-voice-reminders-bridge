@@ -275,14 +275,19 @@ def _notify_push(cfg: Config, text: str, *, click: str | None = None) -> None:
         # short and complete (word-boundary), so nothing looks silently cut off; the
         # full reply text lives in the output-list reminder anyway.
         body = " ".join(text.split())
-        if len(body) > 150:
-            body = body[:149].rsplit(" ", 1)[0].rstrip() + "…"
+        lim = cfg.ntfy_body_limit
+        if lim > 0 and len(body) > lim:
+            body = body[: lim - 1].rsplit(" ", 1)[0].rstrip() + "…"
 
-        headers = {"Title": f"Claude Code · {cfg.name}", "Tags": "robot", "Priority": "high"}
+        headers = {
+            "Title": cfg.ntfy_title.replace("{name}", cfg.name),
+            "Tags": cfg.ntfy_tags,
+            "Priority": cfg.ntfy_priority,
+        }
         if click:
             headers["Click"] = click
         req = urllib.request.Request(
-            f"https://ntfy.sh/{topic}",
+            f"{cfg.ntfy_server}/{topic}",
             data=body.encode("utf-8"),
             headers=headers,
             method="POST",
@@ -308,7 +313,9 @@ def send_reply(cfg: Config, text: str, *, priority: int = 1, r=None, notify: boo
     url = _first_url(text)
     body = _frontload_link(text.strip(), url)
     stamped = stamp + body
-    summary = stamped.replace("\r", " ").replace("\n", " ").strip()[:120] or "(reply)"
+    flat = stamped.replace("\r", " ").replace("\n", " ").strip()
+    lim = cfg.reply_summary_limit
+    summary = (flat[:lim] if lim > 0 else flat) or "(reply)"
     # Native iOS Reminders alarm: a timed due_date ~1 min out fires a banner+sound on
     # the phone (option-B parity with the Radicale/CalDAV path). Use a NAIVE LOCAL
     # wall-clock time — pyicloud mangles a tz-aware datetime (a tz-aware local time
@@ -502,6 +509,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--once", action="store_true", help="single poll; exit 1=nothing new, 0=new items")
     ap.add_argument("--interval", type=int, default=None, help="loop cadence in seconds (default: config poll_interval)")
     ap.add_argument("--reply", metavar="TEXT", help="create one output-list reminder and exit")
+    ap.add_argument("--notify", metavar="TEXT", help="push ONE ntfy banner (topic from config's ntfy_topic_file) and exit")
+    ap.add_argument("--click", metavar="URL", help="with --notify: URL the banner opens when tapped (ntfy Click header)")
     ap.add_argument("--selftest", action="store_true", help="live end-to-end proof into a temp mailbox")
     args = ap.parse_args(argv)
 
@@ -532,6 +541,14 @@ def main(argv: list[str] | None = None) -> int:
             print(f"error: {exc}", file=sys.stderr)
             return 2
         print(f"sent output-list reminder {rid}")
+        return 0
+
+    if args.notify is not None:
+        if not cfg.ntfy_topic_file.exists():
+            print(f"error: no ntfy topic at {cfg.ntfy_topic_file} (set ntfy_topic_file)", file=sys.stderr)
+            return 2
+        _notify_push(cfg, args.notify, click=args.click)
+        print(f"pushed ntfy banner to topic in {cfg.ntfy_topic_file}")
         return 0
 
     if args.once:

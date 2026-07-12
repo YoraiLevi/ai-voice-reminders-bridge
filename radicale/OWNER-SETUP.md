@@ -13,8 +13,8 @@ unavailable.
  phone Reminders                 PC
  ┌────────────────┐   CalDAV     ┌──────────────────────────────┐
  │ CalDAV account │ ◀─over the──▶│  Radicale  :5232  (run_...)   │
- │ To Claude      │   network    │      ▲                        │
- │ From Claude    │              │      │ same lists             │
+ │ To Vox      │   network    │      ▲                        │
+ │ From Vox    │              │      │ same lists             │
  └────────────────┘              │  reminder_bridge.py ──▶ mailbox
                                  └──────────────────────────────┘
 ```
@@ -23,7 +23,7 @@ Everything downstream of Radicale is unchanged — `probe.py` and
 `reminder_bridge.py` just point at Radicale instead of iCloud via one env var.
 
 List names come from your `voice-bridge.json` (`inbox_list` / `output_list`); the
-examples below use the defaults `To Claude` / `From Claude`.
+examples below use the defaults `To Vox` / `From Vox`.
 
 ---
 
@@ -110,9 +110,9 @@ uv run reminder_bridge.py       # the poller — leave it running
    - **User Name / Password:** the Radicale user from step 1
    - Tap **Next / Save.** If iOS warns about an unencrypted connection, allow it
      (the tailnet itself is encrypted).
-3. Open **Reminders** — under the new account you'll see `To Claude` and
-   `From Claude` (from `init_lists.py`), or create them there.
-4. **Set the iOS default Reminders list to `To Claude`**
+3. Open **Reminders** — under the new account you'll see `To Vox` and
+   `From Vox` (from `init_lists.py`), or create them there.
+4. **Set the iOS default Reminders list to `To Vox`**
    (**Settings → Apps → Reminders → Default List**) so the Claude app's
    "add a reminder" lands in the inbox.
 
@@ -121,7 +121,7 @@ uv run reminder_bridge.py       # the poller — leave it running
 ## The ONE thing to test live (needs your phone)
 
 Whether the **phone Claude app** writes to a **Radicale-backed** default list. The
-app targets the iOS *default* Reminders list; step 4 points that at `To Claude`, but
+app targets the iOS *default* Reminders list; step 4 points that at `To Vox`, but
 Apple has never documented whether the app's Reminders tool can target a *non-iCloud*
 CalDAV list. **If it can't:** add items via the native **Reminders app** (type or
-dictate into `To Claude`) — still phone-native, and the bridge behaves identically.
+dictate into `To Vox`) — still phone-native, and the bridge behaves identically.

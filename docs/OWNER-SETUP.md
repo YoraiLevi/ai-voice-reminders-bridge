@@ -14,13 +14,13 @@ timestamped. That's expected; see the README's "This channel is ASYNCHRONOUS" no
 In the **Reminders** app, create two lists named **exactly** as your config's
 `inbox_list` and `output_list` (defaults):
 
-- `To Claude`   (phone → PC)
-- `From Claude` (PC → phone)
+- `To Vox`   (phone → PC)
+- `From Vox` (PC → phone)
 
 The exact strings are the contract. The Claude app / pyicloud **cannot create
 lists** (only items in existing lists), so this must be done by hand once.
 
-Optionally set the iOS default Reminders list to `To Claude`
+Optionally set the iOS default Reminders list to `To Vox`
 (**Settings → Apps → Reminders → Default List**) so the Claude app's "add a
 reminder" lands in the inbox.
 
@@ -52,7 +52,7 @@ Apple sends a 6-digit code to your trusted devices. When prompted, drop it into
 `~/.auth/2fa_code.txt` (a manager session can write it for you once you read it
 aloud). On success the session is TRUSTED and cached under
 `~/.auth/pyicloud-cookies` for ~60 days; `pyicloud_login.py` then prints the
-Reminders lists it can see — confirm `To Claude` and `From Claude` appear.
+Reminders lists it can see — confirm `To Vox` and `From Vox` appear.
 
 Re-run this step only when the bridge later reports "session needs 2FA" (~every
 60 days, or after an Apple ID password change).
@@ -79,10 +79,10 @@ From the project's directory (so `./.claude/voice-bridge.json` is auto-found):
 uv run /path/to/voice-bridge/pyicloud_bridge.py --interval 60
 ```
 
-Leave it running. Anything you add to `To Claude` from the phone appears as a line
+Leave it running. Anything you add to `To Vox` from the phone appears as a line
 in `<mailbox_dir>/to-manager.md` within the interval, waking the manager session.
 Replies the manager appends to `<mailbox_dir>/to-phone.md` become items in your
-`From Claude` list (timestamped, priority = needs input), which you read on the
+`From Vox` list (timestamped, priority = needs input), which you read on the
 phone.
 
 Give the manager session the **PC-side prompt** and the phone the **phone-side

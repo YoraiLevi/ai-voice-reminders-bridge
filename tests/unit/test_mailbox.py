@@ -45,3 +45,20 @@ def test_clip_word_boundary_with_ellipsis():
 def test_clip_hard_cut_without_ellipsis():
     out = mailbox.clip("x" * 300, 120, ellipsis=False)
     assert out == "x" * 120
+
+
+def test_first_url_found_and_none():
+    assert mailbox.first_url("see https://ex.com/a for details") == "https://ex.com/a"
+    assert mailbox.first_url("no link here") is None
+
+
+def test_frontload_link_moves_url_to_front():
+    assert (
+        mailbox.frontload_link("done, see https://x/y", "https://x/y")
+        == "https://x/y — done, see https://x/y"
+    )
+    assert mailbox.frontload_link("plain text", None) == "plain text"
+    assert (
+        mailbox.frontload_link("https://x/y already front", "https://x/y")
+        == "https://x/y already front"
+    )

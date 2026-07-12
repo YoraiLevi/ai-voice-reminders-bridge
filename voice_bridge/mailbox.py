@@ -6,8 +6,11 @@ so timestamps are deterministic under test.
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from pathlib import Path
+
+_URL_RE = re.compile(r"https?://\S+")
 
 
 def _hhmm(now: datetime | None) -> str:
@@ -60,3 +63,17 @@ def clip(text: str, limit: int, *, ellipsis: bool = True) -> str:
     if not ellipsis:
         return text[:limit]
     return text[: limit - 1].rsplit(" ", 1)[0].rstrip() + "…"
+
+
+def first_url(text: str) -> str | None:
+    """The first http(s) URL in `text`, or None. Used to surface a tappable link."""
+    m = _URL_RE.search(text or "")
+    return m.group(0) if m else None
+
+
+def frontload_link(text: str, url: str | None) -> str:
+    """Move `url` to the front so a phone banner/reminder shows the tappable link
+    first. No url, or a text already starting with it, is returned unchanged."""
+    if not url or text.startswith(url):
+        return text
+    return f"{url} — {text}"

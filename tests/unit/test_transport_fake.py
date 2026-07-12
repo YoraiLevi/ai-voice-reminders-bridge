@@ -40,3 +40,27 @@ def test_resolve_missing_raises():
         t.resolve_list("nope")
     with pytest.raises(LookupError):
         t.resolve_list("", list_id="missing")
+
+
+def test_read_completed_and_incomplete_split(fake_transport):
+    lst = fake_transport.resolve_list("Vox-Message-Inbox")
+    a = fake_transport.add_todo(lst, "todo A")
+    fake_transport.add_todo(lst, "todo B")
+    fake_transport.complete(lst, a)
+    assert [i.title for i in fake_transport.read_incomplete(lst)] == ["todo B"]
+    assert [i.title for i in fake_transport.read_completed(lst)] == ["todo A"]
+
+
+def test_add_todo_carries_needs_input(fake_transport):
+    lst = fake_transport.resolve_list("Vox-Message-Outbox")
+    fake_transport.add_todo(lst, "urgent", needs_input=True)
+    assert fake_transport.read_incomplete(lst)[0].needs_input is True
+
+
+def test_create_list_is_idempotent(fake_transport):
+    before = len(fake_transport.list_todo_lists())
+    a = fake_transport.create_list("Vox-Message-Inbox")  # already exists
+    assert a.name == "Vox-Message-Inbox"
+    assert len(fake_transport.list_todo_lists()) == before  # no duplicate
+    fake_transport.create_list("Brand New")
+    assert len(fake_transport.list_todo_lists()) == before + 1

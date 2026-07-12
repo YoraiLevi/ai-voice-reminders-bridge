@@ -24,11 +24,12 @@ class ListRef:
 
 @dataclass(frozen=True)
 class Item:
-    """One incomplete todo/reminder read from a list."""
+    """One todo/reminder read from a list."""
 
     id: str
     title: str
     notes: str = ""
+    needs_input: bool = False
 
 
 class Transport(ABC):
@@ -50,15 +51,33 @@ class Transport(ABC):
 
     @abstractmethod
     def read_incomplete(self, lst: ListRef) -> list[Item]:
-        """Incomplete items in the list (completed ones excluded)."""
+        """Incomplete items in the list (completed ones excluded) — the poll hot path."""
 
     @abstractmethod
-    def add_todo(self, lst: ListRef, summary: str, notes: str = "") -> str:
-        """Create a todo in the list; return its id."""
+    def read_completed(self, lst: ListRef) -> list[Item]:
+        """Completed items — observability only (`peek --completed`); the poller never
+        calls this."""
+
+    @abstractmethod
+    def add_todo(
+        self, lst: ListRef, summary: str, notes: str = "", *, needs_input: bool = False
+    ) -> str:
+        """Create a todo in the list; return its id. `needs_input` requests a native
+        alarm (the decision differs per backend, so it crosses the seam here)."""
 
     @abstractmethod
     def complete(self, lst: ListRef, item_id: str) -> None:
         """Mark an item complete so it is not read again."""
+
+    @abstractmethod
+    def create_list(self, name: str) -> ListRef:
+        """Create a VTODO-capable list. Backends that forbid it (iCloud) raise
+        NotSupportedError."""
+
+
+class NotSupportedError(RuntimeError):
+    """A transport was asked to do something its backend forbids (e.g. iCloud list
+    creation over CalDAV)."""
 
 
 @dataclass
@@ -105,10 +124,19 @@ class FakeTransport(Transport):
     def read_incomplete(self, lst: ListRef) -> list[Item]:
         return [it for it in self._items.get(lst.id, []) if it.id not in self._completed]
 
-    def add_todo(self, lst: ListRef, summary: str, notes: str = "") -> str:
-        item = Item(id=self._next_id(), title=summary, notes=notes)
+    def read_completed(self, lst: ListRef) -> list[Item]:
+        return [it for it in self._items.get(lst.id, []) if it.id in self._completed]
+
+    def add_todo(
+        self, lst: ListRef, summary: str, notes: str = "", *, needs_input: bool = False
+    ) -> str:
+        item = Item(id=self._next_id(), title=summary, notes=notes, needs_input=needs_input)
         self._items.setdefault(lst.id, []).append(item)
         return item.id
 
     def complete(self, lst: ListRef, item_id: str) -> None:
         self._completed.add(item_id)
+
+    def create_list(self, name: str) -> ListRef:
+        existing = [r for r in self._lists if r.name == name]
+        return existing[0] if existing else self.add_list(name)

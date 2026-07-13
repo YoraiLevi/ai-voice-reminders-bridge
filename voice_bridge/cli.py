@@ -8,6 +8,7 @@ import json
 from importlib.resources import files
 from pathlib import Path
 
+from . import deliver as deliver_mod
 from . import doctor as doctor_mod
 from . import log as log_mod
 from . import login as login_mod
@@ -97,6 +98,12 @@ def _build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("send", help="push one reply through the outbound path")
     sp.add_argument("text")
     sp.add_argument("--no-notify", action="store_true")
+
+    dl = sub.add_parser("deliver", help="publish a file as a gist + tappable banner")
+    dl.add_argument("file")
+    dl.add_argument("--summary")
+    dl.add_argument("--public", action="store_true")
+    dl.add_argument("--yes", action="store_true", help="skip the confirmation")
 
     rs = sub.add_parser("radicale-server", help="manage the self-hosted Radicale server")
     rssub = rs.add_subparsers(dest="op")
@@ -236,6 +243,11 @@ def _dispatch(args) -> int:  # noqa: C901 - a flat command table
             for it in items:
                 print(f"  - {it.title}" + (f" — {it.notes}" if it.notes else ""))
         return 0
+
+    if cmd == "deliver":
+        return deliver_mod.deliver(
+            cfg, args.file, summary=args.summary, public=args.public, assume_yes=args.yes
+        )
 
     if cmd == "icloud-login":
         return login_mod.icloud_login(

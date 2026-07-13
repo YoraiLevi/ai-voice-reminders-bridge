@@ -9,7 +9,8 @@ that it maps the pyicloud shape correctly.
 
 from __future__ import annotations
 
-from typing import Any
+import time
+from typing import Any, Callable
 
 from .config import Config
 from .transport import Item, ListRef, NotSupportedError, Transport
@@ -18,6 +19,26 @@ from .util import read_kv
 
 class ICloudError(RuntimeError):
     """Auth / priming failure against the pyicloud Reminders service."""
+
+
+def _is_throttle(exc: Exception) -> bool:
+    s = str(exc).lower()
+    return "503" in s or "throttle" in s or "too many" in s or "service unavailable" in s
+
+
+def _retrying(fn: Callable[[], Any], *, tries: int = 4) -> Any:
+    """Call fn, retrying with exponential backoff ONLY on a throttle/503 (the old
+    multi-account 503 storm). Any other error is raised immediately; a persistent
+    throttle is raised after `tries`."""
+    delay = 1.0
+    for i in range(tries):
+        try:
+            return fn()
+        except Exception as exc:
+            if i == tries - 1 or not _is_throttle(exc):
+                raise
+            time.sleep(delay)
+            delay = min(delay * 2, 30)
 
 
 def _completed(rem: Any) -> bool:
@@ -93,7 +114,7 @@ class ICloudTransport(Transport):
         raise LookupError(f"list id {list_id!r} vanished")
 
     def _reminders(self, list_id: str) -> list[Any]:
-        data = dict(self._svc().list_reminders(list_id))
+        data = dict(_retrying(lambda: self._svc().list_reminders(list_id)))
         return list(data.get("reminders", []))
 
     def read_incomplete(self, lst: ListRef) -> list[Item]:
@@ -113,7 +134,7 @@ class ICloudTransport(Transport):
     def add_todo(
         self, lst: ListRef, summary: str, notes: str = "", *, needs_input: bool = False
     ) -> str:
-        guid = self._svc().post(summary, description=notes, collection=lst.id)
+        guid = _retrying(lambda: self._svc().post(summary, description=notes, collection=lst.id))
         return str(guid or "(unknown-guid)")
 
     def complete(self, lst: ListRef, item_id: str) -> None:

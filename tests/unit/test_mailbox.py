@@ -62,3 +62,39 @@ def test_frontload_link_moves_url_to_front():
         mailbox.frontload_link("https://x/y already front", "https://x/y")
         == "https://x/y already front"
     )
+
+
+def test_read_new_lines_cursor_advances(tmp_path):
+    f, c = tmp_path / "to.md", tmp_path / "cur"
+    f.write_text("a\nb\n", encoding="utf-8")
+    lines, off = mailbox.read_new_lines(f, c)
+    assert lines == ["a", "b"]
+    mailbox.save_cursor(c, off)
+    with f.open("a", encoding="utf-8") as fh:
+        fh.write("c\n")
+    lines2, _ = mailbox.read_new_lines(f, c)
+    assert lines2 == ["c"]  # only the new line
+
+
+def test_read_new_lines_holds_partial_last_line(tmp_path):
+    f, c = tmp_path / "to.md", tmp_path / "cur"
+    f.write_text("done\npartial", encoding="utf-8")  # no trailing newline
+    lines, _ = mailbox.read_new_lines(f, c)
+    assert lines == ["done"]  # the partial line is held until completed
+
+
+def test_read_new_lines_resets_on_truncation(tmp_path):
+    f, c = tmp_path / "to.md", tmp_path / "cur"
+    f.write_text("x\ny\nz\n", encoding="utf-8")
+    _, off = mailbox.read_new_lines(f, c)
+    mailbox.save_cursor(c, off)
+    f.write_text("new\n", encoding="utf-8")  # rewritten shorter than the cursor
+    lines, _ = mailbox.read_new_lines(f, c)
+    assert lines == ["new"]  # cursor reset, re-read from 0
+
+
+def test_compact_seen_keeps_only_live(tmp_path):
+    s = tmp_path / "seen"
+    s.write_text("a\nb\nc\n", encoding="utf-8")
+    mailbox.compact_seen(s, {"b", "c", "zzz"})
+    assert mailbox.load_seen(s) == {"b", "c"}

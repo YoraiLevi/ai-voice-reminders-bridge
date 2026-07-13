@@ -123,8 +123,9 @@ class Config:
     # derived mailbox files
     our_inbox: Path  # to-<spoke_name>.md   (messages TO us)
     peer_inbox: Path  # to-<route_to>.md     (messages we SEND)
-    seen_file: Path  # our dedupe bookkeeping (private, under state_dir)
-    reply_seen_file: Path
+    seen_file: Path  # inbox dedupe by item id (private, under state_dir)
+    reply_seen_file: Path  # legacy; drain now uses reply_cursor_file
+    reply_cursor_file: Path  # byte-offset cursor for draining our inbox
     source: str = "defaults"
 
     def as_dict(self) -> dict[str, str]:
@@ -291,5 +292,6 @@ def load_config(
         peer_inbox=mailbox_dir / f"to-{route}.md",
         seen_file=seen_dir / f"{slug}-inbox-seen.txt",
         reply_seen_file=seen_dir / f"{slug}-reply-seen.txt",
+        reply_cursor_file=seen_dir / f"{slug}-reply.cursor",
         source=source,
     )

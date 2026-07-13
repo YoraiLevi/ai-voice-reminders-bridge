@@ -65,6 +65,50 @@ def clip(text: str, limit: int, *, ellipsis: bool = True) -> str:
     return text[: limit - 1].rsplit(" ", 1)[0].rstrip() + "…"
 
 
+def load_cursor(cursor_file: Path) -> int:
+    """The byte offset drained so far (0 if none)."""
+    if not cursor_file.exists():
+        return 0
+    try:
+        return int(cursor_file.read_text(encoding="utf-8").strip())
+    except ValueError:
+        return 0
+
+
+def save_cursor(cursor_file: Path, offset: int) -> None:
+    cursor_file.parent.mkdir(parents=True, exist_ok=True)
+    cursor_file.write_text(str(offset), encoding="utf-8")
+
+
+def read_new_lines(path: Path, cursor_file: Path) -> tuple[list[str], int]:
+    """COMPLETE lines appended since the saved byte-cursor, plus the new cursor (offset of
+    the last newline). Robust where a line-index seen-set is not: a truncated/rewritten
+    file (cursor > size) resets to 0; a half-written final line (no trailing newline) is
+    held until it completes. Bounded state — one integer, no growing set."""
+    if not path.exists():
+        return [], 0
+    data = path.read_bytes()
+    cur = load_cursor(cursor_file)
+    if cur > len(data):  # file was truncated / rewritten
+        cur = 0
+    chunk = data[cur:]
+    last_nl = chunk.rfind(b"\n")
+    if last_nl == -1:  # no complete line yet
+        return [], cur
+    complete = chunk[: last_nl + 1].decode("utf-8", "replace")
+    return complete.splitlines(), cur + last_nl + 1
+
+
+def compact_seen(seen_file: Path, live_ids: set[str]) -> None:
+    """Rewrite the seen-file keeping only ids still present (drop ids for items long gone),
+    bounding growth to the list size. Safe: an id for a still-incomplete item is in
+    `live_ids` (it's re-read every cycle), so it is never dropped."""
+    if not seen_file.exists():
+        return
+    keep = load_seen(seen_file) & set(live_ids)
+    seen_file.write_text(("\n".join(sorted(keep)) + "\n") if keep else "", encoding="utf-8")
+
+
 def first_url(text: str) -> str | None:
     """The first http(s) URL in `text`, or None. Used to surface a tappable link."""
     m = _URL_RE.search(text or "")

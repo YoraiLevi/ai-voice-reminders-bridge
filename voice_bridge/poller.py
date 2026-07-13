@@ -14,11 +14,13 @@ from __future__ import annotations
 import time
 from datetime import datetime
 
+from . import log as _log
 from . import ntfy
 from .config import Config
 from .mailbox import (
     append_line,
     clip,
+    compact_seen,
     eject_line,
     first_url,
     format_mailbox_line,
@@ -26,6 +28,8 @@ from .mailbox import (
     join_line,
     load_seen,
     mark_seen,
+    read_new_lines,
+    save_cursor,
 )
 from .transport import Transport
 
@@ -39,8 +43,9 @@ def poll_inbox(cfg: Config, t: Transport, *, now: datetime | None = None) -> int
     file, and mark it seen. Returns how many were newly bridged."""
     inbox = t.resolve_list(cfg.inbox_list, cfg.inbox_list_id)
     seen = load_seen(cfg.seen_file)
+    items = t.read_incomplete(inbox)
     n = 0
-    for item in t.read_incomplete(inbox):
+    for item in items:
         if item.id in seen:
             continue
         text = f"{item.title} — {item.notes}" if item.notes else item.title
@@ -51,6 +56,11 @@ def poll_inbox(cfg: Config, t: Transport, *, now: datetime | None = None) -> int
         except Exception:
             pass
         n += 1
+    # bound the seen-file: keep only ids still readable this cycle (a not-yet-completed
+    # item is still in `items`, so it's never dropped).
+    live = {i.id for i in items}
+    if len(seen) > len(live) + 50:
+        compact_seen(cfg.seen_file, live)
     return n
 
 
@@ -79,23 +89,17 @@ def send_reply(
 
 
 def drain_replies(cfg: Config, t: Transport, *, now: datetime | None = None) -> int:
-    """Send each not-yet-drained line of our inbox file to the phone. Dedupe key is the
-    line's index+text, stable because the file is append-only. Returns how many sent."""
-    path = cfg.our_inbox
-    if not path.exists():
-        return 0
-    seen = load_seen(cfg.reply_seen_file)
+    """Send each not-yet-drained line of our inbox file to the phone, tracked by a
+    byte-offset cursor (robust to truncation, bounded state). Returns how many sent."""
+    lines, offset = read_new_lines(cfg.our_inbox, cfg.reply_cursor_file)
     n = 0
-    for i, raw in enumerate(path.read_text(encoding="utf-8").splitlines()):
-        line = raw.rstrip()
-        if not line:
-            continue
-        key = f"{i}:{line}"
-        if key in seen:
+    for raw in lines:
+        line = raw.strip()
+        if not line or line.startswith("#"):
             continue
         send_reply(cfg, t, line, now=now)
-        mark_seen(cfg.reply_seen_file, key)
         n += 1
+    save_cursor(cfg.reply_cursor_file, offset)  # advance past everything read (incl. skipped)
     return n
 
 
@@ -127,19 +131,37 @@ def dry_run(cfg: Config) -> int:
     return 0
 
 
-def run(cfg: Config, t: Transport, *, once: bool = False, interval: int | None = None) -> int:
-    """Connect, announce join, loop poll+drain each interval, eject on stop. `--once`
-    does a single pass and returns 0 if anything new was bridged, else 1."""
+def run(
+    cfg: Config,
+    t: Transport,
+    *,
+    once: bool = False,
+    interval: int | None = None,
+    max_backoff: int = 300,
+) -> int:
+    """Announce join, loop poll+drain each interval, eject on stop. Resilient: a transport
+    error is logged and retried with exponential backoff (never crashes the daemon).
+    `--once` does a single attempt — 0 if anything new, 1 if nothing, 2 on error."""
+    log = _log.get()
     period = interval if interval is not None else cfg.poll_interval
-    t.connect()
     announce_join(cfg)
+    backoff = 1
     try:
-        if once:
-            polled, drained = run_once(cfg, t)
-            return 0 if (polled or drained) else 1
         while True:
-            run_once(cfg, t)
+            try:
+                t.connect()
+                polled, drained = run_once(cfg, t)
+                backoff = 1
+                if once:
+                    return 0 if (polled or drained) else 1
+            except Exception as exc:  # transport/network hiccup
+                if once:
+                    log.error("run --once failed: %s", exc)
+                    return 2
+                log.warning("transport error: %s — retrying in %ss", exc, backoff)
+                time.sleep(backoff)
+                backoff = min(backoff * 2, max_backoff)
+                continue
             time.sleep(period)
     finally:
         announce_eject(cfg)
-    return 0

@@ -8,6 +8,7 @@ from importlib.resources import files
 from pathlib import Path
 
 from . import doctor as doctor_mod
+from . import log as log_mod
 from . import login as login_mod
 from . import ntfy
 from . import server as server_mod
@@ -31,6 +32,9 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="voice-bridge", description="A voice spoke for a file-mailbox."
     )
     p.add_argument("--config", metavar="PATH", help="explicit voice-bridge.json")
+    p.add_argument("-v", "--verbose", action="store_true", help="INFO logging")
+    p.add_argument("-q", "--quiet", action="store_true", help="errors only")
+    p.add_argument("--log-file", metavar="PATH", help="also log to this file")
     sub = p.add_subparsers(dest="cmd")
 
     r = sub.add_parser("run", help="ensure everything, then bridge (the main command)")
@@ -102,6 +106,7 @@ def _overrides(args) -> dict:
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
+    log_mod.configure(verbose=args.verbose, quiet=args.quiet, logfile=args.log_file)
     if not args.cmd:
         parser.print_help()
         return 2

@@ -2,11 +2,25 @@
 
 from __future__ import annotations
 
+import pytest
+
 from voice_bridge import poller
+from voice_bridge.transport import FakeTransport
+
+
+class _Stop(BaseException):
+    """Breaks the resilient loop in tests (BaseException → not caught by except Exception)."""
 
 
 def _inbox(t):
     return t.resolve_list("Vox-Message-Inbox")
+
+
+def _seeded(cls=FakeTransport):
+    t = cls()
+    t.add_list("Vox-Message-Inbox")
+    t.add_list("Vox-Message-Outbox")
+    return t
 
 
 def test_poll_inbox_bridges_new_and_dedupes(sample_config, fake_transport, fixed_clock):
@@ -91,3 +105,34 @@ def test_dry_run_touches_no_transport(sample_config, capsys):
     out = capsys.readouterr().out
     assert rc == 0
     assert "spoke_name" in out and "example request" in out
+
+
+def test_run_once_error_returns_2_and_ejects(sample_config):
+    class Boom(FakeTransport):
+        def read_incomplete(self, lst):
+            raise RuntimeError("boom")
+
+    t = _seeded(Boom)
+    assert poller.run(sample_config, t, once=True) == 2
+    assert "(vox) stopping" in sample_config.peer_inbox.read_text(encoding="utf-8")  # eject ran
+
+
+def test_run_loop_retries_then_recovers(sample_config, monkeypatch):
+    calls = {"n": 0}
+
+    class Flaky(FakeTransport):
+        def read_incomplete(self, lst):
+            calls["n"] += 1
+            if calls["n"] <= 2:
+                raise RuntimeError("net blip")
+            return []
+
+    def fake_sleep(_s):
+        if calls["n"] >= 3:  # after recovery, the period-sleep → break out
+            raise _Stop
+        # else: a backoff sleep during the failures — just return
+
+    monkeypatch.setattr(poller.time, "sleep", fake_sleep)
+    with pytest.raises(_Stop):
+        poller.run(sample_config, _seeded(Flaky), once=False, interval=1)
+    assert calls["n"] >= 3  # retried past both failures and recovered

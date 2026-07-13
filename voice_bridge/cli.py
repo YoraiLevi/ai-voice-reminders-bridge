@@ -10,6 +10,7 @@ from pathlib import Path
 from . import doctor as doctor_mod
 from . import login as login_mod
 from . import ntfy
+from . import server as server_mod
 from . import setup as setup_mod
 from .config import (
     ConfigError,
@@ -39,6 +40,9 @@ def _build_parser() -> argparse.ArgumentParser:
     r.add_argument("--interval", type=int)
     r.add_argument("--once", action="store_true")
     r.add_argument("--dry-run", action="store_true")
+    r.add_argument(
+        "--with-server", action="store_true", help="(radicale) spawn the server as a child"
+    )
     r.add_argument("--set", action="append", dest="overrides", metavar="KEY=VALUE")
 
     s = sub.add_parser("setup", help="provision the transport (config + lists)")
@@ -75,6 +79,19 @@ def _build_parser() -> argparse.ArgumentParser:
     li.add_argument("--code-stdin", action="store_true")
 
     sub.add_parser("vox-prompt", help="print the phone prompt with your list names")
+
+    rs = sub.add_parser("radicale-server", help="manage the self-hosted Radicale server")
+    rssub = rs.add_subparsers(dest="op")
+    rsi = rssub.add_parser("init")
+    rsi.add_argument("--user")
+    rsi.add_argument("--password")
+    rsi.add_argument("--host")
+    rsi.add_argument("--port", type=int)
+    rst = rssub.add_parser("start")
+    rst.add_argument("--background", action="store_true")
+    rssub.add_parser("stop")
+    rssub.add_parser("status")
+    rssub.add_parser("url")
     return p
 
 
@@ -113,7 +130,11 @@ def _dispatch(args) -> int:  # noqa: C901 - a flat command table
             dry_run=args.dry_run,
             config_path=cfg_path,
             overrides=_overrides(args),
+            with_server=args.with_server,
         )
+
+    if cmd == "radicale-server":
+        return _radicale_server_cmd(args, cfg_path)
 
     if cmd == "setup":
         return setup_mod.run_setup(
@@ -168,6 +189,29 @@ def _dispatch(args) -> int:  # noqa: C901 - a flat command table
             cfg, code=args.code, code_file=args.code_file, code_stdin=args.code_stdin
         )
 
+    return 2
+
+
+def _radicale_server_cmd(args, cfg_path) -> int:
+    cfg = load_config(cfg_path)
+    op = getattr(args, "op", None)
+    if op == "init":
+        server_mod.init(cfg, user=args.user, password=args.password, host=args.host, port=args.port)
+        print(f"initialised under {server_mod.paths(cfg).base}")
+        return 0
+    if op == "start":
+        return server_mod.start(cfg, background=args.background)
+    if op == "stop":
+        return server_mod.stop(cfg)
+    if op == "status":
+        s = server_mod.status(cfg)
+        for k, v in s.items():
+            print(f"  {k:<12} : {v}")
+        return 0 if s["reachable"] else 1
+    if op == "url":
+        print(server_mod.client_url(cfg))
+        return 0
+    print("usage: voice-bridge radicale-server {init|start|stop|status|url}")
     return 2
 
 

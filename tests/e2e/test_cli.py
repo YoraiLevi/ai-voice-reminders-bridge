@@ -63,3 +63,16 @@ def test_vox_prompt_renders_list_names(tmp_path, tmp_mailbox, capsys):
 
 def test_notify_no_topic_returns_2(tmp_path, tmp_mailbox, capsys):
     assert main(["--config", _cfg(tmp_path, tmp_mailbox), "notify", "hi"]) == 2
+
+
+def test_radicale_server_url(tmp_path, tmp_mailbox, capsys):
+    cfg = _cfg(tmp_path, tmp_mailbox)
+    main(["--config", cfg, "config", "set", "radicale_port", "5299"])
+    assert main(["--config", cfg, "radicale-server", "url"]) == 0
+    assert "http://127.0.0.1:5299" in capsys.readouterr().out
+
+
+def test_radicale_server_status_down(tmp_path, tmp_mailbox, capsys):
+    # nothing running -> reachable False -> exit 1
+    assert main(["--config", _cfg(tmp_path, tmp_mailbox), "radicale-server", "status"]) == 1
+    assert "reachable" in capsys.readouterr().out

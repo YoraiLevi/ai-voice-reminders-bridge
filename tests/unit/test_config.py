@@ -15,6 +15,15 @@ def test_defaults_are_the_vox_spoke(sample_config):
     assert cfg.inbox_list == "Vox-Message-Inbox"
     assert cfg.output_list == "Vox-Message-Outbox"
     assert cfg.transport == "icloud"
+    assert cfg.radicale_host == "0.0.0.0"
+    assert cfg.radicale_port == 5232
+    assert cfg.radicale_user == "vox"
+
+
+def test_radicale_port_is_int_via_set(tmp_path, tmp_mailbox):
+    from voice_bridge.config import parse_overrides
+
+    assert parse_overrides(["radicale_port=5299"]) == {"radicale_port": 5299}
 
 
 def test_routing_files_derive_from_names(sample_config):

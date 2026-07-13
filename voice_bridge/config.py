@@ -56,6 +56,10 @@ DEFAULTS: dict[str, Any] = {
     "state_dir": "",
     # transport
     "transport": "icloud",  # icloud | radicale
+    # self-hosted Radicale server (managed by `voice-bridge radicale-server`)
+    "radicale_host": "0.0.0.0",  # bind address
+    "radicale_port": 5232,  # int
+    "radicale_user": "vox",  # the single CalDAV user
     # ntfy
     "ntfy_server": "https://ntfy.sh",
     "ntfy_title": "Vox",
@@ -67,7 +71,7 @@ DEFAULTS: dict[str, Any] = {
     "poll_interval": 10,
 }
 
-_INT_FIELDS = {"ntfy_body_limit", "reply_summary_limit", "poll_interval"}
+_INT_FIELDS = {"ntfy_body_limit", "reply_summary_limit", "poll_interval", "radicale_port"}
 _ALLOWED_KEYS = set(DEFAULTS) | set(_STATE_DERIVED) | {"creds_env"}
 
 
@@ -110,6 +114,9 @@ class Config:
     ntfy_body_limit: int
     reply_summary_limit: int
     poll_interval: int
+    radicale_host: str
+    radicale_port: int
+    radicale_user: str
     creds_env: Path
     cookie_dir: Path
     ntfy_topic_file: Path
@@ -141,6 +148,9 @@ class Config:
             "ntfy_body_limit": str(self.ntfy_body_limit),
             "reply_summary_limit": str(self.reply_summary_limit),
             "poll_interval": str(self.poll_interval),
+            "radicale_host": self.radicale_host,
+            "radicale_port": str(self.radicale_port),
+            "radicale_user": self.radicale_user,
             "creds_env": str(self.creds_env),
             "cookie_dir": str(self.cookie_dir),
             "ntfy_topic_file": str(self.ntfy_topic_file),
@@ -271,6 +281,9 @@ def load_config(
         ntfy_body_limit=int(merged["ntfy_body_limit"]),
         reply_summary_limit=int(merged["reply_summary_limit"]),
         poll_interval=int(merged["poll_interval"]),
+        radicale_host=str(merged["radicale_host"]),
+        radicale_port=int(merged["radicale_port"]),
+        radicale_user=str(merged["radicale_user"]),
         creds_env=creds_env,
         cookie_dir=_state_path("cookie_dir"),
         ntfy_topic_file=_state_path("ntfy_topic_file"),

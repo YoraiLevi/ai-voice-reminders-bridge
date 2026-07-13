@@ -13,8 +13,9 @@ dependencies = [
 [project.optional-dependencies]
 icloud = ["pyicloud"]
 caldav = ["caldav>=3.2,<4", "icalendar>=6,<8"]
-all = ["pyicloud", "caldav>=3.2,<4", "icalendar>=6,<8"]
-dev = ["pytest>=8", "ruff", "mypy", "caldav>=3.2,<4", "icalendar>=6,<8", "radicale>=3,<4"]
+server = ["radicale>=3,<4", "bcrypt>=4"]
+all = ["pyicloud", "caldav>=3.2,<4", "icalendar>=6,<8", "radicale>=3,<4", "bcrypt>=4"]
+dev = ["pytest>=8", "ruff", "mypy", "caldav>=3.2,<4", "icalendar>=6,<8", "radicale>=3,<4", "bcrypt>=4"]
 
 [project.scripts]
 voice-bridge = "voice_bridge.cli:main"

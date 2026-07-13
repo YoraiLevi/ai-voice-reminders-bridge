@@ -6,6 +6,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from . import poller
+from . import server as server_mod
 from . import setup as setup_mod
 from .config import default_config_path, load_config
 from .factory import make_transport
@@ -21,6 +22,7 @@ def run_command(
     dry_run: bool = False,
     config_path: str | Path | None = None,
     overrides: dict | None = None,
+    with_server: bool = False,
 ) -> int:
     path = Path(config_path) if config_path else default_config_path()
     ov = dict(overrides or {})
@@ -48,5 +50,27 @@ def run_command(
         cfg.our_inbox.touch()
         print(f"mailbox ready at {cfg.mailbox_dir} — a peer must join to process messages")
 
+    # ensure the Radicale server (child lifecycle owned here) + lists
+    child = None
+    if cfg.transport == "radicale":
+        url = server_mod.client_url(cfg)
+        if not server_mod.is_reachable(url):
+            if with_server:
+                child = server_mod.ensure_running(cfg, spawn_child=True)
+            else:
+                print(
+                    f"radicale server not reachable at {url} — "
+                    "`voice-bridge radicale-server start --background`"
+                )
+        if server_mod.is_reachable(url):
+            try:  # ensure the two lists exist (idempotent)
+                setup_mod.provision(cfg, make_transport(cfg))
+            except Exception as exc:  # pragma: no cover - network
+                print(f"warn: could not ensure lists: {exc}")
+
     t = make_transport(cfg)
-    return poller.run(cfg, t, once=once, interval=interval)
+    try:
+        return poller.run(cfg, t, once=once, interval=interval)
+    finally:
+        if child is not None:
+            child.terminate()

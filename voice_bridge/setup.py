@@ -53,6 +53,18 @@ def run_setup(
     path = Path(config_path) if config_path else default_config_path()
     write_config(path, transport=transport, overrides=overrides)
     cfg = load_config(path)
+
+    if transport == "radicale":
+        from . import server as server_mod
+
+        if not server_mod.is_reachable(server_mod.client_url(cfg)):
+            print(
+                "config written. Next, stand up the server, then re-run setup:\n"
+                "  voice-bridge radicale-server init\n"
+                "  voice-bridge radicale-server start --background"
+            )
+            return 0
+
     t = make_transport(cfg)
     try:
         for line in provision(cfg, t):

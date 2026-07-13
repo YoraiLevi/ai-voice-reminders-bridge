@@ -76,3 +76,36 @@ def test_radicale_server_status_down(tmp_path, tmp_mailbox, capsys):
     # nothing running -> reachable False -> exit 1
     assert main(["--config", _cfg(tmp_path, tmp_mailbox), "radicale-server", "status"]) == 1
     assert "reachable" in capsys.readouterr().out
+
+
+def test_status_and_json(tmp_path, tmp_mailbox, capsys):
+    cfg = _cfg(tmp_path, tmp_mailbox)
+    assert main(["--config", cfg, "status"]) == 0
+    assert "transport" in capsys.readouterr().out
+    assert main(["--json", "--config", cfg, "status"]) == 0
+    data = json.loads(capsys.readouterr().out)
+    assert data["transport"] == "icloud" and data["poller_running"] is False
+
+
+def test_tail_prints_existing(tmp_path, tmp_mailbox, capsys):
+    cfg_file = _cfg(tmp_path, tmp_mailbox)
+    from voice_bridge.config import load_config
+
+    cfg = load_config(cfg_file)
+    cfg.peer_inbox.parent.mkdir(parents=True, exist_ok=True)
+    cfg.peer_inbox.write_text("- [08:48] (vox) hello\n", encoding="utf-8")
+    assert main(["--config", cfg_file, "tail", "--box", "manager"]) == 0
+    assert "[manager] - [08:48] (vox) hello" in capsys.readouterr().out
+
+
+def test_send_pushes_to_outbox(tmp_path, tmp_mailbox, monkeypatch, capsys):
+    import voice_bridge.cli as climod
+    from voice_bridge.transport import FakeTransport
+
+    t = FakeTransport()
+    t.add_list("Vox-Message-Inbox")
+    t.add_list("Vox-Message-Outbox")
+    monkeypatch.setattr(climod, "make_transport", lambda cfg: t)
+    assert main(["--config", _cfg(tmp_path, tmp_mailbox), "send", "hi there", "--no-notify"]) == 0
+    out = t.resolve_list("Vox-Message-Outbox")
+    assert "hi there" in t.read_incomplete(out)[0].title

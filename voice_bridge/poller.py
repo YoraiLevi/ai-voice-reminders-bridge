@@ -11,6 +11,7 @@ so timestamps are deterministic under test.
 
 from __future__ import annotations
 
+import os
 import time
 from datetime import datetime
 
@@ -144,6 +145,9 @@ def run(
     `--once` does a single attempt — 0 if anything new, 1 if nothing, 2 on error."""
     log = _log.get()
     period = interval if interval is not None else cfg.poll_interval
+    pidfile = cfg.state_dir / "poller.pid"
+    pidfile.parent.mkdir(parents=True, exist_ok=True)
+    pidfile.write_text(str(os.getpid()), encoding="utf-8")
     announce_join(cfg)
     backoff = 1
     try:
@@ -165,3 +169,4 @@ def run(
             time.sleep(period)
     finally:
         announce_eject(cfg)
+        pidfile.unlink(missing_ok=True)

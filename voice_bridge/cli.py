@@ -4,6 +4,7 @@ codes: 0 success · 1 soft-negative · 2 usage/config/guard error."""
 from __future__ import annotations
 
 import argparse
+import json
 from importlib.resources import files
 from pathlib import Path
 
@@ -11,8 +12,10 @@ from . import doctor as doctor_mod
 from . import log as log_mod
 from . import login as login_mod
 from . import ntfy
+from . import poller as poller_mod
 from . import server as server_mod
 from . import setup as setup_mod
+from . import status as status_mod
 from .config import (
     ConfigError,
     default_config_path,
@@ -35,6 +38,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("-v", "--verbose", action="store_true", help="INFO logging")
     p.add_argument("-q", "--quiet", action="store_true", help="errors only")
     p.add_argument("--log-file", metavar="PATH", help="also log to this file")
+    p.add_argument("--json", action="store_true", help="machine-readable output where supported")
     sub = p.add_subparsers(dest="cmd")
 
     r = sub.add_parser("run", help="ensure everything, then bridge (the main command)")
@@ -83,6 +87,16 @@ def _build_parser() -> argparse.ArgumentParser:
     li.add_argument("--code-stdin", action="store_true")
 
     sub.add_parser("vox-prompt", help="print the phone prompt with your list names")
+
+    sub.add_parser("status", help="glance at the spoke's health")
+
+    tp = sub.add_parser("tail", help="follow the mailbox files")
+    tp.add_argument("--box", choices=("both", "manager", "vox"), default="both")
+    tp.add_argument("-f", "--follow", action="store_true")
+
+    sp = sub.add_parser("send", help="push one reply through the outbound path")
+    sp.add_argument("text")
+    sp.add_argument("--no-notify", action="store_true")
 
     rs = sub.add_parser("radicale-server", help="manage the self-hosted Radicale server")
     rssub = rs.add_subparsers(dest="op")
@@ -170,23 +184,57 @@ def _dispatch(args) -> int:  # noqa: C901 - a flat command table
         print(f"error: no ntfy topic at {cfg.ntfy_topic_file}")
         return 2
 
+    if cmd == "status":
+        data = status_mod.gather(cfg)
+        if args.json:
+            print(json.dumps(data))
+        else:
+            for k, v in data.items():
+                print(f"  {k:<16} : {v}")
+        return 0
+
+    if cmd == "tail":
+        return _tail_cmd(cfg, args)
+
+    if cmd == "send":
+        t = make_transport(cfg)
+        try:
+            poller_mod.send_reply(cfg, t, args.text, notify=not args.no_notify)
+        except Exception as exc:
+            print(f"error: {exc}")
+            return 2
+        print("sent.")
+        return 0
+
     if cmd == "lists":
         t = make_transport(cfg)
         t.connect()
         configured = {cfg.inbox_list, cfg.output_list}
-        for ref in t.list_todo_lists():
-            mark = " *" if ref.name in configured else ""
-            print(f"  {ref.name}{mark}\n      id: {ref.id}")
+        data = [
+            {"name": r.name, "id": r.id, "configured": r.name in configured}
+            for r in t.list_todo_lists()
+        ]
+        if args.json:
+            print(json.dumps(data))
+        else:
+            for d in data:
+                mark = " *" if d["configured"] else ""
+                print(f"  {d['name']}{mark}\n      id: {d['id']}")
         return 0
 
     if cmd == "peek":
         t = make_transport(cfg)
         t.connect()
         name = cfg.inbox_list if args.box == "inbox" else cfg.output_list
-        lst = t.resolve_list(name, cfg.inbox_list_id if args.box == "inbox" else cfg.output_list_id)
+        lid = cfg.inbox_list_id if args.box == "inbox" else cfg.output_list_id
+        lst = t.resolve_list(name, lid)
         items = t.read_completed(lst) if args.completed else t.read_incomplete(lst)
-        for it in items[: args.limit] if args.limit else items:
-            print(f"  - {it.title}" + (f" — {it.notes}" if it.notes else ""))
+        items = items[: args.limit] if args.limit else items
+        if args.json:
+            print(json.dumps([{"title": it.title, "notes": it.notes} for it in items]))
+        else:
+            for it in items:
+                print(f"  - {it.title}" + (f" — {it.notes}" if it.notes else ""))
         return 0
 
     if cmd == "icloud-login":
@@ -195,6 +243,39 @@ def _dispatch(args) -> int:  # noqa: C901 - a flat command table
         )
 
     return 2
+
+
+def _tail_cmd(cfg, args) -> int:
+    import time
+
+    boxes = []
+    if args.box in ("both", "manager"):
+        boxes.append(("manager", cfg.peer_inbox))
+    if args.box in ("both", "vox"):
+        boxes.append(("vox", cfg.our_inbox))
+    sizes: dict = {}
+    for label, path in boxes:
+        if path.exists():
+            for line in path.read_text(encoding="utf-8").splitlines():
+                print(f"[{label}] {line}")
+            sizes[path] = path.stat().st_size
+        else:
+            sizes[path] = 0
+    if not args.follow:
+        return 0
+    try:
+        while True:
+            for label, path in boxes:
+                if not path.exists():
+                    continue
+                data = path.read_bytes()
+                if len(data) > sizes[path]:
+                    for line in data[sizes[path] :].decode("utf-8", "replace").splitlines():
+                        print(f"[{label}] {line}")
+                    sizes[path] = len(data)
+            time.sleep(0.5)
+    except KeyboardInterrupt:
+        return 0
 
 
 def _radicale_server_cmd(args, cfg_path) -> int:
@@ -239,6 +320,10 @@ def _config_cmd(args, cfg_path) -> int:
         print(val)
         return 0
     # default / show
-    for k, v in load_config(cfg_path).as_dict().items():
-        print(f"  {k:<22} : {v}")
+    data = load_config(cfg_path).as_dict()
+    if getattr(args, "json", False):
+        print(json.dumps(data))
+    else:
+        for k, v in data.items():
+            print(f"  {k:<22} : {v}")
     return 0

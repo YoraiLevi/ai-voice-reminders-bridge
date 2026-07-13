@@ -115,7 +115,7 @@ class CalDAVTransport(Transport):
         from caldav.lib.error import AuthorizationError, DAVError
 
         apple_id, password, url = _creds(self.cfg)
-        client = DAVClient(url=url, username=apple_id, password=password, timeout=30.0)
+        client = DAVClient(url=url, username=apple_id, password=password, timeout=30.0)  # type: ignore[operator]
         try:
             self._principal = client.principal()
         except AuthorizationError as exc:

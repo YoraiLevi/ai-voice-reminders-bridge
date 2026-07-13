@@ -35,3 +35,15 @@ jobs:
         run: |
           uv run --extra dev ruff check .
           uv run --extra dev ruff format --check .
+      - name: mypy
+        run: uv run --extra dev mypy
+
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Coverage
+        run: uv run --extra dev pytest --cov=voice_bridge --cov-report=term-missing --cov-fail-under=79

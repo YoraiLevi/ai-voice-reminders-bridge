@@ -1,0 +1,63 @@
+"""factory selection + runner state-machine branches (no network)."""
+
+from __future__ import annotations
+
+import json
+
+from voice_bridge.caldav import CalDAVTransport
+from voice_bridge.config import load_config
+from voice_bridge.factory import make_transport
+from voice_bridge.icloud import ICloudTransport
+from voice_bridge.runner import run_command
+
+
+def _write(tmp_path, tmp_mailbox, transport):
+    p = tmp_path / "vb.json"
+    p.write_text(
+        json.dumps(
+            {
+                "transport": transport,
+                "mailbox_dir": str(tmp_mailbox),
+                "state_dir": str(tmp_path / "s"),
+            }
+        ),
+        encoding="utf-8",
+    )
+    return p
+
+
+def test_factory_selects_transport(sample_config, tmp_path, tmp_mailbox):
+    assert isinstance(make_transport(sample_config), ICloudTransport)  # default icloud
+    cfg = load_config(_write(tmp_path, tmp_mailbox, "radicale"))
+    assert isinstance(make_transport(cfg), CalDAVTransport)
+
+
+def test_run_dry_run_bootstraps_config(tmp_path, tmp_mailbox):
+    p = tmp_path / "vb.json"  # absent → setup writes it
+    rc = run_command(
+        dry_run=True,
+        config_path=str(p),
+        transport="icloud",
+        overrides={"mailbox_dir": str(tmp_mailbox), "state_dir": str(tmp_path / "s")},
+    )
+    assert rc == 0
+    assert p.exists()  # the setup flow created the config
+
+
+def test_run_require_mailbox_errors(tmp_path, tmp_mailbox):
+    p = _write(tmp_path, tmp_mailbox, "icloud")  # config exists, but no mailbox files
+    assert run_command(require_mailbox=True, once=True, config_path=str(p)) == 2
+
+
+def test_icloud_login_missing_creds_returns_2(sample_config):
+    from voice_bridge.login import icloud_login
+
+    # sample_config's creds_env doesn't exist → missing creds, before any pyicloud import
+    assert icloud_login(sample_config) == 2
+
+
+def test_provision_icloud_reports_manual_step(sample_config):
+    from voice_bridge import setup as setup_mod
+
+    lines = setup_mod.provision(sample_config, ICloudTransport(sample_config))
+    assert any("SETUP_DONE" in ln for ln in lines)

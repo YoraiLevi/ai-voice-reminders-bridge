@@ -15,7 +15,7 @@ icloud = ["pyicloud"]
 caldav = ["caldav>=3.2,<4", "icalendar>=6,<8"]
 server = ["radicale>=3,<4", "bcrypt>=4"]
 all = ["pyicloud", "caldav>=3.2,<4", "icalendar>=6,<8", "radicale>=3,<4", "bcrypt>=4"]
-dev = ["pytest>=8", "ruff", "mypy", "caldav>=3.2,<4", "icalendar>=6,<8", "radicale>=3,<4", "bcrypt>=4"]
+dev = ["pytest>=8", "pytest-cov", "ruff", "mypy", "caldav>=3.2,<4", "icalendar>=6,<8", "radicale>=3,<4", "bcrypt>=4"]
 
 [project.scripts]
 voice-bridge = "voice_bridge.cli:main"
@@ -34,3 +34,8 @@ addopts = "-q"
 [tool.ruff]
 line-length = 100
 extend-exclude = [".archive", "radicale"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true  # optional untyped backends: pyicloud/caldav/icalendar/radicale/bcrypt
+files = ["voice_bridge"]

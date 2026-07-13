@@ -210,14 +210,14 @@ def _dispatch(args) -> int:  # noqa: C901 - a flat command table
         t = make_transport(cfg)
         t.connect()
         configured = {cfg.inbox_list, cfg.output_list}
-        data = [
+        rows = [
             {"name": r.name, "id": r.id, "configured": r.name in configured}
             for r in t.list_todo_lists()
         ]
         if args.json:
-            print(json.dumps(data))
+            print(json.dumps(rows))
         else:
-            for d in data:
+            for d in rows:
                 mark = " *" if d["configured"] else ""
                 print(f"  {d['name']}{mark}\n      id: {d['id']}")
         return 0

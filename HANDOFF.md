@@ -1,19 +1,12 @@
 # HANDOFF — resume plan (voice-bridge)
 
-Read this + `PITFALLS.md` + `docs/.design/voice-bridge.md` (architecture) and
-`docs/.design/roadmap.md` (what shipped) to pick up cold.
+New here? Read `STATE.md` (where the project is) first, then this file (what to do next),
+then `PITFALLS.md` (gotchas) and `docs/.design/voice-bridge.md` (architecture) +
+`docs/.design/roadmap.md` (what shipped). This file assumes no memory of the prior session.
 
-## Where things stand
-
-- **PR #7** (`feat/voice-bridge-package` → `master`, push-locked base so work via PR).
-  The whole arc landed here: distillation → package migration → radicale-server → the
-  reliability/operability roadmap (P0–P4).
-- **Package:** `voice_bridge/` — 19 modules, acyclic DAG (`config` sink, `cli` source).
-- **Tests:** 97 green — unit / contract (FakeTransport) / integration (embedded +
-  self-launched Radicale) / e2e (in-process cli). `ruff` + `mypy` clean, coverage ~80%.
-- **CI:** matrix ubuntu+windows × py3.11–3.13 + lint(ruff+mypy) + coverage. Was red on a
-  cross-OS mypy bug (Windows-only `subprocess.CREATE_NEW_PROCESS_GROUP`); fixed with
-  `getattr` (commit 934434d). Confirm the run is green on resume.
+Current state lives in **`STATE.md`** — not repeated here to avoid drift. One-line summary:
+PR #7 (`feat/voice-bridge-package` → `master`) has the full package built, 97 tests +
+CI green; iCloud has never been exercised against a real account.
 
 ## Verified vs NOT verified  (THIS is why we're resuming)
 
@@ -25,29 +18,44 @@ Read this + `PITFALLS.md` + `docs/.design/voice-bridge.md` (architecture) and
 | **iCloud transport, LIVE** | **NOT tested — deliberate (2FA + private API can't run in CI)** |
 | **A real phone round-trip (either transport)** | **NOT tested — needs a device** |
 
-The break-resume goal: **ensure all functionality works end-to-end, starting with the
-iCloud integration** (the biggest untested seam).
+**This is still a DESIGN session in progress.** The next session continues the
+collaborative design with the user — it is NOT a pure execution run. Anything marked
+**DRAFT** below is an unreviewed proposal: discuss and agree it with the user *before*
+building. The overall goal we are working toward is **ensuring all functionality works
+end-to-end, starting with the iCloud integration** (the biggest untested seam).
 
-## Resume plan — e2e verification, iCloud first
+## Resume plan — design + e2e verification, iCloud first
 
-### Step 0 — implement the icloud-login upgrade (do this first)
-Turn `icloud-login` into a full secure credential setup (design below). It's the entry
-point to every iCloud e2e step; without it, seeding creds by hand is the blocker.
+### Step 0 — design the icloud-login upgrade WITH the user (design topic — not agreed yet)
+> **DRAFT / NOT DESIGNED.** The idea below was drafted solo and has NOT been discussed or
+> agreed. It's a starting point for the design conversation, not a spec to implement.
+> Resume by talking it through with the user first.
 
-Design:
-- `icloud_login(cfg, *, apple_id=None, password_stdin=False, code=None, code_file=None,
-  code_stdin=False, force=False) -> int`
-- `_ensure_creds(...)`: resolve Apple ID (`--apple-id` or prompt) + password
-  (`--password-stdin` for pipes, else `getpass` — NEVER a `--password` argv flag) → write
-  `cfg.creds_env` with `0600` (POSIX; best-effort Windows). Skip if present unless `--force`.
-- Then existing 2FA (`resolve_code`) + session cache.
-- Tests: apple-id+password-stdin writes creds (0600 on POSIX); mocked prompt path;
-  present+no-force skips; empty → exit 2.
+The intent: `icloud-login` should become a full, secure credential *setup* (input the
+Apple ID + password safely), not just accept the 2FA code. Open questions to settle with
+the user before any code:
+- Interactive prompt vs flags; how the Apple ID is entered.
+- How the password is entered **securely** — `getpass` (no echo) for interactive,
+  `--password-stdin` for pipes; the draft assumes NO `--password` argv flag (leaks to the
+  process list) — confirm that constraint.
+- Where/how creds are stored and permissioned (`cfg.creds_env`, `0600` on POSIX; Windows?).
+- Re-entry / rotation behaviour (a `--force`?), and idempotency when already set up.
+
+Draft signature (for discussion only, expect it to change):
+`icloud_login(cfg, *, apple_id=None, password_stdin=False, code=…, code_file=…, code_stdin=…, force=False) -> int`
+with a `_ensure_creds(...)` helper. Once the design is agreed, spec its good/bad tests and
+build it — it's the entry point that unblocks every iCloud e2e step below.
 
 ### Step 1 — iCloud live login (needs a real Apple ID + trusted device)
+> Today's `icloud-login` only handles the 2FA code — it reads the Apple ID + password from
+> the creds file, it does NOT prompt for them. So EITHER build Step 0's upgrade first, OR
+> (to test right now) hand-write the creds file: put `ICLOUD_APPLE_ID=…` and
+> `ICLOUD_PASSWORD=…` (the **MAIN** Apple ID password, not app-specific, for pyicloud) into
+> `<state_dir>/icloud.env` (default `~/.local/state/vox-mailbox/icloud.env`).
+
 1. `voice-bridge --config <proj>/.claude/voice-bridge.json icloud-login`
-   → enter Apple ID + **MAIN** Apple ID password (not app-specific for pyicloud) + 2FA code.
-2. Confirm the trusted session cached under `state_dir/pyicloud-cookies/`.
+   → supply the 6-digit 2FA code (via prompt, `--code`, `--code-file`, or `--code-stdin`).
+2. Confirm the trusted session cached under `<state_dir>/pyicloud-cookies/`.
 
 ### Step 2 — provision + doctor
 3. On the iPhone Reminders app, create the two lists EXACTLY: `Vox-Message-Inbox`,

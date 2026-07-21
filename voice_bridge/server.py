@@ -133,9 +133,10 @@ def _spawn(cfg: Config, *, detached: bool) -> subprocess.Popen:
     kwargs: dict = {}
     if detached:
         if os.name == "nt":
-            kwargs["creationflags"] = (
-                subprocess.CREATE_NEW_PROCESS_GROUP | 0x00000008
-            )  # DETACHED_PROCESS
+            # getattr so mypy on non-Windows doesn't flag these Windows-only constants
+            # (CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS). Runtime path is nt-only.
+            new_group = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+            kwargs["creationflags"] = new_group | 0x00000008  # DETACHED_PROCESS
         else:
             kwargs["start_new_session"] = True
         log = open(p.base / "server.log", "ab")

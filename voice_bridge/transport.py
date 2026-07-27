@@ -135,6 +135,14 @@ class FakeTransport(Transport):
         return item.id
 
     def complete(self, lst: ListRef, item_id: str) -> None:
+        """Honour the contract: not-found RAISES.
+
+        This used to add ANY id to the completed set, including one that was never
+        there — so the fake certified a poller that silently lost completions. A
+        double must not be more forgiving than the thing it stands for.
+        """
+        if not any(it.id == item_id for it in self._items.get(lst.id, [])):
+            raise LookupError(f"no item {item_id!r} in list {lst.name!r}")
         self._completed.add(item_id)
 
     def create_list(self, name: str) -> ListRef:

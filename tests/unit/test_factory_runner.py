@@ -43,7 +43,8 @@ def test_run_dry_run_bootstraps_config(tmp_path, tmp_mailbox):
         overrides={"mailbox_dir": str(tmp_mailbox), "state_dir": str(tmp_path / "s")},
     )
     assert rc == 0
-    assert p.exists()  # the setup flow created the config
+    # RUN-4: a dry run writes nothing, so the config must NOT appear.
+    assert not p.exists()
 
 
 def test_run_require_mailbox_errors(tmp_path, tmp_mailbox):

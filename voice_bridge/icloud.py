@@ -138,14 +138,19 @@ class ICloudTransport(Transport):
         return str(guid or "(unknown-guid)")
 
     def complete(self, lst: ListRef, item_id: str) -> None:
+        """Mark an item handled. RAISES on failure and on not-found.
+
+        Both used to be silent — the inner catch swallowed backend errors, and a
+        missing id simply fell off the end of the loop. The caller could not tell
+        "cleared off the phone" from "quietly didn't", so the reminder stayed
+        visible, the user re-dictated it, and the agent got it twice (FMA-2).
+        """
         for rem in self._reminders(lst.id):
             if _field(rem, "guid") == item_id:
-                try:
-                    rem.completed = True
-                    self._svc().update(rem)
-                except Exception:
-                    pass
+                rem.completed = True
+                self._svc().update(rem)
                 return
+        raise LookupError(f"no item {item_id!r} in list {lst.name!r}")
 
     def create_list(self, name: str) -> ListRef:
         raise NotSupportedError(

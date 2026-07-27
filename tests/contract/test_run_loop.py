@@ -1,0 +1,281 @@
+"""The run loop's durability and stopping contracts (FMA-1/2/12/16, RUN-1/2/9).
+
+These are the failures that cost a user a message or an evening, and every one of
+them looked like success from inside the program:
+
+* a mid-batch send failure re-sent every earlier reply, because the cursor
+  advanced once per batch instead of once per line (FMA-1);
+* a failed `complete()` was swallowed, so the reminder stayed visible on the
+  phone, the user re-dictated it, and the agent received it twice (FMA-2);
+* an expired session was retried for ever, because no retry can enter a 2FA code
+  (RUN-1) — and a 503 that never cleared backed off silently for ever (FMA-12);
+* power loss between the mailbox append and marking the item handled dropped the
+  dictation entirely, while the phone showed it done (FMA-16).
+"""
+
+from __future__ import annotations
+
+import os
+
+import pytest
+
+from voice_bridge import poller
+from voice_bridge.icloud import ICloudError
+
+
+def _mailbox(cfg):
+    cfg.mailbox_dir.mkdir(parents=True, exist_ok=True)
+    cfg.peer_inbox.touch()
+    cfg.our_inbox.touch()
+
+
+def _replies(cfg, *lines):
+    _mailbox(cfg)
+    cfg.our_inbox.write_text("".join(f"{ln}\n" for ln in lines), encoding="utf-8")
+
+
+# --------------------------------------------------------------------------- #
+# FMA-1 — the cursor advances per SENT line, not per batch
+# --------------------------------------------------------------------------- #
+
+def test_midbatch_failure_does_not_resend_earlier_replies(sample_config, fake_transport,
+                                                          monkeypatch):
+    """The failure that turns one hiccup into a wall of duplicates.
+
+    Three replies, the third fails. The old code saved the cursor only after the
+    whole loop, so the next cycle re-sent replies one and two — and every retry
+    repeated them again.
+    """
+    _replies(sample_config, "first", "second", "third")
+    sent: list[str] = []
+    real = poller.send_reply
+
+    def flaky(cfg, t, text, **kw):
+        if "third" in text:
+            raise OSError("network died mid-batch")
+        sent.append(text)
+        return real(cfg, t, text, **kw)
+
+    monkeypatch.setattr(poller, "send_reply", flaky)
+    with pytest.raises(OSError):
+        poller.drain_replies(sample_config, fake_transport)
+
+    assert sent == ["first", "second"]
+
+    # Recover: the third now succeeds. Only the third may go out.
+    monkeypatch.setattr(poller, "send_reply", lambda cfg, t, text, **kw: sent.append(text))
+    poller.drain_replies(sample_config, fake_transport)
+    assert sent == ["first", "second", "third"], "earlier replies must not be re-sent"
+
+
+def test_cursor_never_moves_backwards(sample_config, fake_transport):
+    _replies(sample_config, "one", "two")
+    poller.drain_replies(sample_config, fake_transport)
+    first = poller.load_cursor(sample_config.reply_cursor_file)
+    poller.drain_replies(sample_config, fake_transport)
+    assert poller.load_cursor(sample_config.reply_cursor_file) >= first
+
+
+# --------------------------------------------------------------------------- #
+# FMA-2 — a failed complete() must not be swallowed
+# --------------------------------------------------------------------------- #
+
+def test_failed_complete_is_retried_not_swallowed(sample_config, fake_transport, monkeypatch):
+    """Swallowing it left the reminder visible, so the user re-dictated it.
+
+    The message had already reached the agent, so the "helpful" retry by the human
+    produced a duplicate — the tool teaching the user to create the bug.
+    """
+    _mailbox(sample_config)
+    inbox = fake_transport.resolve_list(sample_config.inbox_list, "")
+    fake_transport.add_todo(inbox, "buy milk")
+
+    def refuse(lst, item_id):
+        raise OSError("backend refused the completion")
+
+    monkeypatch.setattr(fake_transport, "complete", refuse)
+    with pytest.raises(OSError):
+        poller.poll_inbox(sample_config, fake_transport)
+
+    # Delivered once, and still pending on the phone so the next cycle can retry.
+    assert "buy milk" in sample_config.peer_inbox.read_text(encoding="utf-8")
+    assert len(fake_transport.read_incomplete(inbox)) == 1
+
+
+def test_completed_item_is_not_delivered_twice(sample_config, fake_transport):
+    _mailbox(sample_config)
+    inbox = fake_transport.resolve_list(sample_config.inbox_list, "")
+    fake_transport.add_todo(inbox, "buy milk")
+
+    assert poller.poll_inbox(sample_config, fake_transport) == 1
+    assert poller.poll_inbox(sample_config, fake_transport) == 0
+    assert sample_config.peer_inbox.read_text(encoding="utf-8").count("buy milk") == 1
+
+
+# --------------------------------------------------------------------------- #
+# FMA-16 — the append is flushed to disk before the item is marked handled
+# --------------------------------------------------------------------------- #
+
+def test_mailbox_append_is_fsynced_before_marking_seen(sample_config, fake_transport,
+                                                       monkeypatch):
+    """Ruled fix: without this, power loss loses the dictation while the phone
+    shows it done — the message is gone and nothing reports it.
+
+    The remote completion is durable the instant the server accepts it; the local
+    append is not durable until it is flushed. Ordering alone cannot close that,
+    which is why the fsync is the fix rather than a reordering.
+    """
+    _mailbox(sample_config)
+    inbox = fake_transport.resolve_list(sample_config.inbox_list, "")
+    fake_transport.add_todo(inbox, "remember the milk")
+
+    order: list[str] = []
+    real_fsync = os.fsync
+    monkeypatch.setattr(os, "fsync", lambda fd: order.append("fsync") or real_fsync(fd))
+    real_mark = poller.mark_seen
+    monkeypatch.setattr(
+        poller, "mark_seen", lambda p, k: order.append("mark_seen") or real_mark(p, k)
+    )
+
+    poller.poll_inbox(sample_config, fake_transport)
+    assert "fsync" in order, "the append must be flushed to disk"
+    assert order.index("fsync") < order.index("mark_seen"), (
+        "flushing after marking handled leaves the same window open"
+    )
+
+
+# --------------------------------------------------------------------------- #
+# RUN-1/2 + FMA-12 — stop when retrying cannot help, and bound when it might
+# --------------------------------------------------------------------------- #
+
+class _Boom:
+    """A transport whose connect() always raises the given error."""
+
+    def __init__(self, exc):
+        self.exc = exc
+        self.attempts = 0
+
+    def connect(self):
+        self.attempts += 1
+        raise self.exc
+
+
+def test_auth_failure_stops_immediately_with_guidance(sample_config, capsys):
+    """No retry can type a 2FA code, so retrying is just a quieter way to fail."""
+    _mailbox(sample_config)
+    t = _Boom(ICloudError("session needs 2FA"))
+    rc = poller.run(sample_config, t, interval=0)
+    assert rc == 2
+    assert t.attempts == 1, "an auth failure must not be retried at all"
+    assert "icloud-login" in capsys.readouterr().out.lower()
+
+
+def test_transient_failure_is_bounded_not_infinite(sample_config, capsys):
+    """A 503 that never clears used to back off for ever — silent death dressed
+    as patience. It now gives up and says why."""
+    _mailbox(sample_config)
+    t = _Boom(OSError("503 Service Unavailable"))
+    rc = poller.run(sample_config, t, interval=0, max_attempts=3, backoff_base=0)
+    assert rc == 2
+    assert t.attempts == 3
+    out = capsys.readouterr().out.lower()
+    assert "giving up" in out or "gave up" in out
+
+
+def test_unexpected_error_is_bounded_and_keeps_its_cause(sample_config, capsys):
+    _mailbox(sample_config)
+    t = _Boom(RuntimeError("a genuine bug"))
+    rc = poller.run(sample_config, t, interval=0, max_attempts=2, backoff_base=0)
+    assert rc == 2
+    assert "a genuine bug" in capsys.readouterr().out
+
+
+class _Stop(BaseException):
+    """Breaks the loop without being caught as a failure (run catches Exception)."""
+
+
+def test_transient_counter_resets_after_a_good_cycle(sample_config, fake_transport,
+                                                     monkeypatch):
+    """Otherwise a long-lived poller accumulates unrelated blips until it quits.
+
+    Two separate transient failures, each followed by a good cycle, with a budget
+    of two. If the counter did not reset, the second failure would exhaust it and
+    the loop would give up — on a system that is plainly working.
+    """
+    calls = {"n": 0}
+    real_connect = fake_transport.connect
+
+    def flaky():
+        calls["n"] += 1
+        if calls["n"] in (1, 3):
+            raise OSError("503 Service Unavailable")
+        if calls["n"] > 4:
+            raise _Stop  # escape the loop; not an Exception, so not counted
+        return real_connect()
+
+    monkeypatch.setattr(fake_transport, "connect", flaky)
+    with pytest.raises(_Stop):
+        poller.run(
+            sample_config, fake_transport, interval=0, max_attempts=2, backoff_base=0
+        )
+    assert calls["n"] > 4, "the loop must survive both blips rather than giving up"
+
+
+# --------------------------------------------------------------------------- #
+# RUN-9 — one poller per mailbox
+# --------------------------------------------------------------------------- #
+
+def test_second_poller_is_refused(sample_config, fake_transport, monkeypatch):
+    """Two pollers on one account is how the throttle storms start."""
+    _mailbox(sample_config)
+    pidfile = sample_config.state_dir / "poller.pid"
+    pidfile.parent.mkdir(parents=True, exist_ok=True)
+    pidfile.write_text(str(os.getpid()), encoding="utf-8")  # ourselves: definitely alive
+
+    rc = poller.run(sample_config, fake_transport, once=True, interval=0)
+    assert rc == 2
+
+
+def test_force_overrides_the_guard(sample_config, fake_transport):
+    _mailbox(sample_config)
+    pidfile = sample_config.state_dir / "poller.pid"
+    pidfile.parent.mkdir(parents=True, exist_ok=True)
+    pidfile.write_text(str(os.getpid()), encoding="utf-8")
+
+    rc = poller.run(sample_config, fake_transport, once=True, interval=0, force=True)
+    assert rc in (0, 1)
+
+
+def test_stale_pidfile_does_not_block(sample_config, fake_transport):
+    """A crashed poller leaves its pidfile behind; that must not lock the user out."""
+    _mailbox(sample_config)
+    pidfile = sample_config.state_dir / "poller.pid"
+    pidfile.parent.mkdir(parents=True, exist_ok=True)
+    pidfile.write_text("0", encoding="utf-8")  # never a live pid
+
+    rc = poller.run(sample_config, fake_transport, once=True, interval=0)
+    assert rc in (0, 1)
+
+
+# --------------------------------------------------------------------------- #
+# RUN-4 — a dry run writes nothing
+# --------------------------------------------------------------------------- #
+
+def test_dry_run_creates_no_config(tmp_path, tmp_mailbox, capsys):
+    """Asking "what would this do?" used to answer by doing part of it.
+
+    The dry run went through the setup flow first, so on a fresh machine it wrote
+    a config file — the single thing a dry run promises not to do.
+    """
+    from voice_bridge.runner import run_command
+
+    target = tmp_path / "absent" / "voice-bridge.json"
+    rc = run_command(
+        dry_run=True,
+        config_path=str(target),
+        overrides={"mailbox_dir": str(tmp_mailbox), "state_dir": str(tmp_path / "s")},
+    )
+    assert rc == 0
+    assert not target.exists(), "a dry run must not create the config it was asked about"
+    assert not (tmp_path / "s").exists(), "nor any state directory"
+    assert "would append" in capsys.readouterr().out

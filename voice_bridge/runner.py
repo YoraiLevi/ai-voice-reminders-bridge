@@ -23,6 +23,7 @@ def run_command(
     config_path: str | Path | None = None,
     overrides: dict | None = None,
     with_server: bool = False,
+    force: bool = False,
 ) -> int:
     path, _ = resolve_config_path(config_path, must_exist=False)
     assert path is not None  # must_exist=False always names a target
@@ -32,14 +33,19 @@ def run_command(
     if transport:
         ov["transport"] = transport
 
+    # RUN-4: --dry-run must write NOTHING. It ran the setup flow first, so asking
+    # "what would this do?" on a fresh machine created a config file as a side
+    # effect — the one thing a dry run promises not to do. Resolve in memory
+    # instead, from defaults if no file exists.
+    if dry_run:
+        cfg = load_config(path, overrides=ov) if path.exists() else load_config(None, overrides=ov)
+        return poller.dry_run(cfg)
+
     # ensure config: none -> setup flow (reuse), which writes it
     if not path.exists():
         setup_mod.run_setup(config_path=path, transport=transport or "icloud", overrides=ov)
 
     cfg = load_config(path, overrides=ov)
-
-    if dry_run:
-        return poller.dry_run(cfg)
 
     # ensure mailbox files
     if not (cfg.peer_inbox.exists() and cfg.our_inbox.exists()):
@@ -71,7 +77,7 @@ def run_command(
 
     t = make_transport(cfg)
     try:
-        return poller.run(cfg, t, once=once, interval=interval)
+        return poller.run(cfg, t, once=once, interval=interval, force=force)
     finally:
         if child is not None:
             child.terminate()

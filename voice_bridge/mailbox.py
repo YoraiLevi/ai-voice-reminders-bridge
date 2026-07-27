@@ -6,6 +6,7 @@ so timestamps are deterministic under test.
 
 from __future__ import annotations
 
+import os
 import re
 from datetime import datetime
 from pathlib import Path
@@ -36,11 +37,41 @@ def eject_line(from_name: str, *, now: datetime | None = None) -> str:
     return f"- [{_hhmm(now)}] ({from_name}) stopping"
 
 
-def append_line(path: Path, line: str) -> None:
-    """Append one line to an append-only mailbox file, creating parents as needed."""
+def append_line(path: Path, line: str, *, fsync: bool = False) -> None:
+    """Append one line to an append-only mailbox file, creating parents as needed.
+
+    With `fsync=True` the bytes are pushed to the physical device before returning.
+    That matters wherever a LOCAL write is about to be followed by a REMOTE one:
+    the remote side is durable the instant the server accepts it, while the local
+    append lives in the page cache until the kernel writes it back — up to tens of
+    seconds later. Power loss inside that window loses the dictation while the
+    phone shows it handled, and nothing reports the loss (FMA-16).
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
+    created = not path.exists()
     with path.open("a", encoding="utf-8") as fh:
         fh.write(line.rstrip("\n") + "\n")
+        if fsync:
+            fh.flush()
+            os.fsync(fh.fileno())
+    if fsync and created:
+        # A brand-new file needs its DIRECTORY entry flushed too, or the file
+        # itself can be missing after a power loss even though its bytes landed.
+        _fsync_dir(path.parent)
+
+
+def _fsync_dir(directory: Path) -> None:
+    """Flush a directory entry. Not supported on every platform; best effort."""
+    try:
+        fd = os.open(str(directory), os.O_RDONLY)
+    except OSError:  # pragma: no cover - Windows has no directory fd
+        return
+    try:
+        os.fsync(fd)
+    except OSError:  # pragma: no cover - filesystem without dirent fsync
+        pass
+    finally:
+        os.close(fd)
 
 
 def load_seen(path: Path) -> set[str]:

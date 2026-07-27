@@ -51,6 +51,7 @@ def _build_parser() -> argparse.ArgumentParser:
     r.add_argument("--interval", type=int)
     r.add_argument("--once", action="store_true")
     r.add_argument("--dry-run", action="store_true")
+    r.add_argument("--force", action="store_true", help="run even if another poller holds the mailbox")
     r.add_argument(
         "--with-server", action="store_true", help="(radicale) spawn the server as a child"
     )
@@ -195,6 +196,7 @@ def _dispatch(args) -> int:  # noqa: C901 - a flat command table
             config_path=cfg_path,
             overrides=_overrides(args),
             with_server=args.with_server,
+            force=args.force,
         )
 
     if cmd == "radicale-server":

@@ -213,6 +213,11 @@ class CalDAVTransport(Transport):
         return uid or "(unknown-uid)"
 
     def complete(self, lst: ListRef, item_id: str) -> None:
+        """Mark an item handled. RAISES on not-found (transport contract, FMA-2).
+
+        Falling off the end silently told the caller "done" when nothing had been
+        completed, so the reminder stayed on the phone and the user re-dictated it.
+        """
         for todo, comp in self._iter_objects(self._cal(lst)):
             if str(comp.get("uid") or "") == item_id:
                 comp["status"] = "COMPLETED"
@@ -221,6 +226,7 @@ class CalDAVTransport(Transport):
                     comp.add("completed", datetime.now(timezone.utc))
                 todo.save()
                 return
+        raise LookupError(f"no item {item_id!r} in list {lst.name!r}")
 
     def create_list(self, name: str) -> ListRef:
         _, _, url = _creds(self.cfg)

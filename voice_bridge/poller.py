@@ -18,7 +18,9 @@ from datetime import datetime
 from . import log as _log
 from . import ntfy
 from .config import Config
+from .errors import _is_auth, is_transient
 from .mailbox import (
+    load_cursor,
     append_line,
     clip,
     compact_seen,
@@ -48,14 +50,27 @@ def poll_inbox(cfg: Config, t: Transport, *, now: datetime | None = None) -> int
     n = 0
     for item in items:
         if item.id in seen:
+            # Already delivered, yet still live on the backend — so a previous
+            # completion failed. Retry it rather than leaving the reminder
+            # visible: the user reads "still there" as "not processed", re-dictates,
+            # and the agent receives the message twice (FMA-2). This is the
+            # `seen ∩ live` retry set, and it costs one call per stuck item.
+            t.complete(inbox, item.id)
             continue
+
         text = f"{item.title} — {item.notes}" if item.notes else item.title
-        append_line(cfg.peer_inbox, format_mailbox_line(text, from_name=cfg.from_name, now=now))
+        # fsync BEFORE marking handled: the completion below is durable remotely
+        # the moment the server accepts it, while this append is not durable until
+        # flushed. Ordering alone cannot close that window (FMA-16, ruled fix).
+        append_line(
+            cfg.peer_inbox,
+            format_mailbox_line(text, from_name=cfg.from_name, now=now),
+            fsync=True,
+        )
         mark_seen(cfg.seen_file, item.id)  # seen-file FIRST: a crash after this can't re-emit
-        try:
-            t.complete(inbox, item.id)  # then clear it off the phone's list (secondary guard)
-        except Exception:
-            pass
+        # NOT swallowed. All three transports used to hide a failure here, so the
+        # loop could not tell "cleared off the phone" from "silently didn't".
+        t.complete(inbox, item.id)
         n += 1
     # bound the seen-file: keep only ids still readable this cycle (a not-yet-completed
     # item is still in `items`, so it's never dropped).
@@ -92,15 +107,24 @@ def send_reply(
 def drain_replies(cfg: Config, t: Transport, *, now: datetime | None = None) -> int:
     """Send each not-yet-drained line of our inbox file to the phone, tracked by a
     byte-offset cursor (robust to truncation, bounded state). Returns how many sent."""
+    start = load_cursor(cfg.our_inbox and cfg.reply_cursor_file)
     lines, offset = read_new_lines(cfg.our_inbox, cfg.reply_cursor_file)
+    if start > offset:  # the reader reset the cursor (file shrank); follow it
+        start = 0
+
     n = 0
+    consumed = start
     for raw in lines:
+        # Advance PER LINE, not once per batch. Saving only at the end meant a
+        # failure on reply three re-sent replies one and two on the next cycle —
+        # and again on every retry after that. Per-line, a crash costs at most one
+        # duplicate: the line that was in flight (FMA-1).
+        consumed += len((raw + "\n").encode("utf-8"))
         line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        send_reply(cfg, t, line, now=now)
-        n += 1
-    save_cursor(cfg.reply_cursor_file, offset)  # advance past everything read (incl. skipped)
+        if line and not line.startswith("#"):
+            send_reply(cfg, t, line, now=now)
+            n += 1
+        save_cursor(cfg.reply_cursor_file, consumed)
     return n
 
 
@@ -132,6 +156,24 @@ def dry_run(cfg: Config) -> int:
     return 0
 
 
+def _another_poller_is_running(cfg: Config) -> int | None:
+    """The pid of a LIVE poller holding this mailbox, or None.
+
+    A stale pidfile from a crashed run must not lock the user out, so the pid is
+    probed rather than trusted.
+    """
+    from .status import _alive  # local import: status is a consumer of config only
+
+    pidfile = cfg.state_dir / "poller.pid"
+    if not pidfile.exists():
+        return None
+    try:
+        pid = int(pidfile.read_text(encoding="utf-8").strip())
+    except ValueError:
+        return None
+    return pid if _alive(pid) else None
+
+
 def run(
     cfg: Config,
     t: Transport,
@@ -139,32 +181,75 @@ def run(
     once: bool = False,
     interval: int | None = None,
     max_backoff: int = 300,
+    max_attempts: int = 5,
+    backoff_base: int = 1,
+    force: bool = False,
 ) -> int:
-    """Announce join, loop poll+drain each interval, eject on stop. Resilient: a transport
-    error is logged and retried with exponential backoff (never crashes the daemon).
-    `--once` does a single attempt — 0 if anything new, 1 if nothing, 2 on error."""
+    """Announce join, loop poll+drain each interval, eject on stop.
+
+    Failures are classified rather than uniformly retried, because they need
+    opposite responses:
+
+    * **auth** — no retry can enter a 2FA code, so retrying is only a quieter way
+      to fail. Stop immediately and say what to run (RUN-1).
+    * **transient** — back off, but BOUNDED. A 503 that never clears used to be
+      retried for ever: silent death dressed up as patience (FMA-12).
+    * **anything else** — probably a bug. A few attempts, then stop and surface it
+      rather than looping on it for ever (RUN-2).
+
+    `--once` does a single attempt — 0 if anything new, 1 if nothing, 2 on error.
+    """
     log = _log.get()
     period = interval if interval is not None else cfg.poll_interval
+
+    # RUN-9: two pollers on one account is how the throttle storms start, and the
+    # second one is nearly always an accident.
+    if not force and (other := _another_poller_is_running(cfg)) is not None:
+        print(
+            f"error: a poller is already running (pid {other}). "
+            "Stop it first, or pass --force if you are sure."
+        )
+        return 2
+
     pidfile = cfg.state_dir / "poller.pid"
     pidfile.parent.mkdir(parents=True, exist_ok=True)
     pidfile.write_text(str(os.getpid()), encoding="utf-8")
     announce_join(cfg)
-    backoff = 1
+
+    backoff = max(backoff_base, 0)
+    attempts = 0
     try:
         while True:
             try:
                 t.connect()
                 polled, drained = run_once(cfg, t)
-                backoff = 1
+                attempts = 0  # a good cycle clears the budget, so unrelated
+                backoff = max(backoff_base, 0)  # blips never accumulate to a stop
                 if once:
                     return 0 if (polled or drained) else 1
-            except Exception as exc:  # transport/network hiccup
-                if once:
-                    log.error("run --once failed: %s", exc)
+            except Exception as exc:
+                if _is_auth(exc):
+                    print(f"error: {exc}")
+                    print("The session needs attention — run `voice-bridge icloud-login`.")
                     return 2
-                log.warning("transport error: %s — retrying in %ss", exc, backoff)
-                time.sleep(backoff)
-                backoff = min(backoff * 2, max_backoff)
+
+                attempts += 1
+                kind = "transient" if is_transient(exc) else "unexpected"
+                if attempts >= max_attempts or once:
+                    if once:
+                        log.error("run --once failed: %s", exc)
+                        print(f"error: {exc}")
+                        return 2
+                    print(
+                        f"error: giving up after {attempts} {kind} failures — {exc}\n"
+                        "       check connectivity, or whether a second poller is running."
+                    )
+                    return 2
+
+                log.warning("%s error: %s — retrying in %ss", kind, exc, backoff)
+                if backoff:
+                    time.sleep(backoff)
+                backoff = min(max(backoff * 2, 1), max_backoff)
                 continue
             time.sleep(period)
     finally:

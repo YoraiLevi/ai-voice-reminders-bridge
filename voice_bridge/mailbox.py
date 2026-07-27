@@ -143,6 +143,18 @@ def compact_seen(seen_file: Path, live_ids: set[str]) -> None:
     atomic_write(seen_file, ("\n".join(sorted(keep)) + "\n") if keep else "")
 
 
+def strip_astral(text: str) -> str:
+    """Drop characters outside the Basic Multilingual Plane (emoji, mostly).
+
+    Used for reminder TITLES only. The full text still reaches the user in the
+    notes and the banner, so this loses decoration rather than content — which is
+    the trade the alternative does not offer, since a title the phone refuses to
+    render loses the message entirely (UX-3).
+    """
+    cleaned = "".join(ch for ch in text if ord(ch) < 0x10000)
+    return " ".join(cleaned.split())
+
+
 def first_url(text: str) -> str | None:
     """The first http(s) URL in `text`, or None. Used to surface a tappable link."""
     m = _URL_RE.search(text or "")

@@ -74,6 +74,10 @@ DEFAULTS: dict[str, Any] = {
     "ntfy_priority": "high",
     "ntfy_body_limit": -1,  # -1 = no clip
     # tuning
+    # Astral characters (emoji) in a reminder TITLE have been a rendering hazard
+    # on the phone; "strip" keeps titles plain and leaves the original text intact
+    # in the notes and the banner, so nothing is lost (UX-3).
+    "emoji_titles": "strip",  # strip | allow
     "reply_summary_limit": -1,  # -1 = no clip
     "poll_interval": 10,
 }
@@ -119,6 +123,7 @@ class Config:
     ntfy_tags: str
     ntfy_priority: str
     ntfy_body_limit: int
+    emoji_titles: str
     reply_summary_limit: int
     poll_interval: int
     radicale_host: str
@@ -292,6 +297,7 @@ def load_config(
         ntfy_tags=str(merged["ntfy_tags"]),
         ntfy_priority=str(merged["ntfy_priority"]),
         ntfy_body_limit=int(merged["ntfy_body_limit"]),
+        emoji_titles=str(merged["emoji_titles"]),
         reply_summary_limit=int(merged["reply_summary_limit"]),
         poll_interval=int(merged["poll_interval"]),
         radicale_host=str(merged["radicale_host"]),

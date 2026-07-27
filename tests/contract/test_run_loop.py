@@ -282,3 +282,33 @@ def test_dry_run_creates_no_config(tmp_path, tmp_mailbox, capsys):
     assert not target.exists(), "a dry run must not create the config it was asked about"
     assert not (tmp_path / "s").exists(), "nor any state directory"
     assert "would append" in capsys.readouterr().out
+
+
+# --------------------------------------------------------------------------- #
+# LIVE-6 — Ctrl-C is how people stop a foreground daemon
+# --------------------------------------------------------------------------- #
+
+
+def test_ctrl_c_stops_cleanly_and_still_ejects(sample_config, fake_transport, monkeypatch, capsys):
+    """Stopping the bridge is a normal action, not an error.
+
+    `run` caught Exception, and KeyboardInterrupt is a BaseException, so Ctrl-C
+    escaped as a raw traceback — while the flows corpus already promised a clean
+    stop. The eject was never at risk (a `finally` runs during unwinding), but a
+    traceback tells the user something broke when nothing did.
+    """
+    _mailbox(sample_config)
+
+    def interrupt(_seconds):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(poller.time, "sleep", interrupt)
+
+    rc = poller.run(sample_config, fake_transport, interval=1)
+
+    assert rc == 0, "a deliberate stop is success, not failure"
+    assert "stopped" in capsys.readouterr().out.lower()
+    assert "stopping" in sample_config.peer_inbox.read_text(encoding="utf-8"), (
+        "the peer must still see us leave"
+    )
+    assert not (sample_config.state_dir / "poller.pid").exists(), "pidfile must be cleaned up"

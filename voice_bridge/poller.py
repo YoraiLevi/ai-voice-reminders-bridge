@@ -28,6 +28,7 @@ from .mailbox import (
     eject_line,
     first_url,
     format_mailbox_line,
+    strip_astral,
     frontload_link,
     join_line,
     load_seen,
@@ -97,7 +98,10 @@ def send_reply(
     body = frontload_link(text.strip(), url)
     stamped = f"[{_hhmm(now)}][{cfg.spoke_name}] {body}"
     flat = " ".join(stamped.split())
-    summary = clip(flat, cfg.reply_summary_limit, ellipsis=False) or "(reply)"
+    # The TITLE may be stripped of emoji; `stamped` — which carries the original
+    # text — is what goes into the notes and the banner, so nothing is lost.
+    titled = strip_astral(flat) if cfg.emoji_titles == "strip" else flat
+    summary = clip(titled, cfg.reply_summary_limit, ellipsis=False) or "(reply)"
     out = t.resolve_list(cfg.output_list, cfg.output_list_id)
     rid = t.add_todo(out, summary, notes=stamped, needs_input=needs_input)
     if notify:
@@ -221,43 +225,54 @@ def run(
     backoff = max(backoff_base, 0)
     attempts = 0
     try:
-        while True:
-            try:
-                t.connect()
-                polled, drained = run_once(cfg, t)
-                # Report the one thing a working bridge cannot otherwise tell you:
-                # the messages are being delivered and nothing is reading them.
-                if (hint := _staleness_hint(cfg, stale_after=stale_after)) is not None:
-                    log.warning("%s", hint)
-                attempts = 0  # a good cycle clears the budget, so unrelated
-                backoff = max(backoff_base, 0)  # blips never accumulate to a stop
-                if once:
-                    return 0 if (polled or drained) else 1
-            except Exception as exc:
-                if _is_auth(exc):
-                    print(f"error: {exc}")
-                    print("The session needs attention — run `voice-bridge icloud-login`.")
-                    return 2
-
-                attempts += 1
-                kind = "transient" if is_transient(exc) else "unexpected"
-                if attempts >= max_attempts or once:
+        # One handler around the WHOLE loop: Ctrl-C can land in either sleep, in
+        # connect, or mid-cycle, and a handler that covers only some of those is
+        # the reason this escaped once already. Ctrl-C is how a person stops a
+        # foreground daemon — deliberate, not a failure — and it is a
+        # BaseException, so `except Exception` never saw it and it surfaced as a
+        # traceback that said something broke when nothing had. The eject in
+        # `finally` was never at risk; only the reporting was (LIVE-6).
+        try:
+            while True:
+                try:
+                    t.connect()
+                    polled, drained = run_once(cfg, t)
+                    # Report the one thing a working bridge cannot otherwise tell you:
+                    # the messages are being delivered and nothing is reading them.
+                    if (hint := _staleness_hint(cfg, stale_after=stale_after)) is not None:
+                        log.warning("%s", hint)
+                    attempts = 0  # a good cycle clears the budget, so unrelated
+                    backoff = max(backoff_base, 0)  # blips never accumulate to a stop
                     if once:
-                        log.error("run --once failed: %s", exc)
+                        return 0 if (polled or drained) else 1
+                except Exception as exc:
+                    if _is_auth(exc):
                         print(f"error: {exc}")
+                        print("The session needs attention — run `voice-bridge icloud-login`.")
                         return 2
-                    print(
-                        f"error: giving up after {attempts} {kind} failures — {exc}\n"
-                        "       check connectivity, or whether a second poller is running."
-                    )
-                    return 2
 
-                log.warning("%s error: %s — retrying in %ss", kind, exc, backoff)
-                if backoff:
-                    time.sleep(backoff)
-                backoff = min(max(backoff * 2, 1), max_backoff)
-                continue
-            time.sleep(period)
+                    attempts += 1
+                    kind = "transient" if is_transient(exc) else "unexpected"
+                    if attempts >= max_attempts or once:
+                        if once:
+                            log.error("run --once failed: %s", exc)
+                            print(f"error: {exc}")
+                            return 2
+                        print(
+                            f"error: giving up after {attempts} {kind} failures — {exc}\n"
+                            "       check connectivity, or whether a second poller is running."
+                        )
+                        return 2
+
+                    log.warning("%s error: %s — retrying in %ss", kind, exc, backoff)
+                    if backoff:
+                        time.sleep(backoff)
+                    backoff = min(max(backoff * 2, 1), max_backoff)
+                    continue
+                time.sleep(period)
+        except KeyboardInterrupt:
+            print("stopped.")
+            return 0
     finally:
         announce_eject(cfg)
         pidfile.unlink(missing_ok=True)

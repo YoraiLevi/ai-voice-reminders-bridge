@@ -111,6 +111,22 @@ def provision(cfg: Config, t: Transport) -> list[str]:
 _PROBE = "voice-bridge setup --verify probe"
 
 
+def _check_title(t: Transport, item_id: str) -> tuple[bool | None, str]:
+    """Renderability of the probe's stored title, or (None, why) if unavailable.
+
+    Only meaningful where the backend stores a CRDT document, so a backend without
+    one reports None rather than a false pass — "not applicable" and "fine" must
+    not look the same.
+    """
+    from .titlelint import check_stored
+
+    svc = getattr(t, "r", None)
+    if svc is None:
+        return None, "not applicable for this transport"
+    verdict = check_stored(svc, item_id)
+    return verdict.ok, verdict.describe()
+
+
 def verify(cfg: Config, t: Transport) -> dict[str, Any]:
     """Push a real probe through the real path, then clean up after itself.
 
@@ -128,6 +144,8 @@ def verify(cfg: Config, t: Transport) -> dict[str, Any]:
         "reply_delivered": False,
         "banner_sent": False,
         "banner_detail": "",
+        "title_renderable": None,
+        "title_detail": "",
     }
 
     inbox = t.resolve_list(cfg.inbox_list, cfg.inbox_list_id)
@@ -149,6 +167,12 @@ def verify(cfg: Config, t: Transport) -> dict[str, Any]:
     reply_id = t.add_todo(outbox, _PROBE, notes="safe to ignore; removed automatically")
     try:
         report_out["reply_delivered"] = any(it.id == reply_id for it in t.read_incomplete(outbox))
+
+        # Ask whether the phone could actually RENDER what we just wrote. Every
+        # other check here reads the text back through the same API that wrote it,
+        # which cannot see a malformed title document (LIVE-5) — this inspects the
+        # stored structure instead, so the verdict needs no phone.
+        report_out["title_renderable"], report_out["title_detail"] = _check_title(t, reply_id)
         pushed = ntfy.push(cfg, _PROBE)
         report_out["banner_sent"] = pushed.status == "sent"
         report_out["banner_detail"] = (
@@ -259,6 +283,10 @@ def run_setup(
             print(f"  [{'ok  ' if ok else 'FAIL'}] {leg}")
         if not result["banner_sent"]:
             print(f"         notification: {result['banner_detail']}")
+        if result["title_renderable"] is False:
+            print(f"  [FAIL] the phone will not render that title — {result['title_detail']}")
+        elif result["title_renderable"]:
+            print("  [ok  ] title is renderable on the phone")
         # The notification leg is best-effort by design, so it does not fail the
         # verification; the two delivery legs are the actual contract.
         if not (result["dictation_delivered"] and result["reply_delivered"]):

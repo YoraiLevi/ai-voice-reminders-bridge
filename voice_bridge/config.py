@@ -74,10 +74,11 @@ DEFAULTS: dict[str, Any] = {
     "ntfy_priority": "high",
     "ntfy_body_limit": -1,  # -1 = no clip
     # tuning
-    # Astral characters (emoji) in a reminder TITLE have been a rendering hazard
-    # on the phone; "strip" keeps titles plain and leaves the original text intact
-    # in the notes and the banner, so nothing is lost (UX-3).
-    "emoji_titles": "strip",  # strip | allow
+    # Emoji in reminder titles render correctly — confirmed on a device against
+    # the CRDT length fix. "strip" remains available as an escape hatch for the
+    # case that made it necessary: an unfixed pyicloud, whose encoder declares
+    # codepoints where Apple counts UTF-16 units, so astral titles arrive blank.
+    "emoji_titles": "allow",  # allow | strip
     "reply_summary_limit": -1,  # -1 = no clip
     "poll_interval": 10,
 }

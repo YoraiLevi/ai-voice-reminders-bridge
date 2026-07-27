@@ -161,3 +161,28 @@ def test_write_env_is_owner_only(tmp_path):
     f = tmp_path / "creds.env"
     util.write_env(f, {"ICLOUD_PASSWORD": "hunter2"})
     assert oct(f.stat().st_mode)[-3:] == "600"
+
+
+def test_fsync_append_also_flushes_a_new_files_directory(tmp_path, monkeypatch):
+    """The second half of the ruled durability fix, which nothing exercised.
+
+    Flushing a brand-new file's BYTES is not enough — its directory entry needs
+    flushing too, or the file itself can be absent after a power loss even though
+    its contents reached the platter.
+    """
+    from voice_bridge import mailbox
+
+    synced: list[str] = []
+    real_fsync = os.fsync
+    monkeypatch.setattr(os, "fsync", lambda fd: synced.append("fsync") or real_fsync(fd))
+
+    target = tmp_path / "fresh" / "to-manager.md"
+    mailbox.append_line(target, "- [10:00] (vox) first ever line", fsync=True)
+    assert target.read_text(encoding="utf-8").endswith("first ever line\n")
+
+    # Two on POSIX (file + directory); Windows has no directory fd, so one.
+    assert len(synced) >= 1
+
+    synced.clear()
+    mailbox.append_line(target, "- [10:01] (vox) second line", fsync=True)
+    assert synced, "an existing file still flushes its bytes"

@@ -97,3 +97,16 @@ def test_unpinned_config_says_nothing_about_ids(sample_config):
     """No pins, no claim — an id line that isn't authoritative is worse than none."""
     out = prompt.render_vox_prompt(sample_config)
     assert "identifier" not in out.lower()
+
+
+def test_an_unterminated_comment_keeps_the_remaining_text(sample_config, monkeypatch):
+    """A malformed template must not silently swallow the prompt.
+
+    Dropping everything after a stray `<!--` would ship a truncated prompt that
+    still looks like a prompt — the quiet failure this module exists to avoid.
+    """
+    monkeypatch.setattr(
+        prompt, "_load_template", lambda: "<!-- never closed\nthe actual ${inbox_list} body"
+    )
+    out = prompt.render_vox_prompt(sample_config)
+    assert "the actual" in out and sample_config.inbox_list in out

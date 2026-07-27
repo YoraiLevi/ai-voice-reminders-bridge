@@ -185,3 +185,22 @@ def test_errors_module_has_no_hard_optional_dependency() -> None:
     src = mod.__file__
     assert src is not None
     assert is_transient(Exception("503")) is True  # works regardless of extras
+
+
+def test_caldav_errors_map_to_exit_1_with_the_right_guidance():
+    """The CLI side of FMA-10: a 401 and a server-down need different words.
+
+    Both stop the command, but "your credentials were rejected" and "the backend
+    is unavailable" send the user to different places.
+    """
+    authz = caldav_error.AuthorizationError("401 Unauthorized")
+    with pytest.raises(CommandError) as err:
+        raise_command_error(authz)
+    assert err.value.code == 1
+    assert "credentials or permissions" in err.value.msg
+
+    down = caldav_error.DAVError("500 Internal Server Error")
+    with pytest.raises(CommandError) as err:
+        raise_command_error(down)
+    assert err.value.code == 1
+    assert "transport unavailable" in err.value.msg

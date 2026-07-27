@@ -1,7 +1,9 @@
 <!--
   The Vox phone-side prompt. `voice-bridge vox-prompt` renders ${inbox_list} and
   ${output_list} from your config before printing. Defaults shown if unrendered:
-  ${inbox_list} = Vox-Message-Inbox, ${output_list} = Vox-Message-Outbox.
+  ${inbox_list} = Vox-Message-Outbox (you dictate there), ${output_list} =
+  Vox-Message-Inbox (answers arrive there). The names read from YOUR seat:
+  your outbox is what you send, your inbox is what you receive.
   Paste the rendered text into the Claude iOS app (a Project instruction, or the start
   of a voice chat).
 -->

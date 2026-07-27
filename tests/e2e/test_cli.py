@@ -110,7 +110,7 @@ def test_send_pushes_to_outbox(tmp_path, tmp_mailbox, monkeypatch, capsys):
     # which is where the typed error mapping lives — so that is what to intercept.
     monkeypatch.setattr(commands_mod, "make_transport", lambda cfg: t)
     assert main(["--config", _cfg(tmp_path, tmp_mailbox), "send", "hi there", "--no-notify"]) == 0
-    out = t.resolve_list("Vox-Message-Outbox")
+    out = t.resolve_list("Vox-Message-Inbox")  # replies land in the USER's inbox
     assert "hi there" in t.read_incomplete(out)[0].title
 
 

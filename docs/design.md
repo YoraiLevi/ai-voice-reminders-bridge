@@ -86,17 +86,21 @@ Every line the bridge writes into the mailbox has one physical-line form:
 The word *inbox* appears on both edges and points opposite ways. This trips up almost
 everyone, so it is worth fixing in your head early:
 
-| term | what it is | direction |
-|---|---|---|
-| **inbox list** (`inbox_list`) | a list on your **phone** | **you → the agent** — you dictate here |
-| **outbox list** (`output_list`) | a list on your **phone** | **the agent → you** — replies appear here |
-| **our inbox file** (`to-vox.md`) | a file in the **mailbox** | **the agent → us** — the bridge drains it |
-| **the peer's inbox file** (`to-manager.md`) | a file in the **mailbox** | **us → the agent** — the bridge appends to it |
+**The rule: an inbox belongs to whoever READS it.** Every name below follows it, which is
+what makes them consistent once you hold that one idea.
 
-The rule that makes it consistent: an *inbox* always belongs to whoever **reads** it. Your
-phone's inbox list is yours to fill; the peer's inbox file is the peer's to read. So a
-dictation travels **inbox list → peer's inbox file**, and a reply travels **our inbox file →
-outbox list**.
+| term | whose it is | direction |
+|---|---|---|
+| **Vox-Message-Outbox** (`inbox_list`) | a list on your **phone** — *yours* | **you → the agent**: you dictate here, so it is your OUTbox |
+| **Vox-Message-Inbox** (`output_list`) | a list on your **phone** — *yours* | **the agent → you**: answers arrive here, so it is your INbox |
+| **`to-vox.md`** | a file in the **mailbox** — *the bridge's* | **the agent → us** — the bridge reads it |
+| **`to-manager.md`** | a file in the **mailbox** — *the peer's* | **us → the agent** — the bridge writes it |
+
+Note the deliberate crossing in the config: `inbox_list` names the list the BRIDGE reads,
+which is YOUR outbox. The field names are written from the bridge's seat and the list names
+from yours, and both are correct — a message leaving your outbox is arriving in its inbox.
+So a dictation travels **your outbox → the peer's inbox file**, and a reply travels **the
+bridge's inbox file → your inbox**.
 
 Mesh presence is intentionally unimplemented — the bridge stays agnostic so it can adopt
 liveness when the underlying protocol exposes it.
@@ -170,8 +174,8 @@ be absent.
 | identity | `spoke_name` | `vox` | our name; names our inbox file |
 | | `route_to` | `manager` | the peer we write to |
 | | `from_name` | *(= `spoke_name`)* | tag on lines we write |
-| phone bus | `inbox_list` | `Vox-Message-Inbox` | the **inbox list** — phone → mailbox (you dictate here) |
-| | `output_list` | `Vox-Message-Outbox` | the **outbox list** — mailbox → phone (replies land here) |
+| phone bus | `inbox_list` | `Vox-Message-Outbox` | the list the bridge READS — *your* outbox, where you dictate |
+| | `output_list` | `Vox-Message-Inbox` | the list the bridge WRITES — *your* inbox, where answers arrive |
 | | `inbox_list_id` / `output_list_id` | *(empty)* | pin a list by ID — see *Ghost lists* |
 | mailbox | `mailbox_dir` | `~/.agent-mail` | the shared mailbox directory |
 | our state | `state_dir` | `$XDG_STATE_HOME/vox-mailbox` | credentials, cookies, bookkeeping |

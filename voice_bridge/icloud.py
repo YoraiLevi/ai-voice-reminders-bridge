@@ -143,6 +143,19 @@ class ICloudTransport(Transport):
                 priority=1 if needs_input else 0,
             )
         )
+
+        # LIVE-4: roughly one create in two came back titled "New Reminder" —
+        # Apple's default for a reminder with no title — while the notes held the
+        # full text. Identical text succeeded on the next attempt, so it is not
+        # content-dependent: `create` writes a CRDT title document and then reads
+        # the record back, and that read-back can land before the title has
+        # propagated. We know what we asked for, so if what came back disagrees,
+        # say it again. Idempotent, and self-healing whether the cause is a stale
+        # read or a genuinely dropped field.
+        if summary and str(getattr(created, "title", "") or "") != summary:
+            created.title = summary
+            _retrying(lambda: self._svc().update(created))
+
         return str(created.id)
 
     def complete(self, lst: ListRef, item_id: str) -> None:

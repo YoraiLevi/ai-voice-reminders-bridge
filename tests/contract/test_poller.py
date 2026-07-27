@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from voice_bridge import poller
+from voice_bridge.config import DEFAULTS
 from voice_bridge.transport import FakeTransport
 
 
@@ -13,13 +14,15 @@ class _Stop(BaseException):
 
 
 def _inbox(t):
-    return t.resolve_list("Vox-Message-Inbox")
+    # The list the bridge READS. Named via the default rather than a literal, so
+    # it follows the config instead of pinning one naming decision.
+    return t.resolve_list(DEFAULTS["inbox_list"])
 
 
 def _seeded(cls=FakeTransport):
     t = cls()
-    t.add_list("Vox-Message-Inbox")
-    t.add_list("Vox-Message-Outbox")
+    t.add_list(DEFAULTS["inbox_list"])
+    t.add_list(DEFAULTS["output_list"])
     return t
 
 
@@ -48,7 +51,7 @@ def test_send_reply_frames_and_writes(sample_config, fake_transport, fixed_clock
     rid = poller.send_reply(
         cfg, fake_transport, "done, see https://x/y", notify=False, now=fixed_clock
     )
-    out = fake_transport.resolve_list("Vox-Message-Outbox")
+    out = fake_transport.resolve_list(DEFAULTS["output_list"])  # where replies go
     items = fake_transport.read_incomplete(out)
     assert len(items) == 1 and items[0].id == rid
     # stamped [HH:MM][spoke], url front-loaded into the body
@@ -61,7 +64,7 @@ def test_drain_replies_sends_and_dedupes(sample_config, fake_transport, fixed_cl
     cfg.our_inbox.write_text("first reply\nsecond reply\n", encoding="utf-8")
     n = poller.drain_replies(cfg, fake_transport, now=fixed_clock)
     assert n == 2
-    out = fake_transport.resolve_list("Vox-Message-Outbox")
+    out = fake_transport.resolve_list(DEFAULTS["output_list"])  # where replies go
     assert len(fake_transport.read_incomplete(out)) == 2
     # re-drain the same file → nothing new
     assert poller.drain_replies(cfg, fake_transport, now=fixed_clock) == 0

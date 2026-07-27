@@ -180,9 +180,11 @@ def ghost_transport() -> FakeTransport:
     id exists to disambiguate, and `lists` must make the ambiguity visible.
     """
     t = FakeTransport()
-    t.add_list("Vox-Message-Inbox", "L1")  # the ghost (older, empty)
-    t.add_list("Vox-Message-Outbox", "L2")
-    t.add_list("Vox-Message-Inbox", "L9")  # the live one
+    # Duplicated on the list the BRIDGE READS (the user's outbox, per UX-1), since
+    # that is where an ambiguity actually costs a dictation.
+    t.add_list("Vox-Message-Outbox", "L1")  # the ghost (older, empty)
+    t.add_list("Vox-Message-Inbox", "L2")
+    t.add_list("Vox-Message-Outbox", "L9")  # the live one
     return t
 
 

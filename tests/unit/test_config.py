@@ -15,8 +15,10 @@ def test_defaults_are_the_vox_spoke(sample_config):
     assert cfg.spoke_name == "vox"
     assert cfg.route_to == "manager"
     assert cfg.from_name == "vox"  # derived from spoke_name
-    assert cfg.inbox_list == "Vox-Message-Inbox"
-    assert cfg.output_list == "Vox-Message-Outbox"
+    # UX-1: the list names read from the USER's seat — they dictate into their
+    # OUTbox, so that is the list the bridge reads (`inbox_list`).
+    assert cfg.inbox_list == "Vox-Message-Outbox"
+    assert cfg.output_list == "Vox-Message-Inbox"
     assert cfg.transport == "icloud"
     assert cfg.radicale_host == "0.0.0.0"
     assert cfg.radicale_port == 5232

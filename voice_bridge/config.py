@@ -48,8 +48,13 @@ DEFAULTS: dict[str, Any] = {
     "route_to": "manager",  # peer inbox is to-<route_to>.md
     "from_name": "",  # "" -> derived = spoke_name (the mailbox-line tag)
     # phone bus
-    "inbox_list": "Vox-Message-Inbox",  # phone -> us (dictations)
-    "output_list": "Vox-Message-Outbox",  # us -> phone (replies)
+    # NOTE the deliberate crossing, ruled from live use (UX-1): the list NAMES are
+    # written from the PHONE USER's seat, while these FIELD names are written from
+    # the bridge's. So the bridge's inbox — where it reads dictations from — is the
+    # user's OUTBOX, because that is where they send from. An inbox belongs to
+    # whoever reads it, and the person reading the phone is the user.
+    "inbox_list": "Vox-Message-Outbox",  # user dictates here -> we read (phone -> us)
+    "output_list": "Vox-Message-Inbox",  # user reads here    <- we write (us -> phone)
     "inbox_list_id": "",
     "output_list_id": "",
     # shared mailbox (the protocol's, theirs)

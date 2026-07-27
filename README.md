@@ -14,12 +14,10 @@ elsewhere).
 > **Async channel.** Replies can arrive a turn or more later; every message is timestamped
 > `[HH:MM]` and the newest on a topic supersedes older ones.
 
-> **Status:** the package (`voice_bridge/`) is built and green — 97 tests across
-> unit / contract / integration / end-to-end, on Linux and Windows. The design has since been
-> hardened through a review pass; the resulting reliability fixes are specified but not all
-> implemented yet, and the honest list of what does and does not hold today is in
-> [`docs/design.md`](docs/design.md). The iCloud path has not yet been exercised against a
-> real Apple account.
+> **Status:** built, green, and live-verified — 294 tests across unit / contract /
+> integration / end-to-end, CI green on Linux and Windows, and a real voice dictation has
+> made the full round trip through a live Apple account. The honest list of what does and
+> does not hold today is in [`docs/design.md`](docs/design.md).
 
 ## Prerequisite
 
@@ -57,8 +55,10 @@ peer sees it join and leave like any worker.
 
 ## Two Reminders lists (names configurable)
 
-- **Vox-Message-Inbox** — you dictate here (phone → mailbox)
-- **Vox-Message-Outbox** — replies surface here (mailbox → phone)
+The names read from **your** seat, not the tool's:
+
+- **Vox-Message-Outbox** — *you* dictate here; it is your outgoing
+- **Vox-Message-Inbox** — answers arrive here; it is your incoming
 
 ## Everyday commands
 

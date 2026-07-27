@@ -7,6 +7,11 @@ This document is the architecture reference; the [README](../README.md) is the q
 appear, and every guarantee below says plainly whether it holds *in the code today* or is
 *designed but not yet built*.
 
+**This document does not cover installation or first run.** Those live in the
+[README](../README.md), which is the quick start of record: how to invoke the tool with no
+installation, and the single command that sets everything up and starts bridging. Read the
+README first if you have never run this; come here for how it works and what it promises.
+
 ---
 
 ## 1. What it is
@@ -47,7 +52,8 @@ The spoke has exactly **three edges**, and they are the whole surface worth abst
 
 1. **The bus** — two Reminders lists, reached through a `Transport`.
 2. **The file mailbox** — read our inbox file, append to the peer's inbox file.
-3. **The doorbell** — push notifications, so a reply is noticed without polling by hand.
+3. **The doorbell** — push notifications, sent through [ntfy](https://ntfy.sh) (hence the
+   `ntfy_*` settings later in this document), so a reply is noticed without polling by hand.
 
 Keeping the boundary this narrow is deliberate: the mailbox already provides durability and
 ordering, so the bridge does not reimplement them.
@@ -71,8 +77,26 @@ Every line the bridge writes into the mailbox has one physical-line form:
 - [HH:MM] (vox) the text of the message
 ```
 
-Multi-line input is flattened to a single line, because the mailbox format is line-oriented
-and a stray newline would otherwise split one message into two.
+> **Multi-line dictations become one line.** The mailbox format is line-oriented, so a stray
+> newline would split one message into two. Everything you dictate is joined into a single
+> line before it is written. Expect paragraph breaks to disappear.
+
+### "Inbox" means two different directions — read this once
+
+The word *inbox* appears on both edges and points opposite ways. This trips up almost
+everyone, so it is worth fixing in your head early:
+
+| term | what it is | direction |
+|---|---|---|
+| **inbox list** (`inbox_list`) | a list on your **phone** | **you → the agent** — you dictate here |
+| **outbox list** (`output_list`) | a list on your **phone** | **the agent → you** — replies appear here |
+| **our inbox file** (`to-vox.md`) | a file in the **mailbox** | **the agent → us** — the bridge drains it |
+| **the peer's inbox file** (`to-manager.md`) | a file in the **mailbox** | **us → the agent** — the bridge appends to it |
+
+The rule that makes it consistent: an *inbox* always belongs to whoever **reads** it. Your
+phone's inbox list is yours to fill; the peer's inbox file is the peer's to read. So a
+dictation travels **inbox list → peer's inbox file**, and a reply travels **our inbox file →
+outbox list**.
 
 Mesh presence is intentionally unimplemented — the bridge stays agnostic so it can adopt
 liveness when the underlying protocol exposes it.
@@ -216,11 +240,20 @@ makes re-running safe and makes "repair the one broken thing" the normal recover
 5. LISTS     provision or disambiguate the two lists
 6. JOIN      announce the spoke into the mailbox
 7. LOOP      poll inbox → mailbox; drain mailbox → outbox + push
-8. EJECT     on exit, announce departure and clean up our inbox file
+8. EJECT     on exit, announce departure and delete our own inbox file
 ```
 
 Announcing on join and eject means your peer sees the spoke arrive and leave the way it sees
 any other participant.
+
+**What eject deletes, and why that is not a contradiction.** On a clean exit the bridge
+appends a departure line to the peer's inbox file and then **deletes its own inbox file**
+(`to-vox.md`). The mailbox is append-only, so deleting a file deserves an explanation: *our*
+inbox exists only to be drained by us, and removing it signals we are no longer listening —
+the same way an absent mailbox means an absent participant. Files belonging to anyone else
+are **never** modified or removed; the bridge only ever appends to the peer's inbox. If the
+bridge is killed rather than stopped cleanly, the file simply remains and is drained on the
+next start.
 
 ---
 
@@ -234,11 +267,21 @@ Everything private lives under `state_dir`; only the mailbox files are shared.
 | `to-<spoke>.md` | the peer | replies we drain **to** the phone |
 | inbox seen-record | us | which backend items have already been bridged |
 | reply cursor | us | how far through our inbox file we have read |
-| credentials file | `setup` (Radicale) or by hand (iCloud) | backend account details |
-| session cache | login | avoids repeating two-factor on every run |
+| credentials file | `radicale-server init` (Radicale) — **by hand (iCloud)** | backend account details |
+| session cache | `icloud-login` | avoids repeating two-factor on every run |
 | notification topic | **by hand** | the private topic banners are sent to |
 | poller pid-file | `run` | lets `status` detect a live poller |
 | Radicale config, users, storage, log | `radicale-server` | the self-hosted backend's own state |
+
+**Two files you must create yourself.** Nothing in the tool writes them, and their absence is
+quiet rather than loud:
+
+- **iCloud credentials.** `icloud-login` *reads* your Apple ID and password from the
+  credentials file and establishes the session; it does **not** capture or write them. Create
+  the file first, or the command exits with an error naming the exact path it wanted. (The
+  Radicale path is different — `radicale-server init` writes its own credentials for you.)
+- **The notification topic.** With no topic file, push is a silent no-op: replies still land
+  in the outbox list, but no banner ever appears and nothing complains.
 
 Two independent deduplication mechanisms, because the two directions have different shapes:
 
@@ -313,9 +356,49 @@ stated against **the code as it exists today**.
 The iCloud session's lifetime is **not a fixed, documented number**. Treat "it expires
 eventually" as the only safe assumption and re-authenticate when prompted.
 
+**Honest comparison:** iCloud is the default because it needs no server and works from
+anywhere, but it is the higher-friction option in practice — you must create the two lists by
+hand, write the credentials file yourself, re-authenticate when the session lapses, and accept
+an unofficial API that can change without warning. Radicale costs you a server to run and a
+network path to reach it, and gives you a stable, documented backend that provisions itself.
+If you are comfortable self-hosting, Radicale is the smoother long-term road.
+
 ---
 
-## 9. Testing model
+## 9. When a dictation goes unanswered
+
+Nothing acknowledges delivery end-to-end, so "I dictated something and nothing came back" is
+the failure you are most likely to meet. Work through it in this order — each step
+distinguishes a different cause, and the early steps are the common ones.
+
+> **Silence is not the same as "no reply."** The most frequent cause is a reply that arrived
+> correctly but never announced itself, because push is best-effort and fails invisibly.
+> **Always check the outbox list before assuming nothing happened.**
+
+1. **Look in the outbox list on your phone.** If the reply is sitting there, delivery worked
+   end to end and only the notification failed — check that a notification topic is
+   configured, and that the notification server is reachable.
+2. **Is the dictation still sitting in your inbox list?** Two different meanings:
+   - The bridge is not running, or cannot reach the backend → check `status`, then `doctor`.
+   - It *was* delivered but the "mark handled" step failed silently — a known limitation. Look
+     at the mailbox before re-dictating, or you will send it twice.
+3. **Look in the peer's inbox file** with `tail`. If your line is there, the bridge did its
+   whole job and the question is whether anything is *reading* that file.
+4. **Is a peer actually attached?** The bridge cannot detect this, and it is a very common
+   cause: a correctly delivered dictation with no agent reading the mailbox simply sits there
+   forever. Confirm an agent is running and joined to the same mailbox directory.
+5. **Run `doctor`.** It surveys every interface at once — credentials, session, lists,
+   mailbox — and reports the worst thing it finds. Use it to catch what the targeted checks
+   above missed.
+6. **Check the log.** Run with `--verbose`, or point `--log-file` somewhere durable, and look
+   for authentication failures and backend errors around the time you dictated.
+
+If step 3 shows the line delivered and step 4 confirms a peer is attached, the bridge has done
+everything it promises — the remaining question is on the agent's side, not this tool's.
+
+---
+
+## 10. Testing model
 
 Every capability is tested against a controllable oracle, and the network is touched only
 where a real server can be embedded.
@@ -335,7 +418,7 @@ therefore the one part of the system whose first real test is a live run.
 
 ---
 
-## 10. Deliberately open
+## 11. Deliberately open
 
 - **Multi-line replies** — currently one line per message, matching the mailbox format. A
   block delimiter would be added only if real usage demands it.

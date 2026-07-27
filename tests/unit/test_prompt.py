@@ -68,3 +68,32 @@ def test_rendered_prompt_keeps_the_instructions(sample_config):
     assert "VOX" in out
     assert len(out.splitlines()) > 20
     assert out.strip().startswith("You are VOX")
+
+
+# --------------------------------------------------------------------------- #
+# UX-5 — give the phone the ids, so it never has to guess
+# --------------------------------------------------------------------------- #
+
+
+def test_pinned_ids_are_carried_into_the_prompt(sample_config):
+    """Filed by the phone persona itself: it was guessing which list to use.
+
+    A real account here holds 21 lists including same-named ghosts, so matching
+    by name is a coin flip that silently sends dictations somewhere nobody reads.
+    When ids are pinned, the prompt states them — the phone should not have to
+    infer what the config already knows.
+    """
+    import dataclasses
+
+    cfg = dataclasses.replace(
+        sample_config, inbox_list_id="4694399A-AAAA", output_list_id="3D75266C-BBBB"
+    )
+    out = prompt.render_vox_prompt(cfg)
+    assert "4694399A-AAAA" in out
+    assert "3D75266C-BBBB" in out
+
+
+def test_unpinned_config_says_nothing_about_ids(sample_config):
+    """No pins, no claim — an id line that isn't authoritative is worse than none."""
+    out = prompt.render_vox_prompt(sample_config)
+    assert "identifier" not in out.lower()

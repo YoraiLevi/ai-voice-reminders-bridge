@@ -312,3 +312,44 @@ def test_ctrl_c_stops_cleanly_and_still_ejects(sample_config, fake_transport, mo
         "the peer must still see us leave"
     )
     assert not (sample_config.state_dir / "poller.pid").exists(), "pidfile must be cleaned up"
+
+
+# --------------------------------------------------------------------------- #
+# UX-4 — stamp once
+# --------------------------------------------------------------------------- #
+
+
+def test_a_drained_line_is_stamped_once_not_twice(sample_config, fake_transport):
+    """The banner read "[23:05][vox] - [23:06] (manager) buy milk".
+
+    A mailbox line already carries its own `- [HH:MM] (who)` stamp, and the drain
+    passed the whole line to send_reply, which stamped it again. Two clocks and
+    two speakers in one notification, on the small screen where brevity matters
+    most.
+    """
+    from voice_bridge.mailbox import format_mailbox_line
+
+    _replies(sample_config, format_mailbox_line("buy milk", from_name="manager"))
+    poller.drain_replies(sample_config, fake_transport)
+
+    outbox = fake_transport.resolve_list(sample_config.output_list, "")
+    item = fake_transport.read_incomplete(outbox)[0]
+
+    # The stamp is `[HH:MM][vox]`, so brackets are not the measure — TIMESTAMPS are.
+    import re
+
+    times = re.compile(r"\[\d{2}:\d{2}\]")
+    assert len(times.findall(item.title)) == 1, f"one timestamp only, got {item.title!r}"
+    assert "(manager)" not in item.title, "the mailbox framing is not for the phone"
+    assert "buy milk" in item.title
+    assert len(times.findall(item.notes)) == 1, f"notes single-stamped too, got {item.notes!r}"
+
+
+def test_a_line_without_a_mailbox_stamp_is_untouched(sample_config, fake_transport):
+    """Only a LEADING mailbox stamp is removed — arbitrary text keeps its brackets."""
+    _replies(sample_config, "look at [this] bracketed thing")
+    poller.drain_replies(sample_config, fake_transport)
+
+    outbox = fake_transport.resolve_list(sample_config.output_list, "")
+    item = fake_transport.read_incomplete(outbox)[0]
+    assert "[this] bracketed thing" in item.title

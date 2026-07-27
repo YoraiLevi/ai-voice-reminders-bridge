@@ -143,6 +143,25 @@ def compact_seen(seen_file: Path, live_ids: set[str]) -> None:
     atomic_write(seen_file, ("\n".join(sorted(keep)) + "\n") if keep else "")
 
 
+#: `- [HH:MM] (who) body` — the mailbox's own framing, with the time wildcarded.
+_MAILBOX_LINE_RE = re.compile(r"^-\s*\[\d{2}:\d{2}\]\s*\((?P<who>.*?)\)\s*(?P<body>.*)$")
+
+
+def strip_mailbox_prefix(line: str) -> str:
+    """The message inside a mailbox line, without the line's own framing.
+
+    A mailbox line already carries a timestamp and a speaker. Forwarding it to the
+    phone verbatim and stamping it again produced two clocks and two names in one
+    notification — on the smallest screen the system has (UX-4). The framing is
+    for the mailbox; the phone wants the message.
+
+    Only a LEADING mailbox stamp is removed, so ordinary text containing brackets
+    survives untouched.
+    """
+    match = _MAILBOX_LINE_RE.match(line.strip())
+    return match.group("body").strip() if match else line
+
+
 def strip_astral(text: str) -> str:
     """Drop characters outside the Basic Multilingual Plane (emoji, mostly).
 

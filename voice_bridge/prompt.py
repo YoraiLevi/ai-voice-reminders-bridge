@@ -67,7 +67,35 @@ def render_vox_prompt(cfg: Config) -> str:
             f"the installation looks incomplete: {exc}",
         ) from exc
 
-    return Template(_strip_comments(raw)).substitute(
+    rendered = Template(_strip_comments(raw)).substitute(
         inbox_list=cfg.inbox_list,
         output_list=cfg.output_list,
     )
+    return rendered + _pinned_ids(cfg)
+
+
+def _pinned_ids(cfg: Config) -> str:
+    """State the list identifiers when the config pins them, otherwise say nothing.
+
+    Requested by the phone persona itself, which was having to guess which list it
+    meant. A real account can hold dozens of lists including same-named ghosts, so
+    matching by name is a coin flip that silently sends dictations to a list nobody
+    reads — and the config already knows the answer.
+
+    Nothing is emitted when the pins are absent: an identifier line that is not
+    authoritative is worse than no line at all, because it invites the same
+    guessing while looking like fact.
+    """
+    if not (cfg.inbox_list_id or cfg.output_list_id):
+        return ""
+
+    lines = [
+        "",
+        "AUTHORITATIVE LIST IDENTIFIERS — use these exactly; do NOT match by name,",
+        "because several lists may share a title and only these ids are unambiguous.",
+    ]
+    if cfg.inbox_list_id:
+        lines.append(f'  "{cfg.inbox_list}" (you dictate here) = {cfg.inbox_list_id}')
+    if cfg.output_list_id:
+        lines.append(f'  "{cfg.output_list}" (answers arrive here) = {cfg.output_list_id}')
+    return "\n".join(lines) + "\n"

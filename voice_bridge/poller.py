@@ -29,6 +29,7 @@ from .mailbox import (
     first_url,
     format_mailbox_line,
     strip_astral,
+    strip_mailbox_prefix,
     frontload_link,
     join_line,
     load_seen,
@@ -127,7 +128,9 @@ def drain_replies(cfg: Config, t: Transport, *, now: datetime | None = None) -> 
         consumed += len((raw + "\n").encode("utf-8"))
         line = raw.strip()
         if line and not line.startswith("#"):
-            send_reply(cfg, t, line, now=now)
+            # Drop the mailbox's own `- [HH:MM] (who)` framing before restamping,
+            # or the phone shows two timestamps and two speakers (UX-4).
+            send_reply(cfg, t, strip_mailbox_prefix(line), now=now)
             n += 1
         save_cursor(cfg.reply_cursor_file, consumed)
     return n

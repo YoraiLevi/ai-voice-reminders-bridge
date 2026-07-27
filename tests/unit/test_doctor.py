@@ -191,3 +191,53 @@ def test_exit_code_is_the_worst_row(sample_config, fake_transport, capsys):
 
     sample_config.creds_env.write_text("", encoding="utf-8")  # now RED
     assert doctor_mod.run(sample_config, fake_transport) == 2
+
+
+def test_fix_clears_a_dangling_pin_rather_than_re_resolving_it(
+    sample_config, ghost_transport, capsys
+):
+    """A dead pin means the list you chose is gone.
+
+    Re-resolving by name would hand back a DIFFERENT list under a repair verb — a
+    silent substitution disguised as a fix. Clearing is honest: it restores the
+    "we don't know yet" state, and the next interactive run asks properly.
+    """
+    import dataclasses
+    import json
+    from pathlib import Path
+
+    cfg = dataclasses.replace(sample_config, inbox_list_id="GONE")
+    doctor_mod.run(cfg, ghost_transport, fix=True)
+
+    written = json.loads(Path(cfg.source).read_text(encoding="utf-8"))
+    assert written["inbox_list_id"] == "", "the dead pin must be cleared"
+    assert written["inbox_list_id"] not in ("L1", "L9"), "it must NOT silently re-resolve"
+    assert "cleared" in capsys.readouterr().out
+
+
+def test_the_survey_alone_never_clears_a_pin(sample_config, ghost_transport, capsys):
+    """Read-only means read-only; --fix is the consent."""
+    import dataclasses
+    import json
+    from pathlib import Path
+
+    cfg = dataclasses.replace(sample_config, inbox_list_id="GONE")
+    doctor_mod.run(cfg, ghost_transport)
+
+    written = json.loads(Path(cfg.source).read_text(encoding="utf-8"))
+    assert "inbox_list_id" not in written
+    assert "lists --pin" in capsys.readouterr().out, "it must name the way to re-pin"
+
+
+def test_case_twin_lists_are_reported_as_a_conflict(sample_config, capsys):
+    """Exact-name matching found precisely one and reported GREEN — the false-GREEN
+    class this module exists to purge."""
+    from voice_bridge.transport import FakeTransport
+
+    t = FakeTransport()
+    t.add_list("Vox-Message-Outbox", "T1")
+    t.add_list("vox-message-outbox", "T2")
+    t.add_list("Vox-Message-Inbox", "T3")
+
+    doctor_mod.run(sample_config, t)
+    assert _rows(capsys)["lists"] != "GREEN"

@@ -16,13 +16,14 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from . import ntfy
-from .config import Config, load_config, read_raw, resolve_config_path, write_raw
+from .config import Config, load_config, read_raw, resolve_config_path, set_value, write_raw
 from .errors import is_transient
 from .factory import make_transport
 from .mailbox import format_mailbox_line
+from .pins import pick, resolve_pins
 from .transport import NotSupportedError, Transport
 
 #: Fields worth asking about on a guided run — the ones people actually change.
@@ -255,6 +256,10 @@ def run_setup(
     try:
         for line in provision(cfg, t):
             print(line)
+        # Pin the ids NOW, while the answer is still unambiguous (UX-6). A ghost
+        # that appears later is indistinguishable from the real list by name.
+        if settle_pins(cfg, t, config_path=path):
+            cfg = load_config(path)
     except NotSupportedError as exc:
         print(f"error: {exc}")
         return 2
@@ -294,3 +299,67 @@ def run_setup(
             return 2
         print("verified: a message makes the round trip.")
     return 0
+
+
+def settle_pins(
+    cfg: Config,
+    t: Transport,
+    *,
+    config_path: Path,
+    ask: Callable[[str], str] = input,
+    show: Callable[[str], None] = print,
+    is_tty: Callable[[], bool] | None = None,
+) -> int:
+    """Pin both list ids at setup time, asking only when a name is ambiguous.
+
+    Pinning here — at the very beginning — is what stops the system ever guessing.
+    A name resolves to whichever same-named list the backend happens to return
+    first, so an unpinned setup on a cluttered account is a coin flip whose result
+    is invisible: dictations land in a real list that nobody reads.
+
+    Three behaviours, and the third is the one that matters:
+
+    * **unambiguous** — pin silently. There is nothing to ask.
+    * **ambiguous on a terminal** — ask, using the same picker `lists --pin` uses.
+    * **ambiguous with no terminal** — do NOT ask. A prompt written to a pipe
+      blocks for ever, or reads EOF and takes an answer nobody gave. Warn loudly
+      and name `lists --pin` instead.
+
+    Returns the number of pins written.
+    """
+    plan = resolve_pins(cfg, t)
+    written = 0
+
+    for res in plan.resolutions:
+        if res.status == "chosen" and not res.current:
+            # One list matches and nothing is pinned yet: record the id now, while
+            # the answer is unambiguous. Later, a ghost with the same name may
+            # appear — and by then there is no way to tell which one was meant.
+            set_value(config_path, res.field, res.chosen)
+            written += 1
+            continue
+
+        if res.status != "ambiguous":
+            continue
+
+        if not (is_tty or _is_tty)():
+            show(
+                f'warning: {len(res.candidates)} lists are named "{res.name}" and none is '
+                f"pinned.\n"
+                f"         Dictations may go to the wrong one. Pin it with:\n"
+                f"           voice-bridge lists --pin"
+            )
+            continue
+
+        choice = pick(res, ask=ask, show=show)
+        if choice.action == "pin":
+            set_value(config_path, res.field, choice.list_id)
+            show(f"  pinned {choice.list_id}")
+            written += 1
+        else:
+            show(
+                f'  left unpinned — "{res.name}" is still ambiguous. '
+                f"Run `voice-bridge lists --pin` when you know which one you want."
+            )
+
+    return written

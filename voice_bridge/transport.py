@@ -16,10 +16,25 @@ from dataclasses import dataclass, field
 @dataclass(frozen=True)
 class ListRef:
     """A todo list as the backend sees it — name plus a stable id (GUID / record id).
-    The id is what makes list resolution ghost-safe (duplicate titles disambiguated)."""
+    The id is what makes list resolution ghost-safe (duplicate titles disambiguated).
+
+    The trailing fields are OPTIONAL display metadata, used to tell same-named lists
+    apart in the picker. They are deliberately the things a user can SEE on their
+    phone, so a row can be matched to the list they recognise — and they ride along
+    in data the backend already returned, so showing them costs no extra call.
+
+    There is no date field because pyicloud 2.6.5's RemindersList has none
+    (`id, title, color, count, badge_emblem, sorting_style, is_group, reminder_ids,
+    guid, record_change_tag`). A plausible "last modified" column would be a
+    fabrication, which is precisely what pinning exists to eliminate.
+    """
 
     name: str
     id: str
+    count: int | None = None
+    color: str = ""
+    badge_emblem: str = ""
+    is_group: bool = False
 
 
 @dataclass(frozen=True)
@@ -93,8 +108,12 @@ class FakeTransport(Transport):
     _seq: int = 0
     connected: bool = False
 
-    def add_list(self, name: str, list_id: str | None = None) -> ListRef:
-        ref = ListRef(name=name, id=list_id or f"list-{name.lower().replace(' ', '-')}")
+    def add_list(self, name: str, list_id: str | None = None, **meta: object) -> ListRef:
+        ref = ListRef(
+            name=name,
+            id=list_id or f"list-{name.lower().replace(' ', '-')}",
+            **meta,  # type: ignore[arg-type]
+        )
         self._lists.append(ref)
         self._items.setdefault(ref.id, [])
         return ref

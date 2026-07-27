@@ -20,13 +20,14 @@ from . import status as status_mod
 from . import tailer
 from .config import (
     ConfigError,
+    default_config_path,
     field_help,
     load_config,
     parse_overrides,
     resolve_config_path,
     set_value,
 )
-from .commands import connected_transport, list_command, peek_command
+from .commands import connected_transport, list_command, peek_command, pin_command
 from .errors import CommandError
 from .runner import run_command
 
@@ -115,7 +116,25 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     d.add_argument("--fix", action="store_true")
 
-    sub.add_parser("lists", help="enumerate transport lists with their ids")
+    ls = sub.add_parser(
+        "lists",
+        help="enumerate transport lists with their ids",
+        formatter_class=_RAW,
+        epilog=_epilog(
+            "--pin manages which list each role points at: keep, change or clear the pin,\n"
+            "choosing from the lists sharing the configured name. It runs even when the\n"
+            "name is unambiguous, because 'change' means change. It needs a terminal.\n"
+            "\n"
+            "The rest of the pin toolkit, so the verbs are discoverable together:\n"
+            "  voice-bridge config set inbox_list_id <id>  set a pin directly\n"
+            "  voice-bridge doctor                         report a pin pointing at nothing\n"
+        ),
+    )
+    ls.add_argument(
+        "--pin",
+        action="store_true",
+        help="interactively keep/change/clear the list pins (needs a terminal)",
+    )
 
     pk = sub.add_parser("peek", help="show messages in a box")
     pk.add_argument("--box", choices=("inbox", "outbox"), default="inbox")
@@ -340,6 +359,13 @@ def _dispatch(args) -> int:  # noqa: C901 - a flat command table
         return 0
 
     if cmd == "lists":
+        if args.pin:
+            path, _ = resolve_config_path(args.config, must_exist=False)
+            return pin_command(
+                cfg,
+                connected_transport(cfg),
+                config_path=path or default_config_path(),
+            )
         return list_command(cfg, connected_transport(cfg), as_json=args.json)
 
     if cmd == "peek":

@@ -43,6 +43,14 @@ addopts = "-q -ra"
 line-length = 100
 extend-exclude = [".archive", "radicale"]
 
+[tool.ruff.lint]
+# Pinned to the set ruff 0.15.21 selects by default TODAY, verified with
+# `ruff check --show-settings`. Relying on the tool's own default means the
+# gate silently redefines itself on a lock bump: 0.16.0 adds isort (I), which
+# flags ~20 findings this tree does not have today. A gate that changes when
+# you weren't looking is not a gate — widen this list deliberately, or not at all.
+select = ["E4", "E7", "E9", "F"]
+
 [tool.mypy]
 python_version = "3.11"
 ignore_missing_imports = true  # optional untyped backends: pyicloud/caldav/icalendar/radicale/bcrypt

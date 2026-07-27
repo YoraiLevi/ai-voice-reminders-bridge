@@ -14,11 +14,14 @@ poller uses), so every branch can be driven by an in-memory fake.
 from __future__ import annotations
 
 import json
+import sys
+from pathlib import Path
 from typing import Callable
 
-from .config import Config
+from .config import Config, set_value
 from .errors import CommandError, raise_command_error
 from .factory import make_transport
+from .pins import pick, resolve_pins
 from .transport import Transport
 
 
@@ -151,4 +154,84 @@ def peek_command(
     return 0
 
 
-__all__ = ["CommandError", "connected_transport", "list_command", "peek_command"]
+# --------------------------------------------------------------------------- #
+# lists --pin  — the management door onto the one resolver
+# --------------------------------------------------------------------------- #
+
+
+def _tty() -> bool:
+    return sys.stdin.isatty()
+
+
+def pin_command(
+    cfg: Config,
+    t: Transport,
+    *,
+    config_path: Path,
+    ask: Callable[[str], str] = input,
+    show: Callable[[str], None] = print,
+    is_tty: Callable[[], bool] | None = None,
+) -> int:
+    """Manage the list pins interactively — keep, change, or clear each one.
+
+    This is *management*, not merely disambiguation: it runs even when a name is
+    unambiguous, because "change" has to mean change. Pins are the only thing
+    standing between a dictation and a same-named ghost, so they must be
+    adjustable without hand-editing JSON or looking up a GUID.
+
+    Every decision here comes from `resolve_pins` and is presented by the shared
+    `pick` — the same engine and the same component `setup` uses. Two pickers
+    would drift apart exactly the way two resolvers would.
+    """
+    if not (is_tty or _tty)():
+        # Never prompt a pipe: it blocks for ever, or reads EOF and takes an
+        # answer nobody gave. Say what happened and name the fix instead.
+        show("error: `lists --pin` is interactive and stdin is not a terminal.")
+        show("       Run it in a terminal, or set the id directly:")
+        show("       voice-bridge config set inbox_list_id <id>   (see `voice-bridge lists`)")
+        return 2
+
+    plan = resolve_pins(cfg, t)
+    changed = 0
+
+    for res in plan.resolutions:
+        label = "dictations arrive in" if res.role == "inbox" else "replies go out to"
+        show("")
+        show(f'{res.role}: "{res.name}" — {label} this list')
+
+        if res.status == "missing":
+            # Nothing to choose between. Creating a list is `setup`'s job, not a
+            # picker's, so say so rather than offering an empty menu.
+            show(f'  no list named "{res.name}" exists — run `voice-bridge setup` to create it.')
+            continue
+
+        if res.status == "dangling":
+            show(f"  the current pin {res.current} no longer exists — pick a replacement.")
+
+        choice = pick(res, ask=ask, show=show)
+
+        if choice.action == "pin":
+            set_value(config_path, res.field, choice.list_id)
+            show(f"  pinned {choice.list_id}")
+            changed += 1
+        elif choice.action == "clear":
+            set_value(config_path, res.field, "")
+            show("  pin cleared — this list will be matched by name again.")
+            changed += 1
+        else:
+            show("  unchanged.")
+
+    if changed:
+        show("")
+        show("config updated. Re-run `voice-bridge vox-prompt | clip` — the prompt carries")
+        show("these ids, so the phone must be given the new ones.")
+    return 0
+
+
+__all__ = [
+    "CommandError",
+    "connected_transport",
+    "list_command",
+    "peek_command",
+    "pin_command",
+]

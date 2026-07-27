@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import dataclasses
+
 import pytest
 
-from voice_bridge.config import ConfigError, load_config, parse_overrides
+from voice_bridge import config
+from voice_bridge.config import ENV_VAR, ConfigError, load_config, parse_overrides
 
 
 def test_defaults_are_the_vox_spoke(sample_config):
@@ -90,3 +93,105 @@ def _write(tmp_path, tmp_mailbox):
         encoding="utf-8",
     )
     return p
+
+
+# --------------------------------------------------------------------------- #
+# CFG-1 — one resolver for read AND write
+# --------------------------------------------------------------------------- #
+
+def test_resolve_prefers_explicit_over_everything(tmp_path, monkeypatch):
+    monkeypatch.setenv(ENV_VAR, str(tmp_path / "from-env.json"))
+    explicit = tmp_path / "explicit.json"
+    path, provider = config.resolve_config_path(explicit)
+    assert path == explicit
+    assert "--config" in provider
+
+
+def test_resolve_honours_the_env_var(tmp_path, monkeypatch):
+    target = tmp_path / "from-env.json"
+    monkeypatch.setenv(ENV_VAR, str(target))
+    path, provider = config.resolve_config_path(None)
+    assert path == target
+    assert ENV_VAR in provider
+
+
+def test_resolve_falls_back_to_project_local(tmp_path, monkeypatch):
+    monkeypatch.delenv(ENV_VAR, raising=False)
+    monkeypatch.chdir(tmp_path)
+    local = tmp_path / ".claude" / "voice-bridge.json"
+    local.parent.mkdir(parents=True)
+    local.write_text("{}", encoding="utf-8")
+    path, provider = config.resolve_config_path(None)
+    assert path == local
+    assert ".claude" in provider
+
+
+def test_resolve_for_read_reports_no_file_but_for_write_names_the_target(tmp_path, monkeypatch):
+    """Reading with nothing present means "use defaults"; writing still needs a target."""
+    monkeypatch.delenv(ENV_VAR, raising=False)
+    monkeypatch.chdir(tmp_path)
+    assert config.resolve_config_path(None)[0] is None
+    write_target, _ = config.resolve_config_path(None, must_exist=False)
+    assert write_target == tmp_path / ".claude" / "voice-bridge.json"
+
+
+def test_set_then_get_round_trips_under_the_env_var(tmp_path, monkeypatch):
+    """The CFG-1 regression: `set` wrote one file while `get` read another.
+
+    With $VOICE_BRIDGE_CONFIG pointing off-default, `config set` used to write
+    ./.claude/voice-bridge.json while every read honoured the env var — so a
+    setting appeared to save and then silently did nothing.
+    """
+    monkeypatch.chdir(tmp_path)
+    target = tmp_path / "elsewhere" / "vb.json"
+    target.parent.mkdir()
+    monkeypatch.setenv(ENV_VAR, str(target))
+
+    write_path, _ = config.resolve_config_path(None, must_exist=False)
+    config.set_value(write_path, "poll_interval", "42")
+
+    assert target.exists(), "set must write the file reads resolve to"
+    assert not (tmp_path / ".claude").exists(), "must not write the project-local default"
+    assert load_config(None).poll_interval == 42
+
+
+# --------------------------------------------------------------------------- #
+# CFG-3 — as_dict mirrors the dataclass and cannot drift
+# --------------------------------------------------------------------------- #
+
+def test_as_dict_covers_every_dataclass_field(sample_config):
+    """Hand-typed views drift. Deriving from the dataclass makes drift impossible."""
+    declared = {f.name for f in dataclasses.fields(sample_config)}
+    assert declared <= set(sample_config.as_dict()), (
+        "fields missing from as_dict: " f"{sorted(declared - set(sample_config.as_dict()))}"
+    )
+
+
+def test_config_get_finds_a_previously_unknown_field(sample_config):
+    """`seen_file` is a real field that `config get` used to reject as unknown."""
+    d = sample_config.as_dict()
+    for field in ("seen_file", "reply_cursor_file", "our_inbox", "peer_inbox"):
+        assert d.get(field), f"{field} should be visible to `config get`"
+
+
+def test_as_dict_values_are_all_strings(sample_config):
+    assert all(isinstance(v, str) for v in sample_config.as_dict().values())
+
+
+# --------------------------------------------------------------------------- #
+# CFG-4 — an error names the provider that chose the path
+# --------------------------------------------------------------------------- #
+
+def test_missing_config_error_names_the_env_var(tmp_path, monkeypatch):
+    """Otherwise "config file not found" is unactionable: found by *what*?"""
+    monkeypatch.setenv(ENV_VAR, str(tmp_path / "ghost.json"))
+    with pytest.raises(ConfigError) as err:
+        load_config(None)
+    assert ENV_VAR in str(err.value)
+    assert "ghost.json" in str(err.value)
+
+
+def test_missing_explicit_config_names_the_flag(tmp_path):
+    with pytest.raises(ConfigError) as err:
+        load_config(tmp_path / "nope.json")
+    assert "--config" in str(err.value)

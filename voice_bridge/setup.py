@@ -6,7 +6,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from .config import Config, default_config_path, load_config, read_raw, write_raw
+from .config import Config, load_config, read_raw, resolve_config_path, write_raw
 from .factory import make_transport
 from .transport import NotSupportedError, Transport
 
@@ -50,7 +50,8 @@ def run_setup(
     overrides: dict | None = None,
 ) -> int:
     """Write config + provision. Returns 0, or 2 on a guard error."""
-    path = Path(config_path) if config_path else default_config_path()
+    path, _ = resolve_config_path(config_path, must_exist=False)
+    assert path is not None  # must_exist=False always names a target
     write_config(path, transport=transport, overrides=overrides)
     cfg = load_config(path)
 

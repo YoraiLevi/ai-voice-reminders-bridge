@@ -8,7 +8,7 @@ from pathlib import Path
 from . import poller
 from . import server as server_mod
 from . import setup as setup_mod
-from .config import default_config_path, load_config
+from .config import load_config, resolve_config_path
 from .factory import make_transport
 
 
@@ -24,7 +24,8 @@ def run_command(
     overrides: dict | None = None,
     with_server: bool = False,
 ) -> int:
-    path = Path(config_path) if config_path else default_config_path()
+    path, _ = resolve_config_path(config_path, must_exist=False)
+    assert path is not None  # must_exist=False always names a target
     ov = dict(overrides or {})
     if mailbox:
         ov["mailbox_dir"] = mailbox

@@ -23,7 +23,7 @@ from __future__ import annotations
 import json
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any
 
@@ -131,35 +131,20 @@ class Config:
     source: str = "defaults"
 
     def as_dict(self) -> dict[str, str]:
-        """Flat printable view (for `config show` / `--show-config`)."""
-        return {
-            "source": self.source,
-            "spoke_name": self.spoke_name,
-            "route_to": self.route_to,
-            "from_name": self.from_name,
-            "inbox_list": self.inbox_list,
-            "output_list": self.output_list,
-            "inbox_list_id": self.inbox_list_id,
-            "output_list_id": self.output_list_id,
-            "mailbox_dir": str(self.mailbox_dir),
-            "state_dir": str(self.state_dir),
-            "transport": self.transport,
-            "ntfy_server": self.ntfy_server,
-            "ntfy_title": self.ntfy_title,
-            "ntfy_tags": self.ntfy_tags,
-            "ntfy_priority": self.ntfy_priority,
-            "ntfy_body_limit": str(self.ntfy_body_limit),
-            "reply_summary_limit": str(self.reply_summary_limit),
-            "poll_interval": str(self.poll_interval),
-            "radicale_host": self.radicale_host,
-            "radicale_port": str(self.radicale_port),
-            "radicale_user": self.radicale_user,
-            "creds_env": str(self.creds_env),
-            "cookie_dir": str(self.cookie_dir),
-            "ntfy_topic_file": str(self.ntfy_topic_file),
-            "our_inbox": str(self.our_inbox),
-            "peer_inbox": str(self.peer_inbox),
-        }
+        """Flat printable view of the FULL resolved state (`config show`/`get`).
+
+        Derived from `dataclasses.fields` rather than hand-listed, so it cannot
+        drift as fields are added: the hand-written version had fallen behind, and
+        real fields such as `seen_file` were reported as "unknown field" (CFG-3).
+
+        This is the full state; the *settable* subset is a different question and
+        is answered by `field_help()`.
+        """
+        out = {"source": self.source}
+        out.update(
+            {f.name: str(getattr(self, f.name)) for f in fields(self) if f.name != "source"}
+        )
+        return out
 
 
 def parse_overrides(pairs: list[str] | None) -> dict[str, Any]:
@@ -214,16 +199,37 @@ def field_help() -> list[tuple[str, str]]:
     return rows
 
 
-def _find_config_path(explicit: str | Path | None) -> Path | None:
+def resolve_config_path(
+    explicit: str | Path | None = None, *, must_exist: bool = True
+) -> tuple[Path | None, str]:
+    """Decide which config file to use, and report which provider decided.
+
+    **One resolver for reads and writes.** They used to disagree: writes always
+    targeted the project-local file while reads honoured `$VOICE_BRIDGE_CONFIG`
+    first, so with the variable set a `config set` appeared to succeed and then
+    silently did nothing (CFG-1).
+
+    `must_exist=True` (reads) returns `(None, ...)` when no file is present —
+    the caller falls back to defaults. `must_exist=False` (writes) still names
+    the project-local path, because that is the file to *create*.
+
+    The provider string exists so an error can say *why* this path was chosen;
+    "config file not found" is unactionable without it (CFG-4).
+    """
     if explicit:
-        return _expand(explicit)
+        return _expand(explicit), "--config"
     env = os.environ.get(ENV_VAR)
     if env:
-        return _expand(env)
+        return _expand(env), f"${ENV_VAR}"
     local = Path.cwd() / DEFAULT_REL_PATH
-    if local.exists():
-        return local
-    return None
+    if local.exists() or not must_exist:
+        return local, f"./{DEFAULT_REL_PATH.as_posix()}"
+    return None, "defaults"
+
+
+def _find_config_path(explicit: str | Path | None) -> Path | None:
+    """Backwards-compatible shim for callers that only want the path."""
+    return resolve_config_path(explicit)[0]
 
 
 def load_config(
@@ -231,12 +237,14 @@ def load_config(
 ) -> Config:
     """Build a resolved Config. Missing file -> defaults; present-but-broken -> raise.
     `overrides` (e.g. from --set) win over the file and defaults."""
-    cfg_path = _find_config_path(path)
+    cfg_path, provider = resolve_config_path(path)
     data: dict[str, Any] = {}
     source = "defaults (no config file found)"
     if cfg_path is not None:
         if not cfg_path.exists():
-            raise ConfigError(f"config file not found: {cfg_path}")
+            # Name the provider: the same message is otherwise unactionable when
+            # the path came from an environment variable the user forgot about.
+            raise ConfigError(f"config file not found: {cfg_path} (from {provider})")
         try:
             data = json.loads(cfg_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError as exc:

@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 import json
 from importlib.resources import files
-from pathlib import Path
 
 from . import deliver as deliver_mod
 from . import doctor as doctor_mod
@@ -19,10 +18,10 @@ from . import setup as setup_mod
 from . import status as status_mod
 from .config import (
     ConfigError,
-    default_config_path,
     field_help,
     load_config,
     parse_overrides,
+    resolve_config_path,
     set_value,
 )
 from .factory import make_transport
@@ -320,7 +319,9 @@ def _config_cmd(args, cfg_path) -> int:
             print(f"  {key:<22} {default}")
         return 0
     if op == "set":
-        path = Path(cfg_path) if cfg_path else default_config_path()
+        # Same resolver reads use, or `set` writes a file `get` never looks at.
+        path, _ = resolve_config_path(cfg_path, must_exist=False)
+        assert path is not None  # must_exist=False always names a target
         set_value(path, args.key, args.value)
         print(f"set {args.key} = {args.value}")
         return 0

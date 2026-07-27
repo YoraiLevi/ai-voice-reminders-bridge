@@ -69,6 +69,34 @@ peer sees it join and leave like any worker.
     $VB config show         # resolved settings   ($VB config --help = every field)
     $VB config set poll_interval 30
 
+## Command reference
+
+| command | what it does |
+|---|---|
+| `run` | ensure everything is set up, then bridge continuously |
+| `setup [--verify]` | provision config, auth and lists; `--verify` proves a message round-trips |
+| `doctor [--fix]` | survey every interface; read-only unless `--fix` |
+| `status` | a glance at the spoke's health |
+| `lists` | every backend list with its ID (needed to pin a ghost) |
+| `peek --box inbox\|outbox [-n N]` | what is sitting in a box right now |
+| `tail [-n N] [-f]` | follow the mailbox files |
+| `send TEXT` | push one message through the outbound path |
+| `notify TEXT [--click URL]` | send a push notification |
+| `deliver FILE` | publish a file and send a tappable link |
+| `config show \| get \| set \| fields` | inspect and edit settings |
+| `icloud-login` | establish the iCloud session, including two-factor |
+| `vox-prompt` | print the phone-side prompt, rendered with your list names |
+| `radicale-server init \| start \| stop \| status \| url` | manage the self-hosted backend |
+
+**Exit codes are uniform**, so you can script against them: **0** success · **1** nothing to
+do, or a transient failure worth retrying · **2** you must act (usage, configuration, or
+something missing).
+
+> **`run --once` exiting 1 is normal.** It means the cycle ran fine and there was simply
+> nothing new to move — not that anything failed. Treat 2 as the error case.
+
+Every command's `--help` carries its own caveats and the exit-code table.
+
 ## Transports
 
 | | **iCloud** (default) | **Radicale** |

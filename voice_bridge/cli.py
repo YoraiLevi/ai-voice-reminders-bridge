@@ -33,9 +33,30 @@ from .runner import run_command
 _TRANSPORTS = ("icloud", "radicale")
 
 
+#: One convention across every command, so a script can branch on the code
+#: without special-casing: 0 did the thing · 1 nothing to do, or a transient
+#: failure worth retrying · 2 you must act.
+_EXIT_CODES = """
+exit codes:
+  0  success
+  1  nothing to do, or a transient failure worth retrying
+  2  you must act — usage, configuration, or something missing
+"""
+
+_RAW = argparse.RawDescriptionHelpFormatter
+
+
+def _epilog(extra: str = "") -> str:
+    """A command's own caveats, followed by the shared exit-code table."""
+    return (extra.rstrip() + "\n" if extra else "") + _EXIT_CODES
+
+
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="voice-bridge", description="A voice spoke for a file-mailbox."
+        prog="voice-bridge",
+        description="A voice spoke for a file-mailbox.",
+        epilog=_EXIT_CODES,
+        formatter_class=_RAW,
     )
     p.add_argument("--config", metavar="PATH", help="explicit voice-bridge.json")
     p.add_argument("-v", "--verbose", action="store_true", help="INFO logging")
@@ -44,7 +65,16 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--json", action="store_true", help="machine-readable output where supported")
     sub = p.add_subparsers(dest="cmd")
 
-    r = sub.add_parser("run", help="ensure everything, then bridge (the main command)")
+    r = sub.add_parser(
+        "run",
+        help="ensure everything, then bridge (the main command)",
+        formatter_class=_RAW,
+        epilog=_epilog(
+            "--once exits 1 when it ran fine and there was simply nothing new — that is a\n"
+            "normal result, not a failure. It refuses to start beside a live poller unless\n"
+            "--force is given, and --dry-run writes nothing at all."
+        ),
+    )
     r.add_argument("--mailbox")
     r.add_argument("--transport", choices=_TRANSPORTS)
     r.add_argument("--require-mailbox", action="store_true")
@@ -57,12 +87,30 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     r.add_argument("--set", action="append", dest="overrides", metavar="KEY=VALUE")
 
-    s = sub.add_parser("setup", help="provision the transport (config + lists)")
+    s = sub.add_parser(
+        "setup",
+        help="provision the transport (config + lists)",
+        formatter_class=_RAW,
+        epilog=_epilog(
+            "Prompts only on a terminal; --set pre-answers a field and skips its prompt.\n"
+            "--verify sends a real probe through the whole path and cleans up after itself,\n"
+            "exiting 2 if a message does not complete the round trip."
+        ),
+    )
     s.add_argument("--transport", choices=_TRANSPORTS, default="icloud")
     s.add_argument("--set", action="append", dest="overrides", metavar="KEY=VALUE")
     s.add_argument("--verify", action="store_true", help="prove a message round-trips")
 
-    d = sub.add_parser("doctor", help="survey the setup; --fix repairs safe items")
+    d = sub.add_parser(
+        "doctor",
+        help="survey the setup; --fix repairs safe items",
+        formatter_class=_RAW,
+        epilog=_epilog(
+            "Read-only: the survey never creates anything, so a missing mailbox is REPORTED\n"
+            "rather than silently made — --fix is the consent to repair. The exit code is the\n"
+            "worst row found, so a script can gate on it."
+        ),
+    )
     d.add_argument("--fix", action="store_true")
 
     sub.add_parser("lists", help="enumerate transport lists with their ids")
@@ -72,7 +120,16 @@ def _build_parser() -> argparse.ArgumentParser:
     pk.add_argument("--completed", action="store_true")
     pk.add_argument("-n", type=int, dest="limit")
 
-    n = sub.add_parser("notify", help="push a phone banner")
+    n = sub.add_parser(
+        "notify",
+        help="push a phone banner",
+        formatter_class=_RAW,
+        epilog=_epilog(
+            "Exits 2 when no topic is configured and 1 when a configured send failed —\n"
+            "the two used to be reported identically, so a network outage looked like\n"
+            "missing configuration."
+        ),
+    )
     n.add_argument("text")
     n.add_argument("--click", metavar="URL")
 
@@ -86,7 +143,16 @@ def _build_parser() -> argparse.ArgumentParser:
     cs.add_argument("key")
     cs.add_argument("value")
 
-    li = sub.add_parser("icloud-login", help="set up iCloud credentials + a trusted session")
+    li = sub.add_parser(
+        "icloud-login",
+        help="set up iCloud credentials + a trusted session",
+        formatter_class=_RAW,
+        epilog=_epilog(
+            "There is deliberately no --password flag: argv is readable by every other user\n"
+            "on the machine. Use --password-stdin, or the hidden prompt. This needs the MAIN\n"
+            "Apple ID password, not an app-specific one."
+        ),
+    )
     li.add_argument("--apple-id", metavar="EMAIL", help="skip the Apple ID prompt")
     # NO --password flag, ever: argv is visible to every other user on the machine.
     li.add_argument(
@@ -102,7 +168,15 @@ def _build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("status", help="glance at the spoke's health")
 
-    tp = sub.add_parser("tail", help="follow the mailbox files")
+    tp = sub.add_parser(
+        "tail",
+        help="follow the mailbox files",
+        formatter_class=_RAW,
+        epilog=_epilog(
+            "Shows the last 20 lines by default (-n to change); --follow survives the file\n"
+            "being truncated or rotated instead of going quietly silent."
+        ),
+    )
     tp.add_argument("--box", choices=("both", "manager", "vox"), default="both")
     tp.add_argument("-n", type=int, dest="limit", help="last N lines (default 20)")
     tp.add_argument("-f", "--follow", action="store_true")

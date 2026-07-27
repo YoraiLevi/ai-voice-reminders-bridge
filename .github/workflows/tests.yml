@@ -46,4 +46,4 @@ jobs:
         with:
           python-version: "3.12"
       - name: Coverage
-        run: uv run --extra dev pytest --cov=voice_bridge --cov-report=term-missing --cov-fail-under=79
+        run: uv run --extra dev pytest --cov=voice_bridge --cov-report=term-missing --cov-fail-under=84

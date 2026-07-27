@@ -59,6 +59,7 @@ def _build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("setup", help="provision the transport (config + lists)")
     s.add_argument("--transport", choices=_TRANSPORTS, default="icloud")
     s.add_argument("--set", action="append", dest="overrides", metavar="KEY=VALUE")
+    s.add_argument("--verify", action="store_true", help="prove a message round-trips")
 
     d = sub.add_parser("doctor", help="survey the setup; --fix repairs safe items")
     d.add_argument("--fix", action="store_true")
@@ -201,7 +202,11 @@ def _dispatch(args) -> int:  # noqa: C901 - a flat command table
 
     if cmd == "setup":
         return setup_mod.run_setup(
-            config_path=cfg_path, transport=args.transport, overrides=_overrides(args)
+            config_path=cfg_path,
+            transport=args.transport,
+            overrides=_overrides(args),
+            do_verify=args.verify,
+            as_json=args.json,
         )
 
     if cmd == "config":

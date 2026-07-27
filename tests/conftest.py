@@ -272,3 +272,33 @@ def fake_icloud(monkeypatch):
 
     install()  # sensible defaults; a test may re-install with its own
     return install
+
+
+@pytest.fixture
+def fake_ntfy(monkeypatch):
+    """A localhost capture server standing in for ntfy, deferred here from the
+    3-state PushResult work because `setup --verify` is the first thing that
+    genuinely needs WIRE-level capture rather than branch coverage.
+
+    Yields a list that receives one dict per request: url, headers, body. The
+    verify smoke asserts a banner really was posted, not merely that a function
+    returned truthy.
+    """
+    import urllib.request
+
+    captured: list[dict] = []
+    real = urllib.request.urlopen
+
+    def capture(req, timeout=None, **kw):
+        captured.append(
+            {
+                "url": getattr(req, "full_url", str(req)),
+                "headers": {k.lower(): v for k, v in getattr(req, "header_items", list)()},
+                "body": (req.data or b"").decode("utf-8", "replace"),
+            }
+        )
+        return None
+
+    monkeypatch.setattr(urllib.request, "urlopen", capture)
+    yield captured
+    urllib.request.urlopen = real

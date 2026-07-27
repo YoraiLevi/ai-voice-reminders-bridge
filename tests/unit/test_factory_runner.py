@@ -64,7 +64,11 @@ def test_provision_reports_manual_step_when_lists_are_missing(sample_config, fak
 
     empty = type(fake_transport)()  # connects fine, has no lists
     lines = setup_mod.provision(sample_config, empty)
-    assert any("SETUP_DONE" in ln for ln in lines)
+    text = " ".join(lines)
+    assert "create TWO lists" in text
+    # The SETUP_DONE marker is gone (SETUP-6): a machine token printed amid human
+    # prose served neither reader. Structured output lives behind --json now.
+    assert "SETUP_DONE" not in text
 
 
 def test_provision_does_not_disguise_an_auth_failure_as_missing_lists(sample_config):

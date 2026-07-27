@@ -20,6 +20,7 @@ import os
 import pytest
 
 from voice_bridge import poller
+from voice_bridge.mailbox import load_cursor
 from voice_bridge.icloud import ICloudError
 
 
@@ -35,7 +36,12 @@ def _replies(cfg, *lines):
 
 
 # --------------------------------------------------------------------------- #
-# FMA-1 — the cursor advances per SENT line, not per batch
+# FMA-1 — a failed send marks nothing delivered, and nothing is ever sent twice
+#
+# Originally phrased as "the cursor advances per line, not per batch", which was
+# the fix for a loop of N separate sends. Since UX-2 a burst leaves as ONE send,
+# so there is no partial state to protect; the property that survives — and the
+# one that always mattered — is exactly-once delivery across a failure.
 # --------------------------------------------------------------------------- #
 
 
@@ -44,38 +50,54 @@ def test_midbatch_failure_does_not_resend_earlier_replies(
 ):
     """The failure that turns one hiccup into a wall of duplicates.
 
-    Three replies, the third fails. The old code saved the cursor only after the
-    whole loop, so the next cycle re-sent replies one and two — and every retry
-    repeated them again.
+    Three replies, the send fails. The old code saved the cursor only after a loop
+    of three separate sends, so the next cycle re-sent replies one and two — and
+    every retry repeated them again.
+
+    Since UX-2 a burst of 2+ leaves as ONE digest, which changes the shape of this
+    guarantee without weakening it: there is no longer a *partial* send to protect
+    against, because the three replies succeed or fail together. What must still
+    hold — and is what this test now pins — is that a failed send marks NOTHING as
+    delivered, and the recovery delivers each reply exactly once, never twice.
     """
     _replies(sample_config, "first", "second", "third")
-    sent: list[str] = []
-    real = poller.send_reply
+    sent: list[list[str]] = []
 
-    def flaky(cfg, t, text, **kw):
-        if "third" in text:
-            raise OSError("network died mid-batch")
-        sent.append(text)
-        return real(cfg, t, text, **kw)
+    def flaky(cfg, t, texts, **kw):
+        raise OSError("network died mid-batch")
 
-    monkeypatch.setattr(poller, "send_reply", flaky)
+    monkeypatch.setattr(poller, "send_digest", flaky)
     with pytest.raises(OSError):
         poller.drain_replies(sample_config, fake_transport)
 
-    assert sent == ["first", "second"]
+    assert sent == [], "a failed send delivered nothing"
+    assert load_cursor(sample_config.reply_cursor_file) == 0, "and so may mark nothing as consumed"
 
-    # Recover: the third now succeeds. Only the third may go out.
-    monkeypatch.setattr(poller, "send_reply", lambda cfg, t, text, **kw: sent.append(text))
+    # Recover: the send now succeeds. Each reply goes out exactly once.
+    monkeypatch.setattr(poller, "send_digest", lambda cfg, t, texts, **kw: sent.append(texts))
     poller.drain_replies(sample_config, fake_transport)
-    assert sent == ["first", "second", "third"], "earlier replies must not be re-sent"
+    assert sent == [["first", "second", "third"]], "each reply exactly once"
+
+    poller.drain_replies(sample_config, fake_transport)
+    assert sent == [["first", "second", "third"]], "and never again on a later cycle"
+
+
+def test_a_lone_reply_still_advances_its_own_cursor(sample_config, fake_transport, monkeypatch):
+    """Below the digest threshold the original per-line path still runs, so the
+    per-line cursor advance stays under test rather than becoming dead code."""
+    _replies(sample_config, "only one")
+    monkeypatch.setattr(poller, "send_reply", lambda cfg, t, text, **kw: None)
+
+    assert poller.drain_replies(sample_config, fake_transport) == 1
+    assert load_cursor(sample_config.reply_cursor_file) == (sample_config.our_inbox.stat().st_size)
 
 
 def test_cursor_never_moves_backwards(sample_config, fake_transport):
     _replies(sample_config, "one", "two")
     poller.drain_replies(sample_config, fake_transport)
-    first = poller.load_cursor(sample_config.reply_cursor_file)
+    first = load_cursor(sample_config.reply_cursor_file)
     poller.drain_replies(sample_config, fake_transport)
-    assert poller.load_cursor(sample_config.reply_cursor_file) >= first
+    assert load_cursor(sample_config.reply_cursor_file) >= first
 
 
 # --------------------------------------------------------------------------- #

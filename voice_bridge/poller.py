@@ -21,7 +21,6 @@ from .config import Config
 from .errors import _is_auth, is_transient
 from .status import staleness_hint as _staleness_hint
 from .mailbox import (
-    load_cursor,
     append_line,
     clip,
     compact_seen,
@@ -34,7 +33,7 @@ from .mailbox import (
     join_line,
     load_seen,
     mark_seen,
-    read_new_lines,
+    read_new_entries,
     save_cursor,
 )
 from .transport import Transport
@@ -110,30 +109,87 @@ def send_reply(
     return rid
 
 
+#: A "burst" is this many replies pending in ONE cycle. Below it, nothing changes:
+#: a lone reply keeps its exact previous shape, because bundling a single message
+#: only buys it a worse title.
+DIGEST_MIN = 2
+
+
+def send_digest(
+    cfg: Config,
+    t: Transport,
+    texts: list[str],
+    *,
+    notify: bool = True,
+    now: datetime | None = None,
+) -> str:
+    """Bundle a burst into ONE reminder and ONE banner.
+
+    Three replies written in one cycle used to arrive as three reminders and three
+    banners — three interruptions for one thought. The title is a count, so the
+    content has to live in the notes: a digest that summarises the replies away has
+    thrown the message out.
+
+    Each line keeps its OWN `[HH:MM][spoke]` stamp. They are still separate
+    messages that happen to be delivered together, and the phone-side rule that the
+    newest supersedes older ones on a topic needs per-line times to work.
+    """
+    stamped = [f"[{_hhmm(now)}][{cfg.spoke_name}] {text.strip()}" for text in texts]
+    body = "\n".join(stamped)
+    title = f"{len(texts)} replies [{_hhmm(now)}]"
+    out = t.resolve_list(cfg.output_list, cfg.output_list_id)
+    rid = t.add_todo(out, title, notes=body, needs_input=True)
+    if notify:
+        ntfy.push(cfg, body, click=first_url(body))
+    return rid
+
+
 def drain_replies(cfg: Config, t: Transport, *, now: datetime | None = None) -> int:
     """Send each not-yet-drained line of our inbox file to the phone, tracked by a
-    byte-offset cursor (robust to truncation, bounded state). Returns how many sent."""
-    start = load_cursor(cfg.our_inbox and cfg.reply_cursor_file)
-    lines, offset = read_new_lines(cfg.our_inbox, cfg.reply_cursor_file)
-    if start > offset:  # the reader reset the cursor (file shrank); follow it
-        start = 0
+    byte-offset cursor (robust to truncation, bounded state). Returns how many sent.
 
-    n = 0
-    consumed = start
-    for raw in lines:
+    A burst of `DIGEST_MIN`+ lines is presented as one reminder (UX-2), but that is
+    **presentation only**. The cursor still advances per line, and only after a
+    successful send — the moment bundling becomes a durability batch, FMA-1 returns.
+    """
+    # Offsets come from the reader, which measures real bytes. Deriving them here
+    # with len(line + "\n") assumed a ONE-byte terminator: on Windows the mailbox
+    # is written through text mode, so the terminator is two, the cursor fell a
+    # byte behind per line, and after three lines it landed inside the text of the
+    # last one — re-sending its tail next cycle as its own reply.
+    raw_entries, _ = read_new_entries(cfg.our_inbox, cfg.reply_cursor_file)
+
+    # Blank lines and comments get an empty text: they are never sent, but they
+    # MUST still advance the cursor or they are re-read every cycle for ever.
+    entries: list[tuple[str, int]] = []
+    for raw, off in raw_entries:
+        line = raw.strip()
+        # Drop the mailbox's own `- [HH:MM] (who)` framing before restamping, or
+        # the phone shows two timestamps and two speakers (UX-4).
+        text = strip_mailbox_prefix(line) if line and not line.startswith("#") else ""
+        entries.append((text, off))
+
+    sendable = [text for text, _ in entries if text]
+
+    if len(sendable) >= DIGEST_MIN:
+        # ONE send for the burst. If it raises, the cursor is untouched and the
+        # whole burst is retried next cycle — replies that never arrived must never
+        # be marked delivered. Only once it has succeeded do the offsets advance,
+        # still one line at a time.
+        send_digest(cfg, t, sendable, now=now)
+        for _, off in entries:
+            save_cursor(cfg.reply_cursor_file, off)
+        return len(sendable)
+
+    for text, off in entries:
         # Advance PER LINE, not once per batch. Saving only at the end meant a
         # failure on reply three re-sent replies one and two on the next cycle —
         # and again on every retry after that. Per-line, a crash costs at most one
         # duplicate: the line that was in flight (FMA-1).
-        consumed += len((raw + "\n").encode("utf-8"))
-        line = raw.strip()
-        if line and not line.startswith("#"):
-            # Drop the mailbox's own `- [HH:MM] (who)` framing before restamping,
-            # or the phone shows two timestamps and two speakers (UX-4).
-            send_reply(cfg, t, strip_mailbox_prefix(line), now=now)
-            n += 1
-        save_cursor(cfg.reply_cursor_file, consumed)
-    return n
+        if text:
+            send_reply(cfg, t, text, now=now)
+        save_cursor(cfg.reply_cursor_file, off)
+    return len(sendable)
 
 
 def announce_join(cfg: Config, *, now: datetime | None = None) -> None:

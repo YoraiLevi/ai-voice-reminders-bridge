@@ -49,7 +49,11 @@ def append_line(path: Path, line: str, *, fsync: bool = False) -> None:
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     created = not path.exists()
-    with path.open("a", encoding="utf-8") as fh:
+    # newline="": write LF on every platform. The mailbox is a shared, append-only
+    # protocol file, so its bytes must not depend on which OS appended the line —
+    # text mode turns "\n" into "\r\n" on Windows, which silently gave the file a
+    # different on-disk format from the one every reader's arithmetic assumed.
+    with path.open("a", encoding="utf-8", newline="") as fh:
         fh.write(line.rstrip("\n") + "\n")
         if fsync:
             fh.flush()
@@ -111,6 +115,38 @@ def load_cursor(cursor_file: Path) -> int:
 def save_cursor(cursor_file: Path, offset: int) -> None:
     """Persist the drain offset. Atomic: a torn cursor re-sends or strands replies."""
     atomic_write(cursor_file, str(offset))
+
+
+def read_new_entries(path: Path, cursor_file: Path) -> tuple[list[tuple[str, int]], int]:
+    """Complete new lines, each paired with the byte offset that CONSUMES it.
+
+    Callers used to derive that offset themselves with `len(line + "\\n")`, which
+    silently assumes a one-byte terminator. On Windows the mailbox is written
+    through text mode, so the terminator is two bytes, and the cursor fell one
+    byte behind per line. After three lines in one batch it landed *inside the
+    text* of the last one, and the tail was re-sent next cycle as its own reply.
+
+    Measuring the real bytes removes the assumption entirely: it is correct for
+    LF, CRLF, and a file containing both — which an append-only file written by
+    different tools genuinely can.
+    """
+    if not path.exists():
+        return [], 0
+    data = path.read_bytes()
+    cur = load_cursor(cursor_file)
+    if cur > len(data):  # file was truncated / rewritten
+        cur = 0
+    chunk = data[cur:]
+    last_nl = chunk.rfind(b"\n")
+    if last_nl == -1:  # no complete line yet
+        return [], cur
+
+    entries: list[tuple[str, int]] = []
+    pos = cur
+    for raw in chunk[: last_nl + 1].split(b"\n")[:-1]:
+        pos += len(raw) + 1  # the exact bytes this line occupies, terminator included
+        entries.append((raw.decode("utf-8", "replace").rstrip("\r"), pos))
+    return entries, cur + last_nl + 1
 
 
 def read_new_lines(path: Path, cursor_file: Path) -> tuple[list[str], int]:

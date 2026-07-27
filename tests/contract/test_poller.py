@@ -63,9 +63,11 @@ def test_drain_replies_sends_and_dedupes(sample_config, fake_transport, fixed_cl
     cfg.our_inbox.parent.mkdir(parents=True, exist_ok=True)
     cfg.our_inbox.write_text("first reply\nsecond reply\n", encoding="utf-8")
     n = poller.drain_replies(cfg, fake_transport, now=fixed_clock)
-    assert n == 2
+    assert n == 2, "both replies were sent"
     out = fake_transport.resolve_list(DEFAULTS["output_list"])  # where replies go
-    assert len(fake_transport.read_incomplete(out)) == 2
+    # Two pending in ONE cycle is a burst, so they arrive as one digest (UX-2).
+    # The count returned is still 2 — it reports replies delivered, not reminders.
+    assert len(fake_transport.read_incomplete(out)) == 1
     # re-drain the same file → nothing new
     assert poller.drain_replies(cfg, fake_transport, now=fixed_clock) == 0
 

@@ -14,9 +14,12 @@ elsewhere).
 > **Async channel.** Replies can arrive a turn or more later; every message is timestamped
 > `[HH:MM]` and the newest on a topic supersedes older ones.
 
-> **Status:** the package (`voice_bridge/`) is being built test-first against the design in
-> [`docs/.design/voice-bridge.md`](docs/.design/voice-bridge.md). This README describes the
-> target CLI; the legacy scripts are being migrated into it.
+> **Status:** the package (`voice_bridge/`) is built and green — 97 tests across
+> unit / contract / integration / end-to-end, on Linux and Windows. The design has since been
+> hardened through a review pass; the resulting reliability fixes are specified but not all
+> implemented yet, and the honest list of what does and does not hold today is in
+> [`docs/design.md`](docs/design.md). The iCloud path has not yet been exercised against a
+> real Apple account.
 
 ## Prerequisite
 
@@ -81,7 +84,8 @@ are no conflicts with other tools:
 
 - **iCloud:** `icloud.env` → `ICLOUD_APPLE_ID` + `ICLOUD_PASSWORD` (main Apple ID password).
   First login: `$VB icloud-login` (accepts the code interactively, or `--code-file`, or
-  `--code-stdin`). Session caches in `pyicloud-cookies/` for ~60 days.
+  `--code-stdin`). The session caches in `pyicloud-cookies/` and expires periodically — the
+  exact lifetime is not documented by Apple, so watch for a 2FA prompt and re-run the login.
 - **Radicale:** `radicale.env` → `ICLOUD_CALDAV_URL` + Radicale user/pass.
 - **ntfy:** `ntfy-topic.txt` → your private topic (for banners).
 
@@ -102,7 +106,6 @@ fallback.
     uv run --extra dev pytest        # the test suite (unit / contract / integration / e2e)
     uv run --extra dev ruff check voice_bridge tests
 
-Architecture and the build plan: [`docs/.design/voice-bridge.md`](docs/.design/voice-bridge.md).
-Superseded standalone-model docs live in [`.archive/`](.archive/).
+Architecture, guarantees, and known limits: [`docs/design.md`](docs/design.md).
 
 [agent-to-agent-communication-file-mailbox]: https://github.com/YoraiLevi/agent-to-agent-communication-file-mailbox

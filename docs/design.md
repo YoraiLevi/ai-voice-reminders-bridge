@@ -329,9 +329,14 @@ stated against **the code as it exists today**.
   regardless, so the message reaches your agent exactly once — but the Reminder can remain
   visible on your phone as though nothing happened. If you see a dictation that never
   disappears, check whether it was in fact delivered before re-dictating it.
-- **A failed notification is invisible.** A bad topic, an unreachable server, and no topic
-  configured all look identical from the outside — the reply still lands in the outbox list,
-  but no banner appears and nothing is reported.
+- **A failed notification is quiet.** The reply still lands in the outbox list, but a banner
+  that fails to send does not interrupt anything — pushing is deliberately best-effort so it
+  can never break a reply. `notify` reports the reason and distinguishes "nothing configured"
+  (exit 2) from "the send failed" (exit 1); the background loop stays silent by design.
+- **The notification topic is a bearer secret.** Anyone who knows it can post to it. A leaked
+  topic lets someone send banners that appear to come from your bridge, including a tappable
+  link to anywhere — which is worth taking seriously precisely because you learn to trust
+  these notifications. Use a long random topic, and self-host if the content matters.
 - **A few commands report backend failures rawly.** `lists` and `peek` can surface an
   authentication or network error as an unformatted Python traceback rather than a clean
   message. *A fix is designed and not yet built.*

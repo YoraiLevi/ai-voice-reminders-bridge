@@ -211,11 +211,14 @@ def _dispatch(args) -> int:  # noqa: C901 - a flat command table
         return doctor_mod.run(cfg, fix=args.fix)
 
     if cmd == "notify":
-        if ntfy.push(cfg, args.text, click=args.click):
+        result = ntfy.push(cfg, args.text, click=args.click)
+        if result.status == "sent":
             print("banner sent.")
             return 0
-        print(f"error: no ntfy topic at {cfg.ntfy_topic_file}")
-        return 2
+        # 2 = you must act (nothing is configured); 1 = it was configured and the
+        # send failed, which is usually transient and worth retrying.
+        print(f"error: {result.detail}")
+        return 2 if result.status == "no_topic" else 1
 
     if cmd == "status":
         data = status_mod.gather(cfg)

@@ -31,7 +31,7 @@ def test_push_builds_request(tmp_path, tmp_mailbox, monkeypatch):
 
     monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
     sent = ntfy.push(cfg, "build done", click="https://x/y")
-    assert sent is True
+    assert sent.status == "sent" and bool(sent) is True
     assert captured["url"] == "https://ntfy.sh/my-topic"
     assert captured["headers"]["title"] == "Vox"  # ntfy_title default, {name} substituted
     assert captured["headers"]["tags"] == "robot"
@@ -49,7 +49,7 @@ def test_push_no_topic_is_noop(sample_config, monkeypatch):
         called = True
 
     monkeypatch.setattr(urllib.request, "urlopen", boom)
-    assert ntfy.push(sample_config, "hi") is False
+    assert ntfy.push(sample_config, "hi").status == "no_topic"
     assert called is False
 
 
@@ -61,7 +61,7 @@ def test_push_swallows_errors(tmp_path, tmp_mailbox, monkeypatch):
 
     monkeypatch.setattr(urllib.request, "urlopen", raiser)
     # must never raise — a failed banner cannot break the reply
-    assert ntfy.push(cfg, "hi") is False
+    assert ntfy.push(cfg, "hi").status == "failed"
 
 
 def test_push_clips_body(tmp_path, tmp_mailbox, monkeypatch):
@@ -87,3 +87,101 @@ def _write_cfg(tmp_path, tmp_mailbox, extra):
         encoding="utf-8",
     )
     return p
+
+
+# --------------------------------------------------------------------------- #
+# NTFY-1 — three states, because "no topic" is not "send failed"
+# --------------------------------------------------------------------------- #
+
+def test_push_returns_sent_on_success(tmp_path, tmp_mailbox, monkeypatch):
+    cfg = _cfg_with_topic(tmp_path, tmp_mailbox)
+    monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **k: None)
+    result = ntfy.push(cfg, "hello")
+    assert result.status == "sent"
+    assert bool(result) is True
+
+
+def test_push_distinguishes_no_topic_from_failure(tmp_path, tmp_mailbox, monkeypatch):
+    """The whole point: these two were both `False` and reported identically.
+
+    A network outage was announced to the user as "no ntfy topic", sending them
+    to configure something that was already configured.
+    """
+    cfg_no_topic = _cfg_with_topic(tmp_path, tmp_mailbox)
+    cfg_no_topic.ntfy_topic_file.unlink()
+    missing = ntfy.push(cfg_no_topic, "hello")
+
+    cfg_ok = _cfg_with_topic(tmp_path / "b", tmp_mailbox)
+
+    def boom(*a, **k):
+        raise OSError("connection refused")
+
+    monkeypatch.setattr(urllib.request, "urlopen", boom)
+    failed = ntfy.push(cfg_ok, "hello")
+
+    assert missing.status == "no_topic"
+    assert failed.status == "failed"
+    assert missing.status != failed.status, "the two causes must be distinguishable"
+    assert not missing and not failed
+
+
+def test_failure_detail_names_the_cause(tmp_path, tmp_mailbox, monkeypatch):
+    """Without the reason the user cannot tell DNS from a bad topic from a 500."""
+    cfg = _cfg_with_topic(tmp_path, tmp_mailbox)
+    monkeypatch.setattr(
+        urllib.request, "urlopen", lambda *a, **k: (_ for _ in ()).throw(OSError("dns dead"))
+    )
+    result = ntfy.push(cfg, "hello")
+    assert "dns dead" in result.detail
+
+
+def test_no_topic_detail_names_the_file(tmp_path, tmp_mailbox):
+    cfg = _cfg_with_topic(tmp_path, tmp_mailbox)
+    cfg.ntfy_topic_file.unlink()
+    result = ntfy.push(cfg, "hello")
+    assert str(cfg.ntfy_topic_file) in result.detail
+
+
+def test_blank_topic_file_is_no_topic_not_failure(tmp_path, tmp_mailbox):
+    cfg = _cfg_with_topic(tmp_path, tmp_mailbox, topic="   \n")
+    assert ntfy.push(cfg, "hello").status == "no_topic"
+
+
+def test_push_still_never_raises(tmp_path, tmp_mailbox, monkeypatch):
+    """Best-effort is preserved: a banner failure must not break the reply."""
+    cfg = _cfg_with_topic(tmp_path, tmp_mailbox)
+    monkeypatch.setattr(
+        urllib.request,
+        "urlopen",
+        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("anything at all")),
+    )
+    assert ntfy.push(cfg, "hello").status == "failed"
+
+
+def test_truthiness_keeps_existing_callers_working(tmp_path, tmp_mailbox, monkeypatch):
+    """`poller` and `deliver` treat the result as a bool; that must keep holding."""
+    cfg = _cfg_with_topic(tmp_path, tmp_mailbox)
+    monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **k: None)
+    assert ntfy.push(cfg, "x")
+    cfg.ntfy_topic_file.unlink()
+    assert not ntfy.push(cfg, "x")
+
+
+def test_notify_exit_codes_separate_the_two_causes(tmp_path, tmp_mailbox, monkeypatch, capsys):
+    """0 sent · 2 no topic (you must act) · 1 failed (transient, retry)."""
+    from voice_bridge.cli import main
+
+    cfg = _cfg_with_topic(tmp_path, tmp_mailbox)
+    cfg_arg = str(tmp_path / "voice-bridge.json")
+
+    monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **k: None)
+    assert main(["--config", cfg_arg, "notify", "hi"]) == 0
+
+    monkeypatch.setattr(
+        urllib.request, "urlopen", lambda *a, **k: (_ for _ in ()).throw(OSError("offline"))
+    )
+    assert main(["--config", cfg_arg, "notify", "hi"]) == 1
+    assert "offline" in capsys.readouterr().out.lower()
+
+    cfg.ntfy_topic_file.unlink()
+    assert main(["--config", cfg_arg, "notify", "hi"]) == 2

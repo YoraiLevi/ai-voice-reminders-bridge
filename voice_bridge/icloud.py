@@ -44,16 +44,19 @@ def _retrying(fn: Callable[[], Any], *, tries: int = 4) -> Any:
             delay = min(delay * 2, 30)
 
 
-def _completed(rem: Any) -> bool:
-    if isinstance(rem, dict):
-        return bool(rem.get("completed"))
-    return bool(getattr(rem, "completed", False))
+def _item(rem: Any) -> Item:
+    """One pyicloud `Reminder` -> our `Item`.
 
-
-def _field(rem: Any, key: str) -> str:
-    if isinstance(rem, dict):
-        return str(rem.get(key) or "")
-    return str(getattr(rem, key, "") or "")
+    The model is TYPED (`id`, `title`, `desc`, `completed`), so this reads
+    attributes directly. The previous adapter went through dict-or-attr helpers,
+    which quietly tolerated any shape at all — including shapes the library never
+    returns, which is how a call to a non-existent method survived to a live run.
+    """
+    return Item(
+        id=str(rem.id),
+        title=str(rem.title or ""),
+        notes=str(getattr(rem, "desc", "") or ""),
+    )
 
 
 class ICloudTransport(Transport):
@@ -95,6 +98,8 @@ class ICloudTransport(Transport):
         return self.r
 
     def list_todo_lists(self) -> list[ListRef]:
+        # `RemindersList.id` is the required identifier the create/query helpers
+        # take; `guid` is optional metadata and is NOT what they want.
         return [ListRef(name=lst.title, id=str(lst.id)) for lst in self._svc().lists()]
 
     def resolve_list(self, name: str, list_id: str = "") -> ListRef:
@@ -110,50 +115,52 @@ class ICloudTransport(Transport):
             )
         return ListRef(name=same[0].title, id=str(same[0].id))
 
-    def _raw_list(self, list_id: str) -> Any:
-        for lst in self._svc().lists():
-            if str(lst.id) == list_id:
-                return lst
-        raise LookupError(f"list id {list_id!r} vanished")
-
-    def _reminders(self, list_id: str) -> list[Any]:
-        data = dict(_retrying(lambda: self._svc().list_reminders(list_id)))
-        return list(data.get("reminders", []))
+    def _query(self, list_id: str, *, include_completed: bool) -> list[Any]:
+        result = _retrying(
+            lambda: self._svc().list_reminders(list_id, include_completed=include_completed)
+        )
+        return list(result.reminders)
 
     def read_incomplete(self, lst: ListRef) -> list[Item]:
-        return [
-            Item(id=_field(rem, "guid"), title=_field(rem, "title"), notes=_field(rem, "desc"))
-            for rem in self._reminders(lst.id)
-            if not _completed(rem)
-        ]
+        return [_item(rem) for rem in self._query(lst.id, include_completed=False)]
 
     def read_completed(self, lst: ListRef) -> list[Item]:
+        # The query returns both when completed are included, so select here.
         return [
-            Item(id=_field(rem, "guid"), title=_field(rem, "title"), notes=_field(rem, "desc"))
-            for rem in self._reminders(lst.id)
-            if _completed(rem)
+            _item(rem)
+            for rem in self._query(lst.id, include_completed=True)
+            if getattr(rem, "completed", False)
         ]
 
     def add_todo(
         self, lst: ListRef, summary: str, notes: str = "", *, needs_input: bool = False
     ) -> str:
-        guid = _retrying(lambda: self._svc().post(summary, description=notes, collection=lst.id))
-        return str(guid or "(unknown-guid)")
+        created = _retrying(
+            lambda: self._svc().create(
+                list_id=lst.id,
+                title=summary,
+                desc=notes,
+                priority=1 if needs_input else 0,
+            )
+        )
+        return str(created.id)
 
     def complete(self, lst: ListRef, item_id: str) -> None:
         """Mark an item handled. RAISES on failure and on not-found.
 
-        Both used to be silent — the inner catch swallowed backend errors, and a
-        missing id simply fell off the end of the loop. The caller could not tell
-        "cleared off the phone" from "quietly didn't", so the reminder stayed
+        Both used to be silent — an inner catch swallowed backend errors and a
+        missing id fell off the end of a loop — so the caller could not tell
+        "cleared off the phone" from "quietly didn't", the reminder stayed
         visible, the user re-dictated it, and the agent got it twice (FMA-2).
         """
-        for rem in self._reminders(lst.id):
-            if _field(rem, "guid") == item_id:
-                rem.completed = True
-                self._svc().update(rem)
-                return
-        raise LookupError(f"no item {item_id!r} in list {lst.name!r}")
+        try:
+            rem = _retrying(lambda: self._svc().get(item_id))
+        except Exception as exc:
+            raise LookupError(f"no item {item_id!r} in list {lst.name!r}: {exc}") from exc
+        if rem is None:
+            raise LookupError(f"no item {item_id!r} in list {lst.name!r}")
+        rem.completed = True
+        _retrying(lambda: self._svc().update(rem))
 
     def create_list(self, name: str) -> ListRef:
         raise NotSupportedError(

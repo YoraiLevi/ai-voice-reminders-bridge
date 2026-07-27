@@ -10,6 +10,8 @@ import re
 from datetime import datetime
 from pathlib import Path
 
+from .util import atomic_write
+
 _URL_RE = re.compile(r"https?://\S+")
 
 
@@ -76,8 +78,8 @@ def load_cursor(cursor_file: Path) -> int:
 
 
 def save_cursor(cursor_file: Path, offset: int) -> None:
-    cursor_file.parent.mkdir(parents=True, exist_ok=True)
-    cursor_file.write_text(str(offset), encoding="utf-8")
+    """Persist the drain offset. Atomic: a torn cursor re-sends or strands replies."""
+    atomic_write(cursor_file, str(offset))
 
 
 def read_new_lines(path: Path, cursor_file: Path) -> tuple[list[str], int]:
@@ -106,7 +108,8 @@ def compact_seen(seen_file: Path, live_ids: set[str]) -> None:
     if not seen_file.exists():
         return
     keep = load_seen(seen_file) & set(live_ids)
-    seen_file.write_text(("\n".join(sorted(keep)) + "\n") if keep else "", encoding="utf-8")
+    # Atomic: a torn seen-file loses dedupe state and re-delivers dictations.
+    atomic_write(seen_file, ("\n".join(sorted(keep)) + "\n") if keep else "")
 
 
 def first_url(text: str) -> str | None:

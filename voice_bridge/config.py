@@ -27,6 +27,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .util import atomic_write
+
 ENV_VAR = "VOICE_BRIDGE_CONFIG"
 DEFAULT_REL_PATH = Path(".claude") / "voice-bridge.json"
 
@@ -190,8 +192,8 @@ def read_raw(path: Path) -> dict[str, Any]:
 
 
 def write_raw(path: Path, data: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    """Persist the config. Atomic: a crash mid-write must not corrupt it (FMA-11)."""
+    atomic_write(path, json.dumps(data, indent=2) + "\n")
 
 
 def set_value(path: Path, key: str, value: str) -> None:

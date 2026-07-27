@@ -71,9 +71,17 @@ def test_non_positive_pid_is_never_probed(sample_config, monkeypatch):
     assert called == [], "a non-positive pid must be rejected before any signal call"
 
 
-def test_positive_pid_still_probes(sample_config, monkeypatch):
-    monkeypatch.setattr(status.os, "kill", lambda pid, sig: None)
-    assert status._alive(4242) is True
+def test_a_live_pid_probes_true(sample_config):
+    """Asserted with a REAL pid rather than a stubbed os.kill.
+
+    The old version monkeypatched os.kill and asserted an arbitrary pid was alive,
+    which pinned the implementation (that it calls os.kill) instead of the
+    behaviour (that a running process is reported running) — and so it could not
+    survive the platform-correct rewrite it was supposed to protect.
+    """
+    import os as _os
+
+    assert status._alive(_os.getpid()) is True
 
 
 def test_corrupt_pidfile_reports_not_running(sample_config):
@@ -156,3 +164,26 @@ def test_missing_our_inbox_counts_as_never_answered(sample_config):
     if sample_config.our_inbox.exists():
         sample_config.our_inbox.unlink()
     assert status.staleness_hint(sample_config, stale_after=60, now=5000) is not None
+
+
+def test_liveness_probe_never_signals_on_windows(sample_config, monkeypatch):
+    """The CI-red bug: on Windows `os.kill(pid, 0)` is not a query.
+
+    It maps to GenerateConsoleCtrlEvent(CTRL_C_EVENT, pid) — a real Ctrl-C sent to
+    a process GROUP — so probing liveness interrupted whatever shared the console,
+    which during a test run is the runner itself. It looks harmless under a
+    terminal emulator with no real console attached, because the event silently
+    fails there; on a genuine console it fires. So the probe must not go anywhere
+    near os.kill on Windows.
+    """
+    import os as _os
+
+    def forbidden(*a, **k):
+        raise AssertionError("os.kill must never be used for liveness on Windows")
+
+    if _os.name == "nt":
+        monkeypatch.setattr(status.os, "kill", forbidden)
+        assert status._alive(_os.getpid()) is True   # ourselves: definitely alive
+        assert status._alive(2**31 - 1) is False     # implausible pid
+    assert status._alive(0) is False
+    assert status._alive(-5) is False

@@ -114,7 +114,7 @@ NASTY = [
     "has=equals=signs",
     "unicode-ü-π-🔑",
     "  leading",
-    "back\slash",
+    r"back\slash",
 ]
 
 

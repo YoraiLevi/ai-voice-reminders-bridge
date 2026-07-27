@@ -17,16 +17,42 @@ def poller_pidfile(cfg: Config) -> Path:
 
 
 def _alive(pid: int) -> bool:
-    """Is this pid running? Probing with signal 0 asks without delivering anything.
+    """Is this pid running? Asks without delivering anything to it.
 
-    A non-positive pid is rejected BEFORE the call, and not merely as tidiness:
-    on Windows `signal.CTRL_C_EVENT` is 0 and pid 0 means "every process in this
-    console group", so `os.kill(0, 0)` would deliver a real Ctrl-C to the whole
-    group — the status command killing the poller it was asked to report on. An
-    empty or truncated pidfile parses to 0, so that path is reachable (FMA-17).
+    On POSIX, signal 0 is the standard "does it exist?" probe and sends nothing.
+
+    On Windows there is no such signal. `os.kill` maps signal 0 to
+    `GenerateConsoleCtrlEvent(CTRL_C_EVENT, pid)` — an actual Ctrl-C delivered to
+    a process GROUP, not a query. So the probe would interrupt whatever shares the
+    console, which for a test run is the test runner itself. It is easy to believe
+    this is safe, because under a terminal emulator with no real console attached
+    the event silently fails and the call appears to "just return" — which is
+    exactly what an earlier check of this concluded. On a real console it fires.
+
+    Windows therefore uses `OpenProcess`, which only asks. A non-positive pid is
+    still rejected up front: pid 0 means "every process in this console group",
+    and an empty or truncated pidfile parses to 0 (FMA-17).
     """
     if pid <= 0:
         return False
+
+    if os.name == "nt":
+        import ctypes
+
+        # PROCESS_QUERY_LIMITED_INFORMATION — the least authority that answers.
+        handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)  # type: ignore[attr-defined]
+        if not handle:
+            return False
+        try:
+            still_running = 259  # STILL_ACTIVE
+            code = ctypes.c_ulong()
+            ok = ctypes.windll.kernel32.GetExitCodeProcess(  # type: ignore[attr-defined]
+                handle, ctypes.byref(code)
+            )
+            return bool(ok) and code.value == still_running
+        finally:
+            ctypes.windll.kernel32.CloseHandle(handle)  # type: ignore[attr-defined]
+
     try:
         os.kill(pid, 0)
         return True

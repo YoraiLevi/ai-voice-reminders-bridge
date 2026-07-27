@@ -22,8 +22,11 @@ class ICloudError(RuntimeError):
 
 
 def _is_throttle(exc: Exception) -> bool:
-    s = str(exc).lower()
-    return "503" in s or "throttle" in s or "too many" in s or "service unavailable" in s
+    """One definition, shared with the classifier. It lived in two places while
+    `errors` was a foundation nothing consumed; the poller consumes it now."""
+    from .errors import _is_throttle as _shared
+
+    return _shared(exc)
 
 
 def _retrying(fn: Callable[[], Any], *, tries: int = 4) -> Any:

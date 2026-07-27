@@ -80,3 +80,79 @@ def test_corrupt_pidfile_reports_not_running(sample_config):
     status.poller_pidfile(sample_config).parent.mkdir(parents=True, exist_ok=True)
     status.poller_pidfile(sample_config).write_text("0", encoding="utf-8")
     assert status.poller_pid(sample_config) is None
+
+
+# --------------------------------------------------------------------------- #
+# FMA-9 — say when nothing is reading, without inventing peer liveness
+# --------------------------------------------------------------------------- #
+
+def _stamp(path, text, when):
+    import os
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    os.utime(path, (when, when))
+
+
+def test_hint_fires_when_a_dictation_goes_unanswered(sample_config):
+    """The silent half-round-trip: delivered correctly, and nobody is listening.
+
+    voice-bridge cannot see whether a peer exists, so it reports the file facts it
+    CAN see rather than guessing — an unanswered dictation older than the
+    threshold, with the peer's file untouched since.
+    """
+    from voice_bridge.mailbox import format_mailbox_line
+
+    _stamp(sample_config.peer_inbox, format_mailbox_line("buy milk", from_name="vox") + "\n", 2000)
+    _stamp(sample_config.our_inbox, "", 1000)
+    hint = status.staleness_hint(sample_config, stale_after=60, now=5000)
+    assert hint is not None
+    assert "no newer reply" in hint
+
+
+def test_hint_is_quiet_when_a_reply_is_newer(sample_config):
+    from voice_bridge.mailbox import format_mailbox_line
+
+    _stamp(sample_config.peer_inbox, format_mailbox_line("buy milk", from_name="vox") + "\n", 1000)
+    _stamp(sample_config.our_inbox, "- [10:01] (manager) ok\n", 3000)
+    assert status.staleness_hint(sample_config, stale_after=60, now=5000) is None
+
+
+def test_hint_is_quiet_within_the_threshold(sample_config):
+    from voice_bridge.mailbox import format_mailbox_line
+
+    _stamp(sample_config.peer_inbox, format_mailbox_line("buy milk", from_name="vox") + "\n", 4990)
+    _stamp(sample_config.our_inbox, "", 1000)
+    assert status.staleness_hint(sample_config, stale_after=3600, now=5000) is None
+
+
+def test_our_own_join_announcement_does_not_look_like_a_dictation(sample_config):
+    """The discriminator is FORMAT, not authorship.
+
+    EVERY line in the peer's file is our write — dictations are forwarded under
+    our tag — so "is this ours?" distinguishes nothing and would silence the hint
+    for ever. A join/eject announcement is not an unanswered question.
+    """
+    from voice_bridge.mailbox import join_line
+
+    _stamp(sample_config.peer_inbox, join_line("vox") + "\n", 2000)
+    _stamp(sample_config.our_inbox, "", 1000)
+    assert status.staleness_hint(sample_config, stale_after=60, now=5000) is None
+
+
+def test_hint_is_disabled_by_negative_threshold(sample_config):
+    from voice_bridge.mailbox import format_mailbox_line
+
+    _stamp(sample_config.peer_inbox, format_mailbox_line("x", from_name="vox") + "\n", 2000)
+    _stamp(sample_config.our_inbox, "", 1000)
+    assert status.staleness_hint(sample_config, stale_after=-1, now=5000) is None
+
+
+def test_missing_our_inbox_counts_as_never_answered(sample_config):
+    """After a clean eject our inbox is deleted; a stale dictation must still fire."""
+    from voice_bridge.mailbox import format_mailbox_line
+
+    _stamp(sample_config.peer_inbox, format_mailbox_line("x", from_name="vox") + "\n", 2000)
+    if sample_config.our_inbox.exists():
+        sample_config.our_inbox.unlink()
+    assert status.staleness_hint(sample_config, stale_after=60, now=5000) is not None

@@ -19,6 +19,7 @@ from . import log as _log
 from . import ntfy
 from .config import Config
 from .errors import _is_auth, is_transient
+from .status import staleness_hint as _staleness_hint
 from .mailbox import (
     load_cursor,
     append_line,
@@ -184,6 +185,7 @@ def run(
     max_attempts: int = 5,
     backoff_base: int = 1,
     force: bool = False,
+    stale_after: int = 3600,
 ) -> int:
     """Announce join, loop poll+drain each interval, eject on stop.
 
@@ -223,6 +225,10 @@ def run(
             try:
                 t.connect()
                 polled, drained = run_once(cfg, t)
+                # Report the one thing a working bridge cannot otherwise tell you:
+                # the messages are being delivered and nothing is reading them.
+                if (hint := _staleness_hint(cfg, stale_after=stale_after)) is not None:
+                    log.warning("%s", hint)
                 attempts = 0  # a good cycle clears the budget, so unrelated
                 backoff = max(backoff_base, 0)  # blips never accumulate to a stop
                 if once:

@@ -15,7 +15,11 @@ icloud = ["pyicloud"]
 caldav = ["caldav>=3.2,<4", "icalendar>=6,<8"]
 server = ["radicale>=3,<4", "bcrypt>=4"]
 all = ["pyicloud", "caldav>=3.2,<4", "icalendar>=6,<8", "radicale>=3,<4", "bcrypt>=4"]
-dev = ["pytest>=8", "pytest-cov", "ruff", "mypy", "caldav>=3.2,<4", "icalendar>=6,<8", "radicale>=3,<4", "bcrypt>=4"]
+# The test environment needs EVERY optional transport, or the suites that cover
+# them vanish behind a module-level importorskip — one quiet skip line per file,
+# hiding a whole suite. pyicloud's absence here (while caldav/radicale were
+# present) cost ~5 points of coverage that only CI could see.
+dev = ["pytest>=8", "pytest-cov", "ruff", "mypy", "pyicloud", "caldav>=3.2,<4", "icalendar>=6,<8", "radicale>=3,<4", "bcrypt>=4"]
 
 [project.scripts]
 voice-bridge = "voice_bridge.cli:main"
@@ -29,7 +33,11 @@ packages = ["voice_bridge"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+# -ra: always print the reason for every skip. A module-level importorskip
+# reports ONE skip for a whole file, so a missing optional dependency can
+# silently remove a suite while the run still looks green. Naming the reason
+# makes that visible instead of invisible.
+addopts = "-q -ra"
 
 [tool.ruff]
 line-length = 100

@@ -119,9 +119,17 @@ class CalDAVTransport(Transport):
         try:
             self._principal = client.principal()
         except AuthorizationError as exc:
-            raise CredsError("server rejected the credentials (401).") from exc
-        except DAVError as exc:  # pragma: no cover - network
-            raise CredsError(f"CalDAV discovery failed: {exc}") from exc
+            # Auth: no amount of retrying enters a correct password. Stays a
+            # CredsError, which `is_transient` classifies as NOT transient, so the
+            # run loop stops and says what to fix.
+            raise CredsError("server rejected the credentials (401 or 403).") from exc
+        except DAVError:
+            # Everything else — the server is down, restarting, or unreachable —
+            # is a different question with a different answer: retry. Collapsing
+            # it into CredsError told the loop to stop with "fix your
+            # credentials" while the credentials were perfectly good (FMA-10).
+            # Re-raised as-is so `is_transient` can classify it by type/status.
+            raise
 
     def _p(self) -> Any:
         if self._principal is None:

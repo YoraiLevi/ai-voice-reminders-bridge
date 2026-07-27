@@ -119,9 +119,12 @@ def _build_parser() -> argparse.ArgumentParser:
     rssub = rs.add_subparsers(dest="op")
     rsi = rssub.add_parser("init")
     rsi.add_argument("--user")
-    rsi.add_argument("--password")
+    # NO --password flag: argv is readable by every other user on the machine.
+    # The password comes from $RADICALE_PASSWORD or an interactive prompt, the
+    # same rule icloud-login follows.
     rsi.add_argument("--host")
     rsi.add_argument("--port", type=int)
+    rsi.add_argument("--force", action="store_true", help="rotate existing credentials")
     rst = rssub.add_parser("start")
     rst.add_argument("--background", action="store_true")
     rssub.add_parser("stop")
@@ -327,7 +330,16 @@ def _radicale_server_cmd(args, cfg_path) -> int:
     cfg = load_config(cfg_path)
     op = getattr(args, "op", None)
     if op == "init":
-        server_mod.init(cfg, user=args.user, password=args.password, host=args.host, port=args.port)
+        try:
+            server_mod.init(
+                cfg, user=args.user, host=args.host, port=args.port, force=args.force
+            )
+        except server_mod.ServerExtraMissing as exc:
+            print(f"error: {exc}")
+            return 2
+        except FileExistsError as exc:
+            print(f"error: {exc}")
+            return 2
         print(f"initialised under {server_mod.paths(cfg).base}")
         return 0
     if op == "start":

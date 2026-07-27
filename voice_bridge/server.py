@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .config import Config
+from .util import write_env
 
 
 @dataclass(frozen=True)
@@ -66,13 +67,35 @@ level = info
 """
 
 
+class ServerExtraMissing(RuntimeError):
+    """The `[server]` extra is not installed. Says which, rather than tracebacking."""
+
+
 def _make_user(users: Path, user: str, password: str) -> None:
     """Write a bcrypt htpasswd line `user:$2b$…` — the password is never stored plain."""
-    import bcrypt
+    try:
+        import bcrypt
+    except ImportError as exc:
+        raise ServerExtraMissing(
+            "the self-hosted server needs its optional dependencies — "
+            "install voice-bridge[server]"
+        ) from exc
 
     digest = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("ascii")
     users.parent.mkdir(parents=True, exist_ok=True)
     users.write_text(f"{user}:{digest}\n", encoding="utf-8")
+
+
+def radicale_creds_path(cfg: Config) -> Path:
+    """Where THIS server's credentials live — always `radicale.env`, never derived.
+
+    `cfg.creds_env` is `{state_dir}/{transport}.env`, so on the iCloud transport it
+    names `icloud.env`. Writing there would overwrite an Apple password that cost a
+    two-factor round trip to obtain, silently and irrecoverably (SERVER-7). The
+    file is named for what it holds, not for whichever transport happens to be
+    selected when the command runs.
+    """
+    return cfg.state_dir / "radicale.env"
 
 
 def init(
@@ -82,28 +105,52 @@ def init(
     password: str | None = None,
     host: str | None = None,
     port: int | None = None,
+    force: bool = False,
 ) -> None:
-    """Generate the server config + bcrypt user + storage dir, AND seed the client's
-    `creds_env` (radicale.env) so the transport connects to this server. Idempotent
-    apart from the user (re-run with a new password to rotate)."""
+    """Generate the server config + bcrypt user + storage dir, and seed `radicale.env`
+    so the transport can reach this server.
+
+    Refuses to overwrite existing credentials unless `force` is set: rotating a
+    password is a decision, and re-running `init` to change a port should not
+    silently invalidate the account the phone is already using (SERVER-6).
+    """
     p = paths(cfg)
     user = user or cfg.radicale_user
     password = password or os.environ.get("RADICALE_PASSWORD") or _prompt_password()
     host = host or cfg.radicale_host
     port = port or cfg.radicale_port
 
+    creds_path = radicale_creds_path(cfg)
+    if creds_path.exists() and not force:
+        raise FileExistsError(
+            f"{creds_path} already holds credentials — re-run with --force to rotate "
+            "the password (the phone's CalDAV account will need updating to match)"
+        )
+
     p.base.mkdir(parents=True, exist_ok=True)
     p.storage.mkdir(parents=True, exist_ok=True)
     p.config.write_text(_render_config(cfg, p, host, port), encoding="utf-8")
     _make_user(p.users, user, password)
 
-    cfg.creds_env.parent.mkdir(parents=True, exist_ok=True)
-    cfg.creds_env.write_text(
-        f"ICLOUD_CALDAV_URL={client_url(cfg)}\n"
-        f"ICLOUD_APPLE_ID={user}\n"
-        f"ICLOUD_APP_PASSWORD={password}\n",
-        encoding="utf-8",
+    # 0600 where the platform supports it, and verbatim — the password may
+    # contain anything the user typed.
+    write_env(
+        creds_path,
+        {
+            "ICLOUD_CALDAV_URL": client_url(cfg),
+            "ICLOUD_APPLE_ID": user,
+            "ICLOUD_APP_PASSWORD": password,
+        },
     )
+
+    print(f"server configured; credentials written to {creds_path}")
+    if host in ("0.0.0.0", "::"):
+        # Said once, at the moment it becomes true: anyone who can reach the port
+        # can read every dictation, because this speaks plain HTTP.
+        print(
+            f"warning: binding {host} over plain HTTP — anyone who can reach port {port} "
+            "can read your messages. Keep it on a private network or tunnel (no TLS here)."
+        )
 
 
 def _prompt_password() -> str:  # pragma: no cover - interactive

@@ -12,6 +12,7 @@ from __future__ import annotations
 import time
 from typing import Any, Callable
 
+from . import _icloud_crdt
 from .config import Config
 from .transport import Item, ListRef, NotSupportedError, Transport
 from .util import read_kv
@@ -79,6 +80,13 @@ class ICloudTransport(Transport):
             from pyicloud import PyiCloudService
         except ImportError as exc:  # pragma: no cover
             raise ICloudError(f"pyicloud not installed: {exc}") from exc
+
+        # Correct the CRDT length computation before any write happens. Without
+        # this, a reminder whose text contains an emoji is stored with declared
+        # lengths in codepoints where Apple counts UTF-16 units, and the phone
+        # renders it BLANK — while every read-back through the API looks perfect
+        # (LIVE-5). See _icloud_crdt for why the API cannot detect it.
+        _icloud_crdt.install()
         try:
             api = PyiCloudService(apple_id, password, cookie_directory=str(self.cfg.cookie_dir))
         except Exception as exc:

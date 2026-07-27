@@ -77,8 +77,7 @@ def _make_user(users: Path, user: str, password: str) -> None:
         import bcrypt
     except ImportError as exc:
         raise ServerExtraMissing(
-            "the self-hosted server needs its optional dependencies — "
-            "install voice-bridge[server]"
+            "the self-hosted server needs its optional dependencies — install voice-bridge[server]"
         ) from exc
 
     digest = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("ascii")

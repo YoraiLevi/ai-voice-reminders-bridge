@@ -59,7 +59,6 @@ def test_stop_when_not_running(tmp_path, tmp_mailbox, capsys):
 # =========================================================================== #
 
 
-
 def _icloud_cfg(tmp_path, tmp_mailbox):
     """A config on the iCloud transport — the dangerous case for `init`."""
     p = tmp_path / "voice-bridge.json"
@@ -79,6 +78,7 @@ def _icloud_cfg(tmp_path, tmp_mailbox):
 # --------------------------------------------------------------------------- #
 # SERVER-7 — init must never write into the iCloud credentials file
 # --------------------------------------------------------------------------- #
+
 
 def test_init_never_overwrites_the_icloud_creds(tmp_path, tmp_mailbox):
     """The worst bug in this module: `creds_env` is `{state_dir}/{transport}.env`.
@@ -113,6 +113,7 @@ def test_init_targets_radicale_env_even_on_the_radicale_transport(tmp_path, tmp_
 # SERVER-6 — rotating a password is a decision, not a side effect
 # --------------------------------------------------------------------------- #
 
+
 def test_init_refuses_to_clobber_existing_creds_without_force(tmp_path, tmp_mailbox, capsys):
     cfg = _cfg(tmp_path, tmp_mailbox)
     server.init(cfg, user="tester", password="first")
@@ -134,6 +135,7 @@ def test_force_rotates_the_password(tmp_path, tmp_mailbox):
 # SERVER-2 — the credentials file is owner-only where the platform allows
 # --------------------------------------------------------------------------- #
 
+
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX permission bits")
 def test_creds_file_is_owner_only(tmp_path, tmp_mailbox):
     cfg = _cfg(tmp_path, tmp_mailbox)
@@ -145,6 +147,7 @@ def test_creds_file_is_owner_only(tmp_path, tmp_mailbox):
 # --------------------------------------------------------------------------- #
 # init warns about what it just exposed
 # --------------------------------------------------------------------------- #
+
 
 def test_init_warns_about_binding_publicly_over_plain_http(tmp_path, tmp_mailbox, capsys):
     """`0.0.0.0` plus plain HTTP means anyone who can reach the port can read
@@ -159,6 +162,7 @@ def test_init_warns_about_binding_publicly_over_plain_http(tmp_path, tmp_mailbox
 # --------------------------------------------------------------------------- #
 # SERVER-9 — a missing optional dependency is a sentence, not a traceback
 # --------------------------------------------------------------------------- #
+
 
 def test_missing_bcrypt_explains_the_extra(tmp_path, tmp_mailbox, monkeypatch):
     cfg = _cfg(tmp_path, tmp_mailbox)

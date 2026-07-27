@@ -28,6 +28,7 @@ caldav_error = pytest.importorskip("caldav.lib.error")
 # is_transient — the core truth table
 # --------------------------------------------------------------------------- #
 
+
 @pytest.mark.parametrize(
     "exc, expected, why",
     [
@@ -70,6 +71,7 @@ def test_requests_connectionerror_is_not_the_builtin() -> None:
 # --------------------------------------------------------------------------- #
 # is_transient — the caldav branch (classify by TYPE; DAVError has no status)
 # --------------------------------------------------------------------------- #
+
 
 def test_caldav_rate_limit_is_transient() -> None:
     assert is_transient(caldav_error.RateLimitError("slow down")) is True
@@ -127,6 +129,7 @@ def test_wrapped_network_error_classifies_by_cause() -> None:
 # --------------------------------------------------------------------------- #
 # raise_command_error — one mapping for every command
 # --------------------------------------------------------------------------- #
+
 
 @pytest.mark.parametrize(
     "exc, code",

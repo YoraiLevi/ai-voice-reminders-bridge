@@ -36,6 +36,7 @@ def test_masked_hides_secret():
 # atomic_write (FMA-11) — a crash mid-write must not corrupt the original
 # --------------------------------------------------------------------------- #
 
+
 def test_atomic_write_roundtrip(tmp_path):
     p = tmp_path / "sub" / "f.json"
     util.atomic_write(p, '{"a": 1}\n')
@@ -106,8 +107,8 @@ def test_cursor_and_seen_writes_are_atomic(tmp_path, monkeypatch):
 # --------------------------------------------------------------------------- #
 
 NASTY = [
-    "p@ss w0rd",          # spaces
-    '"quoted"',           # literal surrounding quotes
+    "p@ss w0rd",  # spaces
+    '"quoted"',  # literal surrounding quotes
     "'single'",
     "ends with space ",
     "has#hash",

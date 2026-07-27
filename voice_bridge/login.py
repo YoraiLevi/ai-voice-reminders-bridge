@@ -56,6 +56,7 @@ def resolve_code(
 # seams — replaced wholesale in tests, so nothing here needs pyicloud or a TTY
 # --------------------------------------------------------------------------- #
 
+
 def _make_service(apple_id: str, password: str, cookie_dir: Path) -> Any:
     """Build the iCloud service. The ONE place the real library is constructed."""
     from pyicloud import PyiCloudService
@@ -86,6 +87,7 @@ def _confirm_use_existing() -> bool:
 # --------------------------------------------------------------------------- #
 # the decision, as a pure function
 # --------------------------------------------------------------------------- #
+
 
 def decide_intent(*, has_creds: bool, is_tty: bool, new: bool, enter_2fa: bool) -> str:
     """What this invocation should do, given only facts — no I/O, no prompting.

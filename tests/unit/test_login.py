@@ -40,6 +40,7 @@ def test_code_from_stdin():
 # helpers
 # --------------------------------------------------------------------------- #
 
+
 def _seed_creds(cfg, apple_id="me@icloud.com", password=GOOD):
     write_env(cfg.creds_env, {"ICLOUD_APPLE_ID": apple_id, "ICLOUD_PASSWORD": password})
 
@@ -67,29 +68,29 @@ class _Trusted:
 # decide_intent — pure, so the whole state machine is testable without I/O
 # --------------------------------------------------------------------------- #
 
+
 @pytest.mark.parametrize(
     "has_creds, is_tty, new, enter_2fa, expected",
     [
-        (False, True, False, False, "capture"),            # fresh machine
-        (True, True, False, False, "confirm"),             # ask before reusing
-        (True, False, False, False, "use_existing"),       # non-TTY: no EOFError
+        (False, True, False, False, "capture"),  # fresh machine
+        (True, True, False, False, "confirm"),  # ask before reusing
+        (True, False, False, False, "use_existing"),  # non-TTY: no EOFError
         (False, False, False, False, "no_creds_non_tty"),  # nothing to do, say so
-        (True, True, True, False, "capture"),              # --new overwrites
-        (False, False, True, False, "capture"),            # --new works headless too
-        (True, True, False, True, "reauth"),               # --enter-2fa keeps creds
-        (False, True, False, True, "capture"),             # ...but falls back if none
+        (True, True, True, False, "capture"),  # --new overwrites
+        (False, False, True, False, "capture"),  # --new works headless too
+        (True, True, False, True, "reauth"),  # --enter-2fa keeps creds
+        (False, True, False, True, "capture"),  # ...but falls back if none
     ],
 )
 def test_decide_intent_table(has_creds, is_tty, new, enter_2fa, expected):
-    got = login_mod.decide_intent(
-        has_creds=has_creds, is_tty=is_tty, new=new, enter_2fa=enter_2fa
-    )
+    got = login_mod.decide_intent(has_creds=has_creds, is_tty=is_tty, new=new, enter_2fa=enter_2fa)
     assert got == expected
 
 
 # --------------------------------------------------------------------------- #
 # LOGIN-0 — intent branches
 # --------------------------------------------------------------------------- #
+
 
 def test_fresh_machine_captures_then_trusts(sample_config, fake_icloud, monkeypatch):
     _no_prompts(monkeypatch)
@@ -98,8 +99,9 @@ def test_fresh_machine_captures_then_trusts(sample_config, fake_icloud, monkeypa
     assert "trust_session" in fake_icloud()["service"].calls
 
 
-def test_existing_creds_confirmed_and_already_trusted(sample_config, fake_icloud, monkeypatch,
-                                                      capsys):
+def test_existing_creds_confirmed_and_already_trusted(
+    sample_config, fake_icloud, monkeypatch, capsys
+):
     fake_icloud(mfa_required=False)
     _seed_creds(sample_config)
     _no_prompts(monkeypatch, confirm=True)
@@ -128,8 +130,9 @@ def test_non_tty_uses_existing_without_prompting(sample_config, fake_icloud, mon
     assert login_mod.icloud_login(sample_config) == 0
 
 
-def test_non_tty_without_creds_exits_2_with_guidance(sample_config, fake_icloud, monkeypatch,
-                                                     capsys):
+def test_non_tty_without_creds_exits_2_with_guidance(
+    sample_config, fake_icloud, monkeypatch, capsys
+):
     monkeypatch.setattr(login_mod, "_is_tty", lambda: False)
     assert login_mod.icloud_login(sample_config) == 2
     out = capsys.readouterr().out
@@ -161,6 +164,7 @@ def test_enter_2fa_without_creds_falls_back_to_capture(sample_config, fake_iclou
 # --------------------------------------------------------------------------- #
 # Security — the password must never reach argv
 # --------------------------------------------------------------------------- #
+
 
 def test_password_stdin_does_not_call_getpass(sample_config, fake_icloud, monkeypatch):
     monkeypatch.setattr(login_mod, "_prompt_apple_id", lambda: "me@icloud.com")
@@ -194,8 +198,10 @@ def test_interactive_password_goes_through_getpass(sample_config, fake_icloud, m
 # LOGIN-1 — clean exits, never a traceback
 # --------------------------------------------------------------------------- #
 
-def test_wrong_password_exits_1_and_persists_nothing(sample_config, fake_icloud, monkeypatch,
-                                                     capsys):
+
+def test_wrong_password_exits_1_and_persists_nothing(
+    sample_config, fake_icloud, monkeypatch, capsys
+):
     _no_prompts(monkeypatch, password="wrong-password")
     assert login_mod.icloud_login(sample_config) == 1
     assert "error" in capsys.readouterr().out.lower()
@@ -231,6 +237,7 @@ def test_network_failure_exits_1(sample_config, monkeypatch):
 # LOGIN-4 — the durability sentinel
 # --------------------------------------------------------------------------- #
 
+
 def test_success_calls_trust_session_and_verifies_it(sample_config, fake_icloud, monkeypatch):
     """Delete `trust_session()` from the implementation and this goes red.
 
@@ -253,8 +260,9 @@ def test_trust_that_does_not_stick_exits_1(sample_config, fake_icloud, monkeypat
     assert "trust" in capsys.readouterr().out.lower()
 
 
-def test_success_message_makes_no_unverified_lifetime_claim(sample_config, fake_icloud,
-                                                            monkeypatch, capsys):
+def test_success_message_makes_no_unverified_lifetime_claim(
+    sample_config, fake_icloud, monkeypatch, capsys
+):
     """The shipped message claimed "~60 days", a number Apple does not document."""
     _no_prompts(monkeypatch)
     login_mod.icloud_login(sample_config, code="123456")
@@ -269,6 +277,7 @@ def test_success_message_makes_no_unverified_lifetime_claim(sample_config, fake_
 # LOGIN-3 — legacy two-step accounts
 # --------------------------------------------------------------------------- #
 
+
 def test_two_step_account_exits_2_saying_so(sample_config, fake_icloud, monkeypatch, capsys):
     fake_icloud(hsa_version=1)
     _no_prompts(monkeypatch)
@@ -279,6 +288,7 @@ def test_two_step_account_exits_2_saying_so(sample_config, fake_icloud, monkeypa
 # --------------------------------------------------------------------------- #
 # LOGIN-2 — the captured password survives verbatim (the A+ cutover)
 # --------------------------------------------------------------------------- #
+
 
 @pytest.mark.parametrize("pw", ["p@ss w0rd", 'has"quote', "has=equals", "unicode-ue-key", "tail "])
 def test_capture_persists_the_exact_password(sample_config, monkeypatch, pw):
@@ -310,8 +320,7 @@ def test_quote_wrapped_stored_password_warns(sample_config, monkeypatch, capsys)
     assert "quote" in capsys.readouterr().out.lower()
 
 
-def test_eof_while_prompting_gives_the_same_guidance_as_no_tty(sample_config, monkeypatch,
-                                                               capsys):
+def test_eof_while_prompting_gives_the_same_guidance_as_no_tty(sample_config, monkeypatch, capsys):
     """`isatty()` is not always honest, so the EOF path must be equally helpful.
 
     Under some Windows shells stdin reports a terminal even when redirected, so
@@ -330,8 +339,9 @@ def test_eof_while_prompting_gives_the_same_guidance_as_no_tty(sample_config, mo
     assert "--apple-id" in out and "--password-stdin" in out
 
 
-def test_2fa_account_reports_both_flags_and_still_proceeds(sample_config, fake_icloud,
-                                                           monkeypatch, capsys):
+def test_2fa_account_reports_both_flags_and_still_proceeds(
+    sample_config, fake_icloud, monkeypatch, capsys
+):
     """LIVE-1, reproduced: a real 2FA account sets requires_2sa AND requires_2fa.
 
     `requires_2sa` is `hsaVersion >= 1` and `requires_2fa` is `hsaVersion == 2`, so

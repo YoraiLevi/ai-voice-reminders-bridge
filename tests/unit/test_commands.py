@@ -26,6 +26,7 @@ from voice_bridge.icloud import ICloudError
 # TRANSPORT-1 — one typed mapping for every command that touches a backend
 # --------------------------------------------------------------------------- #
 
+
 def test_missing_credentials_becomes_exit_1_with_its_message(sample_config, boom_transport):
     """Not a traceback: the user needs to be told to finish setting up."""
     t = boom_transport(ICloudError("Missing ICLOUD_APPLE_ID / ICLOUD_PASSWORD in creds.env"))
@@ -69,6 +70,7 @@ def test_happy_path_returns_a_connected_transport(sample_config, fake_transport)
 # --------------------------------------------------------------------------- #
 # LIST-2 — ghosts, and saying which list is actually in use
 # --------------------------------------------------------------------------- #
+
 
 def _cfg_with(sample_config, **kw):
     import dataclasses
@@ -116,6 +118,7 @@ def test_json_rows_carry_id_role_and_active(sample_config, ghost_transport, caps
 # PEEK-2/3/4 — limits, ids, and an honest empty state
 # --------------------------------------------------------------------------- #
 
+
 def _seed(cfg, t, n=3):
     lst = t.resolve_list(cfg.inbox_list, "")
     for i in range(n):
@@ -126,46 +129,49 @@ def _seed(cfg, t, n=3):
 def test_peek_limit_zero_shows_nothing(sample_config, fake_transport, capsys):
     """`-n 0` meant "no limit" because 0 is falsy — it must mean zero."""
     _seed(sample_config, fake_transport)
-    peek_command(sample_config, fake_transport, box="inbox", completed=False, limit=0,
-                 as_json=True)
+    peek_command(sample_config, fake_transport, box="inbox", completed=False, limit=0, as_json=True)
     assert json.loads(capsys.readouterr().out) == []
 
 
 def test_peek_limit_two_and_unset(sample_config, fake_transport, capsys):
     _seed(sample_config, fake_transport, 3)
-    peek_command(sample_config, fake_transport, box="inbox", completed=False, limit=2,
-                 as_json=True)
+    peek_command(sample_config, fake_transport, box="inbox", completed=False, limit=2, as_json=True)
     assert len(json.loads(capsys.readouterr().out)) == 2
 
-    peek_command(sample_config, fake_transport, box="inbox", completed=False, limit=None,
-                 as_json=True)
+    peek_command(
+        sample_config, fake_transport, box="inbox", completed=False, limit=None, as_json=True
+    )
     assert len(json.loads(capsys.readouterr().out)) == 3
 
 
 def test_peek_json_includes_id_and_needs_input(sample_config, fake_transport, capsys):
     """Without the id you cannot act on what you just looked at."""
     _seed(sample_config, fake_transport, 1)
-    peek_command(sample_config, fake_transport, box="inbox", completed=False, limit=None,
-                 as_json=True)
+    peek_command(
+        sample_config, fake_transport, box="inbox", completed=False, limit=None, as_json=True
+    )
     row = json.loads(capsys.readouterr().out)[0]
     assert {"id", "title", "notes", "needs_input"} <= set(row)
 
 
 def test_peek_human_output_shows_the_id(sample_config, fake_transport, capsys):
     _seed(sample_config, fake_transport, 1)
-    peek_command(sample_config, fake_transport, box="inbox", completed=False, limit=None,
-                 as_json=False)
+    peek_command(
+        sample_config, fake_transport, box="inbox", completed=False, limit=None, as_json=False
+    )
     assert "item-1" in capsys.readouterr().out
 
 
 def test_peek_empty_box_says_so(sample_config, fake_transport, capsys):
     """An empty box printed nothing at all, which reads as a broken command."""
-    peek_command(sample_config, fake_transport, box="inbox", completed=False, limit=None,
-                 as_json=False)
+    peek_command(
+        sample_config, fake_transport, box="inbox", completed=False, limit=None, as_json=False
+    )
     assert "no items" in capsys.readouterr().out.lower()
 
-    peek_command(sample_config, fake_transport, box="inbox", completed=False, limit=None,
-                 as_json=True)
+    peek_command(
+        sample_config, fake_transport, box="inbox", completed=False, limit=None, as_json=True
+    )
     assert json.loads(capsys.readouterr().out) == []
 
 

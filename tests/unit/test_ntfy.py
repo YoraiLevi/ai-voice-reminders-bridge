@@ -93,6 +93,7 @@ def _write_cfg(tmp_path, tmp_mailbox, extra):
 # NTFY-1 — three states, because "no topic" is not "send failed"
 # --------------------------------------------------------------------------- #
 
+
 def test_push_returns_sent_on_success(tmp_path, tmp_mailbox, monkeypatch):
     cfg = _cfg_with_topic(tmp_path, tmp_mailbox)
     monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **k: None)

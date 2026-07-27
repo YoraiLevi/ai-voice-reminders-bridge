@@ -99,6 +99,7 @@ def _write(tmp_path, tmp_mailbox):
 # CFG-1 — one resolver for read AND write
 # --------------------------------------------------------------------------- #
 
+
 def test_resolve_prefers_explicit_over_everything(tmp_path, monkeypatch):
     monkeypatch.setenv(ENV_VAR, str(tmp_path / "from-env.json"))
     explicit = tmp_path / "explicit.json"
@@ -159,11 +160,12 @@ def test_set_then_get_round_trips_under_the_env_var(tmp_path, monkeypatch):
 # CFG-3 — as_dict mirrors the dataclass and cannot drift
 # --------------------------------------------------------------------------- #
 
+
 def test_as_dict_covers_every_dataclass_field(sample_config):
     """Hand-typed views drift. Deriving from the dataclass makes drift impossible."""
     declared = {f.name for f in dataclasses.fields(sample_config)}
     assert declared <= set(sample_config.as_dict()), (
-        "fields missing from as_dict: " f"{sorted(declared - set(sample_config.as_dict()))}"
+        f"fields missing from as_dict: {sorted(declared - set(sample_config.as_dict()))}"
     )
 
 
@@ -181,6 +183,7 @@ def test_as_dict_values_are_all_strings(sample_config):
 # --------------------------------------------------------------------------- #
 # CFG-4 — an error names the provider that chose the path
 # --------------------------------------------------------------------------- #
+
 
 def test_missing_config_error_names_the_env_var(tmp_path, monkeypatch):
     """Otherwise "config file not found" is unactionable: found by *what*?"""

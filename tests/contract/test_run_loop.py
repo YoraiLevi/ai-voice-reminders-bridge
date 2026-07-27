@@ -38,8 +38,10 @@ def _replies(cfg, *lines):
 # FMA-1 — the cursor advances per SENT line, not per batch
 # --------------------------------------------------------------------------- #
 
-def test_midbatch_failure_does_not_resend_earlier_replies(sample_config, fake_transport,
-                                                          monkeypatch):
+
+def test_midbatch_failure_does_not_resend_earlier_replies(
+    sample_config, fake_transport, monkeypatch
+):
     """The failure that turns one hiccup into a wall of duplicates.
 
     Three replies, the third fails. The old code saved the cursor only after the
@@ -80,6 +82,7 @@ def test_cursor_never_moves_backwards(sample_config, fake_transport):
 # FMA-2 — a failed complete() must not be swallowed
 # --------------------------------------------------------------------------- #
 
+
 def test_failed_complete_is_retried_not_swallowed(sample_config, fake_transport, monkeypatch):
     """Swallowing it left the reminder visible, so the user re-dictated it.
 
@@ -116,8 +119,8 @@ def test_completed_item_is_not_delivered_twice(sample_config, fake_transport):
 # FMA-16 — the append is flushed to disk before the item is marked handled
 # --------------------------------------------------------------------------- #
 
-def test_mailbox_append_is_fsynced_before_marking_seen(sample_config, fake_transport,
-                                                       monkeypatch):
+
+def test_mailbox_append_is_fsynced_before_marking_seen(sample_config, fake_transport, monkeypatch):
     """Ruled fix: without this, power loss loses the dictation while the phone
     shows it done — the message is gone and nothing reports it.
 
@@ -147,6 +150,7 @@ def test_mailbox_append_is_fsynced_before_marking_seen(sample_config, fake_trans
 # --------------------------------------------------------------------------- #
 # RUN-1/2 + FMA-12 — stop when retrying cannot help, and bound when it might
 # --------------------------------------------------------------------------- #
+
 
 class _Boom:
     """A transport whose connect() always raises the given error."""
@@ -194,8 +198,7 @@ class _Stop(BaseException):
     """Breaks the loop without being caught as a failure (run catches Exception)."""
 
 
-def test_transient_counter_resets_after_a_good_cycle(sample_config, fake_transport,
-                                                     monkeypatch):
+def test_transient_counter_resets_after_a_good_cycle(sample_config, fake_transport, monkeypatch):
     """Otherwise a long-lived poller accumulates unrelated blips until it quits.
 
     Two separate transient failures, each followed by a good cycle, with a budget
@@ -215,15 +218,14 @@ def test_transient_counter_resets_after_a_good_cycle(sample_config, fake_transpo
 
     monkeypatch.setattr(fake_transport, "connect", flaky)
     with pytest.raises(_Stop):
-        poller.run(
-            sample_config, fake_transport, interval=0, max_attempts=2, backoff_base=0
-        )
+        poller.run(sample_config, fake_transport, interval=0, max_attempts=2, backoff_base=0)
     assert calls["n"] > 4, "the loop must survive both blips rather than giving up"
 
 
 # --------------------------------------------------------------------------- #
 # RUN-9 — one poller per mailbox
 # --------------------------------------------------------------------------- #
+
 
 def test_second_poller_is_refused(sample_config, fake_transport, monkeypatch):
     """Two pollers on one account is how the throttle storms start."""
@@ -260,6 +262,7 @@ def test_stale_pidfile_does_not_block(sample_config, fake_transport):
 # --------------------------------------------------------------------------- #
 # RUN-4 — a dry run writes nothing
 # --------------------------------------------------------------------------- #
+
 
 def test_dry_run_creates_no_config(tmp_path, tmp_mailbox, capsys):
     """Asking "what would this do?" used to answer by doing part of it.

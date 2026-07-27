@@ -51,6 +51,7 @@ def test_render_is_strict_about_unknown_tokens(sample_config, monkeypatch):
 
 def test_missing_template_raises_command_error_not_traceback(sample_config, monkeypatch):
     """VOX-3: a packaging fault should explain itself and exit 2."""
+
     def boom():
         raise FileNotFoundError("prompts/vox.md")
 

@@ -50,6 +50,7 @@ def connected_transport(
 # lists
 # --------------------------------------------------------------------------- #
 
+
 def list_command(cfg: Config, t: Transport, *, as_json: bool) -> int:
     """Show every list on the backend, and which ones this spoke actually uses.
 
@@ -95,6 +96,7 @@ def list_command(cfg: Config, t: Transport, *, as_json: bool) -> int:
 # --------------------------------------------------------------------------- #
 # peek
 # --------------------------------------------------------------------------- #
+
 
 def peek_command(
     cfg: Config,

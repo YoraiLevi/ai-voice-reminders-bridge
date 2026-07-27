@@ -24,6 +24,7 @@ def test_gather_reports_the_last_dictation(sample_config):
 # STATUS-1 — the labels were inverted
 # --------------------------------------------------------------------------- #
 
+
 def test_field_names_describe_the_direction_they_report(sample_config):
     """`last_inbound` read the file we WRITE, and `last_outbound` the one we READ.
 
@@ -54,6 +55,7 @@ def test_reply_timestamp_tracks_our_own_inbox(sample_config):
 # --------------------------------------------------------------------------- #
 # FMA-17 — a non-positive pid must never reach os.kill
 # --------------------------------------------------------------------------- #
+
 
 def test_non_positive_pid_is_never_probed(sample_config, monkeypatch):
     """`os.kill(0, 0)` does not ask "is pid 0 alive?" on Windows.
@@ -93,6 +95,7 @@ def test_corrupt_pidfile_reports_not_running(sample_config):
 # --------------------------------------------------------------------------- #
 # FMA-9 — say when nothing is reading, without inventing peer liveness
 # --------------------------------------------------------------------------- #
+
 
 def _stamp(path, text, when):
     import os
@@ -183,7 +186,7 @@ def test_liveness_probe_never_signals_on_windows(sample_config, monkeypatch):
 
     if _os.name == "nt":
         monkeypatch.setattr(status.os, "kill", forbidden)
-        assert status._alive(_os.getpid()) is True   # ourselves: definitely alive
-        assert status._alive(2**31 - 1) is False     # implausible pid
+        assert status._alive(_os.getpid()) is True  # ourselves: definitely alive
+        assert status._alive(2**31 - 1) is False  # implausible pid
     assert status._alive(0) is False
     assert status._alive(-5) is False

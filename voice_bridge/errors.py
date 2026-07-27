@@ -143,6 +143,7 @@ def is_transient(exc: BaseException) -> bool:
 # typed command failures
 # --------------------------------------------------------------------------- #
 
+
 def _is_auth(exc: BaseException) -> bool:
     """Credentials/session failures, matched by name to avoid importing transports.
 

@@ -140,9 +140,7 @@ class Config:
         is answered by `field_help()`.
         """
         out = {"source": self.source}
-        out.update(
-            {f.name: str(getattr(self, f.name)) for f in fields(self) if f.name != "source"}
-        )
+        out.update({f.name: str(getattr(self, f.name)) for f in fields(self) if f.name != "source"})
         return out
 
 

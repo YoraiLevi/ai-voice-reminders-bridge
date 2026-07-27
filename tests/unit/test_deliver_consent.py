@@ -33,7 +33,9 @@ def gist(monkeypatch, tmp_path):
 
     def fake_run(cmd, capture_output=True, text=True):
         calls.append(cmd)
-        return subprocess.CompletedProcess(cmd, 0, stdout="https://gist.github.com/abc123\n", stderr="")
+        return subprocess.CompletedProcess(
+            cmd, 0, stdout="https://gist.github.com/abc123\n", stderr=""
+        )
 
     monkeypatch.setattr(deliver_mod.subprocess, "run", fake_run)
     return {"file": str(target), "calls": calls}
@@ -43,8 +45,8 @@ def gist(monkeypatch, tmp_path):
 # DELIVER-2 — refuse without consent, never crash for the want of it
 # --------------------------------------------------------------------------- #
 
-def test_no_tty_without_yes_refuses_rather_than_crashing(sample_config, gist, monkeypatch,
-                                                         capsys):
+
+def test_no_tty_without_yes_refuses_rather_than_crashing(sample_config, gist, monkeypatch, capsys):
     monkeypatch.setattr(deliver_mod, "_is_tty", lambda: False)
     rc = deliver_mod.deliver(sample_config, gist["file"])
     assert rc == 2
@@ -69,8 +71,8 @@ def test_declining_the_prompt_uploads_nothing(sample_config, gist, monkeypatch):
 # DELIVER-4 — the question must describe what actually happens
 # --------------------------------------------------------------------------- #
 
-def test_consent_prompt_names_the_upload_and_the_real_visibility(sample_config, gist,
-                                                                 monkeypatch):
+
+def test_consent_prompt_names_the_upload_and_the_real_visibility(sample_config, gist, monkeypatch):
     seen: dict = {}
     monkeypatch.setattr(deliver_mod, "_is_tty", lambda: True)
     monkeypatch.setattr(
@@ -98,6 +100,7 @@ def test_public_flag_changes_the_warning(sample_config, gist, monkeypatch):
 # --------------------------------------------------------------------------- #
 # DELIVER-3 — the banner result must not be discarded
 # --------------------------------------------------------------------------- #
+
 
 def test_url_is_printed_before_any_banner_warning(sample_config, gist, monkeypatch, capsys):
     """The URL is the deliverable; it must survive a notification failure."""

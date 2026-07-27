@@ -37,18 +37,14 @@ def _ask_consent(prompt: str) -> bool:  # pragma: no cover - interactive
 def _consent_prompt(file: str, *, public: bool) -> str:
     """Describe what is actually about to happen, in the words that matter."""
     if public:
-        visibility = (
-            "It will be PUBLIC: listed on your profile, searchable, readable by anyone."
-        )
+        visibility = "It will be PUBLIC: listed on your profile, searchable, readable by anyone."
     else:
         visibility = (
             "A private gist is UNLISTED, not secret — anyone with the link can read it, "
             "and that link is about to be sent to your phone through a notification topic."
         )
     return (
-        f"This uploads the contents of {file} to GitHub as a gist.\n"
-        f"{visibility}\n"
-        "Continue? [y/N] "
+        f"This uploads the contents of {file} to GitHub as a gist.\n{visibility}\nContinue? [y/N] "
     )
 
 

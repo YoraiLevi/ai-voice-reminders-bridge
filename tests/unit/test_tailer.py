@@ -24,6 +24,7 @@ def _write(path, lines):
 # read_tail — TAIL-1
 # --------------------------------------------------------------------------- #
 
+
 def test_read_tail_returns_only_the_last_n(tmp_path):
     f = tmp_path / "to-manager.md"
     _write(f, [f"line {i}" for i in range(100)])
@@ -59,6 +60,7 @@ def test_read_tail_zero_returns_nothing(tmp_path):
 # --------------------------------------------------------------------------- #
 # follow_step — TAIL-2
 # --------------------------------------------------------------------------- #
+
 
 def test_follow_step_from_zero_reads_everything(tmp_path):
     f = tmp_path / "f.md"

@@ -81,7 +81,9 @@ def _build_parser() -> argparse.ArgumentParser:
     r.add_argument("--interval", type=int)
     r.add_argument("--once", action="store_true")
     r.add_argument("--dry-run", action="store_true")
-    r.add_argument("--force", action="store_true", help="run even if another poller holds the mailbox")
+    r.add_argument(
+        "--force", action="store_true", help="run even if another poller holds the mailbox"
+    )
     r.add_argument(
         "--with-server", action="store_true", help="(radicale) spawn the server as a child"
     )
@@ -412,9 +414,7 @@ def _radicale_server_cmd(args, cfg_path) -> int:
     op = getattr(args, "op", None)
     if op == "init":
         try:
-            server_mod.init(
-                cfg, user=args.user, host=args.host, port=args.port, force=args.force
-            )
+            server_mod.init(cfg, user=args.user, host=args.host, port=args.port, force=args.force)
         except server_mod.ServerExtraMissing as exc:
             print(f"error: {exc}")
             return 2

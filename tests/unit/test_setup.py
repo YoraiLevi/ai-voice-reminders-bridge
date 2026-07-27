@@ -26,6 +26,7 @@ from voice_bridge import setup as setup_mod
 # SETUP-1 — prompt on a terminal, never off one
 # --------------------------------------------------------------------------- #
 
+
 def test_prompt_fields_offers_defaults_and_accepts_enter(sample_config, monkeypatch):
     """Enter keeps the default, so the guided path is safe to hold down."""
     monkeypatch.setattr(setup_mod, "_is_tty", lambda: True)
@@ -66,6 +67,7 @@ def test_no_tty_prompts_nothing(sample_config, monkeypatch):
 # --------------------------------------------------------------------------- #
 # SETUP-3 — "verified" must mean a message actually moved
 # --------------------------------------------------------------------------- #
+
 
 def test_verify_round_trips_a_probe_and_cleans_up(sample_config, fake_transport, fake_ntfy):
     """The claim under test is end-to-end delivery, so the test asserts arrival.
@@ -109,6 +111,7 @@ def test_verify_reports_failure_rather_than_claiming_success(sample_config, fake
 # SETUP-6 — machine output belongs behind --json
 # --------------------------------------------------------------------------- #
 
+
 def test_setup_done_marker_is_gone(sample_config, fake_transport, capsys):
     lines = setup_mod.provision(sample_config, fake_transport)
     assert not any("SETUP_DONE" in ln for ln in lines)
@@ -123,6 +126,7 @@ def test_json_output_is_machine_readable(sample_config, fake_transport, capsys):
 # --------------------------------------------------------------------------- #
 # SETUP-2 — the split landed with the transport seam; pinned here
 # --------------------------------------------------------------------------- #
+
 
 def test_auth_failure_is_not_reported_as_missing_lists(sample_config, boom_transport):
     """Telling someone with a bad password to go make lists names the wrong blocker."""

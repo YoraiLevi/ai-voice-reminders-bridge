@@ -45,6 +45,7 @@ def _healthy_creds(cfg):
 # DOCTOR-4 — the survey must observe, not mutate
 # --------------------------------------------------------------------------- #
 
+
 def test_survey_does_not_create_the_mailbox_it_is_checking(sample_config, fake_transport, capsys):
     """Reporting on a directory you just created is not a check.
 
@@ -80,6 +81,7 @@ def test_fix_may_create_the_mailbox(sample_config, fake_transport, capsys):
 # DOCTOR-1 — credentials: present is not the same as usable
 # --------------------------------------------------------------------------- #
 
+
 def test_empty_creds_file_is_not_green(sample_config, fake_transport, capsys):
     sample_config.creds_env.parent.mkdir(parents=True, exist_ok=True)
     sample_config.creds_env.write_text("", encoding="utf-8")
@@ -113,6 +115,7 @@ def test_quote_wrapped_password_is_flagged(sample_config, fake_transport, capsys
 # DOCTOR-2 — a pinned id that points at nothing must not pass
 # --------------------------------------------------------------------------- #
 
+
 def test_dangling_pin_is_not_green(sample_config, fake_transport, capsys):
     """Name matching hid this: the name exists, so the row went GREEN — while
     every poll would fail, because polling resolves by the pinned id."""
@@ -144,6 +147,7 @@ def test_unpinned_ghost_holding_items_warns(sample_config, ghost_transport, caps
 # DOCTOR-3 — an empty topic file silently disables notifications
 # --------------------------------------------------------------------------- #
 
+
 def test_empty_topic_file_is_not_green(sample_config, fake_transport, capsys):
     sample_config.ntfy_topic_file.parent.mkdir(parents=True, exist_ok=True)
     sample_config.ntfy_topic_file.write_text("   \n", encoding="utf-8")
@@ -162,6 +166,7 @@ def test_non_empty_topic_is_green(sample_config, fake_transport, capsys):
 # DOCTOR-5 — the config row must report something it actually looked at
 # --------------------------------------------------------------------------- #
 
+
 def test_config_row_names_its_source(sample_config, fake_transport, capsys):
     """It was a hardcoded GREEN — true by construction, informative about nothing."""
     doctor_mod.run(sample_config, fake_transport)
@@ -173,6 +178,7 @@ def test_config_row_names_its_source(sample_config, fake_transport, capsys):
 # --------------------------------------------------------------------------- #
 # exit code — the worst row wins, so a script can gate on it
 # --------------------------------------------------------------------------- #
+
 
 def test_exit_code_is_the_worst_row(sample_config, fake_transport, capsys):
     _healthy_creds(sample_config)

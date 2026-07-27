@@ -57,9 +57,7 @@ def _creds_row(cfg: Config) -> Row:
     wrapped = [
         k
         for k in required
-        if len(values.get(k, "")) >= 2
-        and values[k][0] == values[k][-1]
-        and values[k][0] in _QUOTES
+        if len(values.get(k, "")) >= 2 and values[k][0] == values[k][-1] and values[k][0] in _QUOTES
     ]
     if wrapped:
         return (

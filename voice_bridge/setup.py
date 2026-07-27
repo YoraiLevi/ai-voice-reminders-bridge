@@ -148,13 +148,11 @@ def verify(cfg: Config, t: Transport) -> dict[str, Any]:
     # Leg 2: mailbox -> phone, plus the doorbell.
     reply_id = t.add_todo(outbox, _PROBE, notes="safe to ignore; removed automatically")
     try:
-        report_out["reply_delivered"] = any(
-            it.id == reply_id for it in t.read_incomplete(outbox)
-        )
+        report_out["reply_delivered"] = any(it.id == reply_id for it in t.read_incomplete(outbox))
         pushed = ntfy.push(cfg, _PROBE)
         report_out["banner_sent"] = pushed.status == "sent"
-        report_out["banner_detail"] = pushed.status if pushed.status == "sent" else (
-            f"{pushed.status}: {pushed.detail}"
+        report_out["banner_detail"] = (
+            pushed.status if pushed.status == "sent" else (f"{pushed.status}: {pushed.detail}")
         )
     finally:
         t.complete(outbox, reply_id)

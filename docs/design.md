@@ -170,8 +170,8 @@ be absent.
 | identity | `spoke_name` | `vox` | our name; names our inbox file |
 | | `route_to` | `manager` | the peer we write to |
 | | `from_name` | *(= `spoke_name`)* | tag on lines we write |
-| phone bus | `inbox_list` | `Vox-Message-Inbox` | phone → mailbox (you dictate here) |
-| | `output_list` | `Vox-Message-Outbox` | mailbox → phone (replies land here) |
+| phone bus | `inbox_list` | `Vox-Message-Inbox` | the **inbox list** — phone → mailbox (you dictate here) |
+| | `output_list` | `Vox-Message-Outbox` | the **outbox list** — mailbox → phone (replies land here) |
 | | `inbox_list_id` / `output_list_id` | *(empty)* | pin a list by ID — see *Ghost lists* |
 | mailbox | `mailbox_dir` | `~/.agent-mail` | the shared mailbox directory |
 | our state | `state_dir` | `$XDG_STATE_HOME/vox-mailbox` | credentials, cookies, bookkeeping |
@@ -375,7 +375,8 @@ distinguishes a different cause, and the early steps are the common ones.
 > correctly but never announced itself, because push is best-effort and fails invisibly.
 > **Always check the outbox list before assuming nothing happened.**
 
-1. **Look in the outbox list on your phone.** If the reply is sitting there, delivery worked
+1. **Look in the outbox list on your phone** (the list named by the `output_list` setting —
+   note the setting is spelled `output_`, not `outbox_`). If the reply is sitting there, delivery worked
    end to end and only the notification failed — check that a notification topic is
    configured, and that the notification server is reachable.
 2. **Is the dictation still sitting in your inbox list?** Two different meanings:

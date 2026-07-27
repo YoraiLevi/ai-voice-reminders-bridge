@@ -203,8 +203,8 @@ class FakeICloudService:
         cookie_directory: str | None = None,
         *,
         good_password: str = "correct-horse",
-        requires_2fa: bool = True,
-        requires_2sa: bool = False,
+        mfa_required: bool = True,
+        hsa_version: int = 2,
         code_ok: bool = True,
         trust_works: bool = True,
     ) -> None:
@@ -213,17 +213,33 @@ class FakeICloudService:
         self.apple_id = apple_id
         self.password = password
         self.cookie_directory = cookie_directory
-        self.requires_2fa = requires_2fa
-        self.requires_2sa = requires_2sa
-        self.is_trusted_session = not requires_2fa
+        # Model the account the way pyicloud does — one MFA flag and an hsaVersion —
+        # rather than two independent booleans. The flags below are DERIVED, so this
+        # double cannot express a combination the real library never produces. It
+        # previously could, and that is exactly how LIVE-1 escaped: every test set
+        # `requires_2sa` independently of `requires_2fa`, while in reality a modern
+        # two-factor account reports BOTH as true.
+        self._mfa = mfa_required
+        self._hsa = hsa_version
+        self.is_trusted_session = not self.requires_2fa
         self._code_ok = code_ok
         self._trust_works = trust_works
         self.calls: list[str] = ["construct"]
 
+    @property
+    def requires_2sa(self) -> bool:
+        """`hsaVersion >= 1` — a SUPERSET, true for legacy 2SA *and* modern 2FA."""
+        return self._mfa and self._hsa >= 1
+
+    @property
+    def requires_2fa(self) -> bool:
+        """`hsaVersion == 2` — modern two-factor only."""
+        return self._mfa and self._hsa == 2
+
     def validate_2fa_code(self, code: str) -> bool:
         self.calls.append(f"validate_2fa_code:{code}")
         if self._code_ok:
-            self.requires_2fa = False
+            self._mfa = False  # satisfied: both derived flags fall together
         return self._code_ok
 
     def trust_session(self) -> None:

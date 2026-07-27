@@ -209,10 +209,18 @@ def icloud_login(  # noqa: C901 - a flat state machine; clearer read end to end
         print(f"error: iCloud login failed: {exc}")
         return 1
 
-    if getattr(api, "requires_2sa", False):
+    # These two flags are NOT independent, which is what broke the first live run.
+    # In pyicloud, `requires_2sa` is `hsaVersion >= 1` and `requires_2fa` is
+    # `hsaVersion == 2`, so 2SA is a strict SUPERSET: a modern two-factor account
+    # reports BOTH as true. Checking 2SA first therefore rejected every real 2FA
+    # account with "not supported" before the 2FA branch could run — while Apple
+    # was already showing the code on the user's phone. Only an account that wants
+    # 2SA and NOT 2FA is the legacy case we cannot handle (LIVE-1).
+    needs_2fa = bool(getattr(api, "requires_2fa", False))
+    if getattr(api, "requires_2sa", False) and not needs_2fa:
         print(
-            "error: two-STEP verification (2SA) accounts are not supported — "
-            "upgrade the account to two-FACTOR (2FA)."
+            "error: this account uses legacy two-STEP verification (2SA), which is "
+            "not supported — upgrade it to two-FACTOR (2FA) in your Apple ID settings."
         )
         return 2
 
@@ -220,7 +228,7 @@ def icloud_login(  # noqa: C901 - a flat state machine; clearer read end to end
         _persist(cfg, use_id, use_pw)
 
     # --- establish a durable session ---------------------------------------
-    if not getattr(api, "requires_2fa", False):
+    if not needs_2fa:
         print("session already trusted.")
         return 0
 

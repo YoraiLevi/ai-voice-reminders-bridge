@@ -100,7 +100,7 @@ def test_fresh_machine_captures_then_trusts(sample_config, fake_icloud, monkeypa
 
 def test_existing_creds_confirmed_and_already_trusted(sample_config, fake_icloud, monkeypatch,
                                                       capsys):
-    fake_icloud(requires_2fa=False)
+    fake_icloud(mfa_required=False)
     _seed_creds(sample_config)
     _no_prompts(monkeypatch, confirm=True)
     assert login_mod.icloud_login(sample_config) == 0
@@ -116,7 +116,7 @@ def test_declining_the_confirm_recaptures(sample_config, fake_icloud, monkeypatc
 
 def test_non_tty_uses_existing_without_prompting(sample_config, fake_icloud, monkeypatch):
     """A scheduled run must not die on EOFError trying to ask a question."""
-    fake_icloud(requires_2fa=False)
+    fake_icloud(mfa_required=False)
     _seed_creds(sample_config)
     monkeypatch.setattr(login_mod, "_is_tty", lambda: False)
 
@@ -258,7 +258,11 @@ def test_success_message_makes_no_unverified_lifetime_claim(sample_config, fake_
     """The shipped message claimed "~60 days", a number Apple does not document."""
     _no_prompts(monkeypatch)
     login_mod.icloud_login(sample_config, code="123456")
-    assert "60" not in capsys.readouterr().out
+    out = capsys.readouterr().out.lower()
+    # Assert the CLAIM is absent, not the digits: the printed creds path contains
+    # pytest's run counter, so a bare "60" matches by accident roughly once in a
+    # hundred runs. A flaky test is worse than none — it teaches people to re-run.
+    assert "day" not in out and "week" not in out and "month" not in out
 
 
 # --------------------------------------------------------------------------- #
@@ -266,7 +270,7 @@ def test_success_message_makes_no_unverified_lifetime_claim(sample_config, fake_
 # --------------------------------------------------------------------------- #
 
 def test_two_step_account_exits_2_saying_so(sample_config, fake_icloud, monkeypatch, capsys):
-    fake_icloud(requires_2fa=False, requires_2sa=True)
+    fake_icloud(hsa_version=1)
     _no_prompts(monkeypatch)
     assert login_mod.icloud_login(sample_config) == 2
     assert "2sa" in capsys.readouterr().out.lower()
@@ -324,3 +328,47 @@ def test_eof_while_prompting_gives_the_same_guidance_as_no_tty(sample_config, mo
     assert login_mod.icloud_login(sample_config) == 2
     out = capsys.readouterr().out
     assert "--apple-id" in out and "--password-stdin" in out
+
+
+def test_2fa_account_reports_both_flags_and_still_proceeds(sample_config, fake_icloud,
+                                                           monkeypatch, capsys):
+    """LIVE-1, reproduced: a real 2FA account sets requires_2sa AND requires_2fa.
+
+    `requires_2sa` is `hsaVersion >= 1` and `requires_2fa` is `hsaVersion == 2`, so
+    2SA is a strict superset. Checking it first rejected every modern account with
+    "not supported" — while Apple was already displaying the code on the phone.
+    Only 2SA *without* 2FA is the legacy case.
+    """
+    _no_prompts(monkeypatch)
+    svc_state = fake_icloud()
+    rc = login_mod.icloud_login(sample_config, code="123456")
+    svc = svc_state["service"]
+
+    out = capsys.readouterr().out.lower()
+    assert rc == 0, out
+    assert "not supported" not in out
+    assert any(c.startswith("validate_2fa_code") for c in svc.calls), (
+        "the 2FA flow must actually run for a modern account"
+    )
+
+
+def test_the_fake_cannot_express_an_impossible_account(sample_config, fake_icloud, monkeypatch):
+    """The double must not be kinder than reality — that is why LIVE-1 escaped.
+
+    Any account still requiring 2FA necessarily also reports 2SA, because the
+    latter's condition is weaker. A fake that let the two vary independently
+    allowed every test to pass against code that could not work.
+    """
+    _no_prompts(monkeypatch)
+    fake_icloud()
+    login_mod.icloud_login(sample_config, code="123456")
+    from tests.conftest import FakeICloudService
+
+    modern = FakeICloudService("me@icloud.com", "correct-horse", hsa_version=2)
+    assert modern.requires_2fa and modern.requires_2sa, "modern 2FA implies 2SA"
+
+    legacy = FakeICloudService("me@icloud.com", "correct-horse", hsa_version=1)
+    assert legacy.requires_2sa and not legacy.requires_2fa, "legacy 2SA is the subset case"
+
+    settled = FakeICloudService("me@icloud.com", "correct-horse", mfa_required=False)
+    assert not settled.requires_2sa and not settled.requires_2fa

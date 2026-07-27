@@ -118,3 +118,39 @@ def test_patch_lands_on_the_site_that_is_actually_called():
 
     _icloud_crdt.install()
     assert _writes._encode_crdt_document is _icloud_crdt.encode_crdt_document
+
+
+# --------------------------------------------------------------------------- #
+# LIVE-7 — every private symbol we reach for must be pinned to the installed lib
+# --------------------------------------------------------------------------- #
+
+
+def test_raw_read_helpers_resolve_against_installed_pyicloud():
+    """The guard that was missing, which is why LIVE-7 shipped.
+
+    `check_stored` reaches into pyicloud's private read path. The first version
+    imported the zone constant from `_protocol`, where it does not live — an
+    assumed private surface, inside the tool built to retire assumed private
+    surfaces, and invisible because only the never-unit-tested raw leg used it.
+
+    Resolving from `_reads` — the module that both imports them and is the one we
+    call — cannot disagree with the call itself. This asserts they are actually
+    there, so a pyicloud reshuffle fails HERE rather than on someone's phone.
+    """
+    reads_mod = pytest.importorskip("pyicloud.services.reminders._reads")
+
+    assert getattr(reads_mod, "_REMINDERS_ZONE_REQ", None) is not None, (
+        "the zone constant moved; check_stored resolves it from this module"
+    )
+    assert callable(getattr(reads_mod, "_as_record_name", None)), (
+        "the record-name helper moved; check_stored resolves it from this module"
+    )
+
+
+def test_check_stored_reports_rather_than_raises_without_a_service():
+    """A diagnostic that explodes is worse than one that says it cannot tell."""
+    from voice_bridge import titlelint
+
+    verdict = titlelint.check_stored(object(), "Reminder/does-not-exist")
+    assert verdict.ok is False
+    assert verdict.problems, "it must say WHY it could not answer"

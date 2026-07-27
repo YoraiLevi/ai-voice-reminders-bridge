@@ -109,19 +109,32 @@ def check_stored(service: object, reminder_id: str) -> Verdict:
     the raw record — and the raw record is the only thing that shows what the
     phone will be asked to parse.
     """
+    # Resolve the helpers from the module that already imported them, rather than
+    # naming a source module. The first attempt guessed `_protocol` for the zone
+    # constant, which actually lives in `_constants` — an assumed private surface,
+    # inside the tool built to retire assumed private surfaces. `_reads` binds both
+    # names because it uses them, and `_reads` is what we call, so taking them from
+    # there cannot disagree with the call we are about to make.
     try:
-        from pyicloud.services.reminders._protocol import (  # type: ignore[attr-defined]
-            _REMINDERS_ZONE_REQ,
-            _as_record_name,
-        )
-    except ImportError as exc:  # pragma: no cover - upstream moved these
+        from pyicloud.services.reminders import _reads as reads_mod
+    except ImportError as exc:  # pragma: no cover - pyicloud not installed
         return Verdict(False, problems=[f"cannot reach the raw read path: {exc}"])
+
+    zone = getattr(reads_mod, "_REMINDERS_ZONE_REQ", None)
+    as_record_name = getattr(reads_mod, "_as_record_name", None)
+    if zone is None or as_record_name is None:  # pragma: no cover - upstream moved them
+        return Verdict(
+            False,
+            problems=[
+                "pyicloud's raw read helpers have moved; the stored-title check needs updating"
+            ],
+        )
 
     try:
         reads = service._reads  # type: ignore[attr-defined]
         resp = reads._get_raw().lookup(
-            record_names=[_as_record_name(reminder_id, "Reminder")],
-            zone_id=_REMINDERS_ZONE_REQ,
+            record_names=[as_record_name(reminder_id, "Reminder")],
+            zone_id=zone,
         )
         for rec in resp.records:
             fields = getattr(rec, "fields", None) or {}

@@ -17,6 +17,7 @@ from . import prompt as prompt_mod
 from . import server as server_mod
 from . import setup as setup_mod
 from . import status as status_mod
+from . import tailer
 from .config import (
     ConfigError,
     field_help,
@@ -101,6 +102,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     tp = sub.add_parser("tail", help="follow the mailbox files")
     tp.add_argument("--box", choices=("both", "manager", "vox"), default="both")
+    tp.add_argument("-n", type=int, dest="limit", help="last N lines (default 20)")
     tp.add_argument("-f", "--follow", action="store_true")
 
     sp = sub.add_parser("send", help="push one reply through the outbound path")
@@ -285,6 +287,14 @@ def _dispatch(args) -> int:  # noqa: C901 - a flat command table
 
 
 def _tail_cmd(cfg, args) -> int:
+    """Show the tail of the mailbox files, optionally following them.
+
+    Both behaviours come from `tailer`, which is where they are actually tested:
+    the previous inline loop dumped a file's entire history, and it compared
+    `len(data) > size` so a truncated or rotated file left the offset past the
+    end — following then went silent for ever, which looks exactly like "nothing
+    is happening" (TAIL-1/TAIL-2).
+    """
     import time
 
     boxes = []
@@ -292,26 +302,22 @@ def _tail_cmd(cfg, args) -> int:
         boxes.append(("manager", cfg.peer_inbox))
     if args.box in ("both", "vox"):
         boxes.append(("vox", cfg.our_inbox))
-    sizes: dict = {}
+
+    limit = tailer.DEFAULT_TAIL_LINES if args.limit is None else args.limit
+    offsets: dict = {}
     for label, path in boxes:
-        if path.exists():
-            for line in path.read_text(encoding="utf-8").splitlines():
-                print(f"[{label}] {line}")
-            sizes[path] = path.stat().st_size
-        else:
-            sizes[path] = 0
+        for line in tailer.read_tail(path, limit):
+            print(f"[{label}] {line}")
+        offsets[path] = path.stat().st_size if path.exists() else 0
+
     if not args.follow:
         return 0
     try:
         while True:
             for label, path in boxes:
-                if not path.exists():
-                    continue
-                data = path.read_bytes()
-                if len(data) > sizes[path]:
-                    for line in data[sizes[path] :].decode("utf-8", "replace").splitlines():
-                        print(f"[{label}] {line}")
-                    sizes[path] = len(data)
+                lines, offsets[path] = tailer.follow_step(path, offsets[path])
+                for line in lines:
+                    print(f"[{label}] {line}")
             time.sleep(0.5)
     except KeyboardInterrupt:
         return 0

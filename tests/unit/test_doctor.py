@@ -1,0 +1,187 @@
+"""`doctor` — a survey that must never report a false GREEN.
+
+A health check is the one command whose *only* product is justified confidence,
+so every way it can be wrong is a way it makes things worse than having no check
+at all. The version this replaces could report GREEN for five different untrue
+reasons:
+
+* the config row was a hardcoded GREEN, printed before anything was inspected;
+* the credentials row asked only whether the file *existed*, so an empty or
+  half-written one passed;
+* the lists row matched on name, so a pinned id pointing at a deleted list passed
+  while every poll would fail;
+* the topic row passed on an empty file, and an empty topic silently disables
+  notifications;
+* the mailbox row **created the directory it was checking**, so it reported on a
+  state it had just manufactured.
+
+Every test here is therefore a "must not be GREEN when X" test.
+"""
+
+from __future__ import annotations
+
+import dataclasses
+
+from voice_bridge import doctor as doctor_mod
+from voice_bridge.util import write_env
+
+
+def _rows(capsys) -> dict[str, str]:
+    """Parse the printed survey back into {row name: status}."""
+    out = {}
+    for line in capsys.readouterr().out.splitlines():
+        if "[" in line and "]" in line:
+            status = line.split("[", 1)[1].split("]", 1)[0].strip()
+            name = line.split("]", 1)[1].split("->")[0].strip()
+            out[name] = status
+    return out
+
+
+def _healthy_creds(cfg):
+    write_env(cfg.creds_env, {"ICLOUD_APPLE_ID": "me@icloud.com", "ICLOUD_PASSWORD": "pw"})
+
+
+# --------------------------------------------------------------------------- #
+# DOCTOR-4 — the survey must observe, not mutate
+# --------------------------------------------------------------------------- #
+
+def test_survey_does_not_create_the_mailbox_it_is_checking(sample_config, fake_transport, capsys):
+    """Reporting on a directory you just created is not a check.
+
+    It also destroys the diagnosis: "the mailbox is missing" is exactly what a
+    user with a misconfigured `mailbox_dir` needs to be told.
+    """
+    missing = sample_config.mailbox_dir / "definitely-not-here"
+    cfg = dataclasses.replace(
+        sample_config,
+        mailbox_dir=missing,
+        peer_inbox=missing / "to-manager.md",
+        our_inbox=missing / "to-vox.md",
+    )
+    doctor_mod.run(cfg, fake_transport)
+    assert not missing.exists(), "the survey must not create anything"
+    assert _rows(capsys)["mailbox dir"] != "GREEN"
+
+
+def test_fix_may_create_the_mailbox(sample_config, fake_transport, capsys):
+    """`--fix` is the consent that makes mutation legitimate."""
+    missing = sample_config.mailbox_dir / "made-by-fix"
+    cfg = dataclasses.replace(
+        sample_config,
+        mailbox_dir=missing,
+        peer_inbox=missing / "to-manager.md",
+        our_inbox=missing / "to-vox.md",
+    )
+    doctor_mod.run(cfg, fake_transport, fix=True)
+    assert missing.exists()
+
+
+# --------------------------------------------------------------------------- #
+# DOCTOR-1 — credentials: present is not the same as usable
+# --------------------------------------------------------------------------- #
+
+def test_empty_creds_file_is_not_green(sample_config, fake_transport, capsys):
+    sample_config.creds_env.parent.mkdir(parents=True, exist_ok=True)
+    sample_config.creds_env.write_text("", encoding="utf-8")
+    doctor_mod.run(sample_config, fake_transport)
+    assert _rows(capsys)["creds file"] != "GREEN"
+
+
+def test_creds_missing_a_required_key_is_not_green(sample_config, fake_transport, capsys):
+    write_env(sample_config.creds_env, {"ICLOUD_APPLE_ID": "me@icloud.com"})  # no password
+    doctor_mod.run(sample_config, fake_transport)
+    assert _rows(capsys)["creds file"] != "GREEN"
+
+
+def test_complete_creds_are_green(sample_config, fake_transport, capsys):
+    _healthy_creds(sample_config)
+    doctor_mod.run(sample_config, fake_transport)
+    assert _rows(capsys)["creds file"] == "GREEN"
+
+
+def test_quote_wrapped_password_is_flagged(sample_config, fake_transport, capsys):
+    """The doctor twin of the login warning, so the diagnosis exists in both places."""
+    write_env(
+        sample_config.creds_env,
+        {"ICLOUD_APPLE_ID": "me@icloud.com", "ICLOUD_PASSWORD": '"wrapped"'},
+    )
+    doctor_mod.run(sample_config, fake_transport)
+    assert "quote" in capsys.readouterr().out.lower()
+
+
+# --------------------------------------------------------------------------- #
+# DOCTOR-2 — a pinned id that points at nothing must not pass
+# --------------------------------------------------------------------------- #
+
+def test_dangling_pin_is_not_green(sample_config, fake_transport, capsys):
+    """Name matching hid this: the name exists, so the row went GREEN — while
+    every poll would fail, because polling resolves by the pinned id."""
+    cfg = dataclasses.replace(sample_config, inbox_list_id="NO-SUCH-ID")
+    _healthy_creds(cfg)
+    doctor_mod.run(cfg, fake_transport)
+    assert _rows(capsys)["lists"] != "GREEN"
+
+
+def test_valid_pin_is_green(sample_config, fake_transport, capsys):
+    ref = fake_transport.resolve_list("Vox-Message-Inbox", "")
+    cfg = dataclasses.replace(sample_config, inbox_list_id=ref.id)
+    _healthy_creds(cfg)
+    doctor_mod.run(cfg, fake_transport)
+    assert _rows(capsys)["lists"] == "GREEN"
+
+
+def test_unpinned_ghost_holding_items_warns(sample_config, ghost_transport, capsys):
+    """Two lists share the name and one has messages in it — resolve-by-name is a
+    coin flip, and the losing side means dictations that are never seen."""
+    lst = [r for r in ghost_transport.list_todo_lists() if r.id == "L9"][0]
+    ghost_transport.add_todo(lst, "a dictation nobody will read")
+    _healthy_creds(sample_config)
+    doctor_mod.run(sample_config, ghost_transport)
+    assert _rows(capsys)["lists"] != "GREEN"
+
+
+# --------------------------------------------------------------------------- #
+# DOCTOR-3 — an empty topic file silently disables notifications
+# --------------------------------------------------------------------------- #
+
+def test_empty_topic_file_is_not_green(sample_config, fake_transport, capsys):
+    sample_config.ntfy_topic_file.parent.mkdir(parents=True, exist_ok=True)
+    sample_config.ntfy_topic_file.write_text("   \n", encoding="utf-8")
+    doctor_mod.run(sample_config, fake_transport)
+    assert _rows(capsys)["ntfy topic"] != "GREEN"
+
+
+def test_non_empty_topic_is_green(sample_config, fake_transport, capsys):
+    sample_config.ntfy_topic_file.parent.mkdir(parents=True, exist_ok=True)
+    sample_config.ntfy_topic_file.write_text("my-secret-topic", encoding="utf-8")
+    doctor_mod.run(sample_config, fake_transport)
+    assert _rows(capsys)["ntfy topic"] == "GREEN"
+
+
+# --------------------------------------------------------------------------- #
+# DOCTOR-5 — the config row must report something it actually looked at
+# --------------------------------------------------------------------------- #
+
+def test_config_row_names_its_source(sample_config, fake_transport, capsys):
+    """It was a hardcoded GREEN — true by construction, informative about nothing."""
+    doctor_mod.run(sample_config, fake_transport)
+    out = capsys.readouterr().out
+    assert "config" in out
+    assert sample_config.source in out or "defaults" in out
+
+
+# --------------------------------------------------------------------------- #
+# exit code — the worst row wins, so a script can gate on it
+# --------------------------------------------------------------------------- #
+
+def test_exit_code_is_the_worst_row(sample_config, fake_transport, capsys):
+    _healthy_creds(sample_config)
+    sample_config.mailbox_dir.mkdir(parents=True, exist_ok=True)
+    sample_config.peer_inbox.touch()
+    sample_config.our_inbox.touch()
+    sample_config.ntfy_topic_file.parent.mkdir(parents=True, exist_ok=True)
+    sample_config.ntfy_topic_file.write_text("t", encoding="utf-8")
+    assert doctor_mod.run(sample_config, fake_transport) == 0
+
+    sample_config.creds_env.write_text("", encoding="utf-8")  # now RED
+    assert doctor_mod.run(sample_config, fake_transport) == 2

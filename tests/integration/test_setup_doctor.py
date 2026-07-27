@@ -16,6 +16,14 @@ def test_provision_then_doctor_green(radicale_config):
     radicale_config.ntfy_topic_file.parent.mkdir(parents=True, exist_ok=True)
     radicale_config.ntfy_topic_file.write_text("topic", encoding="utf-8")
 
+    # ...and the mailbox has to be set up for real now. The survey used to create
+    # it, which is precisely the thing DOCTOR-4 removed: a check that manufactures
+    # the state it reports on cannot fail, and "your mailbox path is wrong" is
+    # exactly what a misconfigured user needs to be told.
+    radicale_config.mailbox_dir.mkdir(parents=True, exist_ok=True)
+    radicale_config.peer_inbox.touch()
+    radicale_config.our_inbox.touch()
+
     rc = doctor_mod.run(radicale_config, t)
     assert rc == 0  # config + creds + auth + lists + ntfy + mailbox all GREEN
 

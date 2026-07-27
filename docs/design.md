@@ -96,6 +96,12 @@ what makes them consistent once you hold that one idea.
 | **`to-vox.md`** | a file in the **mailbox** — *the bridge's* | **the agent → us** — the bridge reads it |
 | **`to-manager.md`** | a file in the **mailbox** — *the peer's* | **us → the agent** — the bridge writes it |
 
+**Changing these names changes what the bridge reads.** Swapping the two roles — as this
+project did once, from live use — means whatever is sitting in the newly-read list is
+delivered on the next poll, because the bridge has no way to know those items predate the
+change. Nothing is lost, but expect a one-time flush. The same applies to pointing
+`inbox_list` at any list that already has contents.
+
 Note the deliberate crossing in the config: `inbox_list` names the list the BRIDGE reads,
 which is YOUR outbox. The field names are written from the bridge's seat and the list names
 from yours, and both are correct — a message leaving your outbox is arriving in its inbox.

@@ -60,6 +60,12 @@ The names read from **your** seat, not the tool's:
 - **Vox-Message-Outbox** — *you* dictate here; it is your outgoing
 - **Vox-Message-Inbox** — answers arrive here; it is your incoming
 
+> **Upgrading from a version where the roles were the other way round?** The two lists have
+> swapped jobs, so anything still sitting in *Vox-Message-Outbox* — old replies, under the
+> previous meaning — is now in the list the bridge reads, and will be delivered once as if
+> you had just dictated it. Clear that list before the first run if you would rather it
+> didn't. Nothing is lost either way; the effect is one-time.
+
 ## Everyday commands
 
     $VB doctor              # survey the whole setup; add --fix to repair

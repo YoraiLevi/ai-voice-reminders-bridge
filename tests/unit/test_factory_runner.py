@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from voice_bridge.caldav import CalDAVTransport
 from voice_bridge.config import load_config
 from voice_bridge.factory import make_transport
@@ -56,8 +58,25 @@ def test_icloud_login_missing_creds_returns_2(sample_config):
     assert icloud_login(sample_config) == 2
 
 
-def test_provision_icloud_reports_manual_step(sample_config):
+def test_provision_reports_manual_step_when_lists_are_missing(sample_config, fake_transport):
+    """Authenticated, but the two lists do not exist yet — iCloud cannot create them."""
     from voice_bridge import setup as setup_mod
 
-    lines = setup_mod.provision(sample_config, ICloudTransport(sample_config))
+    empty = type(fake_transport)()  # connects fine, has no lists
+    lines = setup_mod.provision(sample_config, empty)
     assert any("SETUP_DONE" in ln for ln in lines)
+
+
+def test_provision_does_not_disguise_an_auth_failure_as_missing_lists(sample_config):
+    """The conflation this fix removes.
+
+    With no credentials the old code swallowed the auth error and printed "create
+    the lists by hand" — so someone with a wrong password was sent to make lists
+    they may already have had, while the real cause went unmentioned. Connection
+    failures now propagate, and the setup flow turns them into "run icloud-login".
+    """
+    from voice_bridge import setup as setup_mod
+    from voice_bridge.icloud import ICloudError
+
+    with pytest.raises(ICloudError):
+        setup_mod.provision(sample_config, ICloudTransport(sample_config))

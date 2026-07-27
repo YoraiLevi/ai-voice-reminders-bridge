@@ -25,8 +25,8 @@ from .config import (
     resolve_config_path,
     set_value,
 )
+from .commands import connected_transport, list_command, peek_command
 from .errors import CommandError
-from .factory import make_transport
 from .runner import run_command
 
 _TRANSPORTS = ("icloud", "radicale")
@@ -155,6 +155,10 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         return _dispatch(args)
+    except CommandError as exc:
+        # A failure we understand: report it plainly with its own exit code.
+        print(f"error: {exc.msg}")
+        return exc.code
     except ConfigError as exc:
         print(f"config error: {exc}")
         return 2
@@ -233,45 +237,25 @@ def _dispatch(args) -> int:  # noqa: C901 - a flat command table
         return _tail_cmd(cfg, args)
 
     if cmd == "send":
-        t = make_transport(cfg)
-        try:
-            poller_mod.send_reply(cfg, t, args.text, notify=not args.no_notify)
-        except Exception as exc:
-            print(f"error: {exc}")
-            return 2
+        # Typed like the others: a missing list is a usage error (2), an
+        # unreachable backend is transient (1), and a bug still raises.
+        t = connected_transport(cfg)
+        poller_mod.send_reply(cfg, t, args.text, notify=not args.no_notify)
         print("sent.")
         return 0
 
     if cmd == "lists":
-        t = make_transport(cfg)
-        t.connect()
-        configured = {cfg.inbox_list, cfg.output_list}
-        rows = [
-            {"name": r.name, "id": r.id, "configured": r.name in configured}
-            for r in t.list_todo_lists()
-        ]
-        if args.json:
-            print(json.dumps(rows))
-        else:
-            for d in rows:
-                mark = " *" if d["configured"] else ""
-                print(f"  {d['name']}{mark}\n      id: {d['id']}")
-        return 0
+        return list_command(cfg, connected_transport(cfg), as_json=args.json)
 
     if cmd == "peek":
-        t = make_transport(cfg)
-        t.connect()
-        name = cfg.inbox_list if args.box == "inbox" else cfg.output_list
-        lid = cfg.inbox_list_id if args.box == "inbox" else cfg.output_list_id
-        lst = t.resolve_list(name, lid)
-        items = t.read_completed(lst) if args.completed else t.read_incomplete(lst)
-        items = items[: args.limit] if args.limit else items
-        if args.json:
-            print(json.dumps([{"title": it.title, "notes": it.notes} for it in items]))
-        else:
-            for it in items:
-                print(f"  - {it.title}" + (f" — {it.notes}" if it.notes else ""))
-        return 0
+        return peek_command(
+            cfg,
+            connected_transport(cfg),
+            box=args.box,
+            completed=args.completed,
+            limit=args.limit,
+            as_json=args.json,
+        )
 
     if cmd == "deliver":
         return deliver_mod.deliver(

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -145,3 +146,41 @@ def radicale_config(radicale_server, tmp_path, tmp_mailbox):
     from voice_bridge.config import load_config
 
     return load_config(cfg_file)
+
+
+@dataclass
+class BoomTransport(FakeTransport):
+    """A transport whose `connect()` fails, to drive the typed-error mapping.
+
+    The point of the mapping is that *which* error surfaces decides the exit code
+    and whether the user is told to fix credentials, fix a list name, or file a
+    bug — so the tests need to choose the failure.
+    """
+
+    boom: Exception | None = None
+
+    def connect(self) -> None:
+        if self.boom is not None:
+            raise self.boom
+        super().connect()
+
+
+@pytest.fixture
+def boom_transport():
+    """Factory: `boom_transport(SomeError("x"))` -> a transport that fails to connect."""
+    return lambda exc: BoomTransport(boom=exc)
+
+
+@pytest.fixture
+def ghost_transport() -> FakeTransport:
+    """Two lists sharing the inbox NAME with different ids — a real iCloud hazard.
+
+    Deleting and recreating a list on the phone leaves same-titled orphans, so
+    resolve-by-name silently picks one at random. This is exactly what pinning an
+    id exists to disambiguate, and `lists` must make the ambiguity visible.
+    """
+    t = FakeTransport()
+    t.add_list("Vox-Message-Inbox", "L1")  # the ghost (older, empty)
+    t.add_list("Vox-Message-Outbox", "L2")
+    t.add_list("Vox-Message-Inbox", "L9")  # the live one
+    return t

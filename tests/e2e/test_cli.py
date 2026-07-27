@@ -100,13 +100,15 @@ def test_tail_prints_existing(tmp_path, tmp_mailbox, capsys):
 
 
 def test_send_pushes_to_outbox(tmp_path, tmp_mailbox, monkeypatch, capsys):
-    import voice_bridge.cli as climod
+    import voice_bridge.commands as commands_mod
     from voice_bridge.transport import FakeTransport
 
     t = FakeTransport()
     t.add_list("Vox-Message-Inbox")
     t.add_list("Vox-Message-Outbox")
-    monkeypatch.setattr(climod, "make_transport", lambda cfg: t)
+    # `send` now builds its transport through the shared connected_transport seam,
+    # which is where the typed error mapping lives — so that is what to intercept.
+    monkeypatch.setattr(commands_mod, "make_transport", lambda cfg: t)
     assert main(["--config", _cfg(tmp_path, tmp_mailbox), "send", "hi there", "--no-notify"]) == 0
     out = t.resolve_list("Vox-Message-Outbox")
     assert "hi there" in t.read_incomplete(out)[0].title

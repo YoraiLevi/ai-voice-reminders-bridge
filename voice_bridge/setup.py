@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import Config, load_config, read_raw, resolve_config_path, write_raw
+from .errors import is_transient
 from .factory import make_transport
 from .transport import NotSupportedError, Transport
 
@@ -30,17 +31,20 @@ def provision(cfg: Config, t: Transport) -> list[str]:
             f"Radicale: created / verified {cfg.inbox_list!r} and {cfg.output_list!r}.",
             "They sync to the phone via the shared CalDAV account — no phone step.",
         ]
+    # Connect and look up separately, because they fail for different reasons and
+    # the old blanket catch reported both as "create the lists by hand" — telling
+    # someone with a wrong password to go make lists they may already have.
+    t.connect()  # auth/network failures propagate as typed CommandErrors
     try:
-        t.connect()
         t.resolve_list(cfg.inbox_list, cfg.inbox_list_id)
         t.resolve_list(cfg.output_list, cfg.output_list_id)
-        return [f"iCloud: both lists visible ({cfg.inbox_list!r} / {cfg.output_list!r})."]
-    except Exception:
+    except LookupError:
         return [
             "iCloud can't create lists over the API. On the phone Reminders app,",
             f"create TWO lists named EXACTLY:  {cfg.inbox_list}   {cfg.output_list}",
             f"SETUP_DONE lists_needed={cfg.inbox_list}|{cfg.output_list}",
         ]
+    return [f"iCloud: both lists visible ({cfg.inbox_list!r} / {cfg.output_list!r})."]
 
 
 def run_setup(
@@ -73,4 +77,15 @@ def run_setup(
     except NotSupportedError as exc:
         print(f"error: {exc}")
         return 2
+    except Exception as exc:
+        # Can't reach the backend yet — almost always "no credentials on a fresh
+        # machine". The config IS written, so say what remains, mirroring the
+        # Radicale branch above. Previously this was swallowed into "create the
+        # lists by hand", which sent someone with a bad password to make lists
+        # they may already have had.
+        if is_transient(exc) or type(exc).__name__ in {"ICloudError", "CredsError"}:
+            print(f"config written. Cannot reach the transport yet: {exc}")
+            print("Next:  voice-bridge icloud-login    then re-run:  voice-bridge setup")
+            return 0
+        raise
     return 0

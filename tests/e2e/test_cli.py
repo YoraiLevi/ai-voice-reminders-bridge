@@ -4,6 +4,7 @@ subprocess) for speed/reliability; the console script is smoke-tested separately
 from __future__ import annotations
 
 import json
+import os
 
 import pytest
 
@@ -109,3 +110,35 @@ def test_send_pushes_to_outbox(tmp_path, tmp_mailbox, monkeypatch, capsys):
     assert main(["--config", _cfg(tmp_path, tmp_mailbox), "send", "hi there", "--no-notify"]) == 0
     out = t.resolve_list("Vox-Message-Outbox")
     assert "hi there" in t.read_incomplete(out)[0].title
+
+
+def test_vox_prompt_survives_a_non_utf8_console(tmp_path, tmp_mailbox):
+    """The one test here that MUST be a subprocess.
+
+    `vox-prompt | clip` is the documented way to get the prompt onto a phone, and
+    the prompt contains `→`. On Windows a redirected stdout defaults to cp1252,
+    which cannot encode that character, so the command died with a
+    UnicodeEncodeError — reported as a generic `error:` because UnicodeEncodeError
+    subclasses ValueError. In-process tests cannot catch this: pytest's captured
+    stdout is already unicode-safe.
+
+    Forcing the child to cp1252 reproduces the failure deterministically on every
+    platform, so this stays honest on the Linux CI leg too.
+    """
+    import subprocess
+    import sys
+
+    env = {**os.environ, "PYTHONIOENCODING": "cp1252", "PYTHONUTF8": "0"}
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from voice_bridge.cli import main; raise SystemExit(main(['--config', "
+            f"{_cfg(tmp_path, tmp_mailbox)!r}, 'vox-prompt']))",
+        ],
+        capture_output=True,
+        env=env,
+    )
+    assert proc.returncode == 0, proc.stderr.decode("utf-8", "replace")
+    assert "→".encode() in proc.stdout, "non-ascii content must survive the pipe"
+    assert b"<!--" not in proc.stdout

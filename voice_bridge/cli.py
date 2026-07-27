@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from importlib.resources import files
+import sys
 
 from . import deliver as deliver_mod
 from . import doctor as doctor_mod
@@ -13,6 +13,7 @@ from . import log as log_mod
 from . import login as login_mod
 from . import ntfy
 from . import poller as poller_mod
+from . import prompt as prompt_mod
 from . import server as server_mod
 from . import setup as setup_mod
 from . import status as status_mod
@@ -24,6 +25,7 @@ from .config import (
     resolve_config_path,
     set_value,
 )
+from .errors import CommandError
 from .factory import make_transport
 from .runner import run_command
 
@@ -123,7 +125,27 @@ def _overrides(args) -> dict:
     return parse_overrides(getattr(args, "overrides", None))
 
 
+def _force_utf8_output() -> None:
+    """Emit UTF-8 whatever the console's default codec is.
+
+    On Windows a redirected stdout defaults to cp1252, which cannot encode the
+    characters this tool routinely prints — the phone prompt contains `→`, and any
+    dictation may contain an emoji. Without this, `voice-bridge vox-prompt | clip`
+    dies with a UnicodeEncodeError, and because that subclasses ValueError it was
+    being reported as a generic `error:` with exit 2 rather than as the encoding
+    problem it is.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:  # absent when the stream is captured (tests)
+            try:
+                reconfigure(encoding="utf-8")
+            except (ValueError, OSError):  # pragma: no cover - exotic stream
+                pass
+
+
 def main(argv: list[str] | None = None) -> int:
+    _force_utf8_output()
     parser = _build_parser()
     args = parser.parse_args(argv)
     log_mod.configure(verbose=args.verbose, quiet=args.quiet, logfile=args.log_file)
@@ -171,10 +193,15 @@ def _dispatch(args) -> int:  # noqa: C901 - a flat command table
 
     if cmd == "vox-prompt":
         cfg = load_config(cfg_path)
-        tmpl = files("voice_bridge").joinpath("prompts/vox.md").read_text(encoding="utf-8")
-        print(
-            tmpl.replace("{inbox_list}", cfg.inbox_list).replace("{output_list}", cfg.output_list)
-        )
+        try:
+            text = prompt_mod.render_vox_prompt(cfg)
+        except CommandError as exc:
+            print(f"error: {exc.msg}", file=sys.stderr)
+            return exc.code
+        # The prompt itself goes to stdout ALONE, so `vox-prompt | pbcopy` pastes
+        # something usable; the human-facing hint goes to stderr.
+        print(text)
+        print("\n(paste the text above into the Claude app on your phone)", file=sys.stderr)
         return 0
 
     # commands that need a transport

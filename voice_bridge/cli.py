@@ -83,7 +83,14 @@ def _build_parser() -> argparse.ArgumentParser:
     cs.add_argument("key")
     cs.add_argument("value")
 
-    li = sub.add_parser("icloud-login", help="one-time iCloud 2FA")
+    li = sub.add_parser("icloud-login", help="set up iCloud credentials + a trusted session")
+    li.add_argument("--apple-id", metavar="EMAIL", help="skip the Apple ID prompt")
+    # NO --password flag, ever: argv is visible to every other user on the machine.
+    li.add_argument(
+        "--password-stdin", action="store_true", help="read the password from stdin, not a prompt"
+    )
+    li.add_argument("--new", action="store_true", help="capture fresh credentials, overwriting")
+    li.add_argument("--enter-2fa", action="store_true", help="force a fresh 2FA, keeping creds")
     li.add_argument("--code")
     li.add_argument("--code-file")
     li.add_argument("--code-stdin", action="store_true")
@@ -264,7 +271,14 @@ def _dispatch(args) -> int:  # noqa: C901 - a flat command table
 
     if cmd == "icloud-login":
         return login_mod.icloud_login(
-            cfg, code=args.code, code_file=args.code_file, code_stdin=args.code_stdin
+            cfg,
+            code=args.code,
+            code_file=args.code_file,
+            code_stdin=args.code_stdin,
+            apple_id=args.apple_id,
+            password_stdin=args.password_stdin,
+            new=args.new,
+            enter_2fa=args.enter_2fa,
         )
 
     return 2

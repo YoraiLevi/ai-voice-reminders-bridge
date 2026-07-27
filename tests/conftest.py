@@ -184,3 +184,75 @@ def ghost_transport() -> FakeTransport:
     t.add_list("Vox-Message-Outbox", "L2")
     t.add_list("Vox-Message-Inbox", "L9")  # the live one
     return t
+
+
+class FakeICloudService:
+    """Stands in for `PyiCloudService`, modelling only the surface login uses.
+
+    It RECORDS its calls, which is what turns LOGIN-4 into a regression sentinel:
+    delete `trust_session()` from the implementation and the durability test goes
+    red, rather than the session quietly lapsing weeks later on a real phone.
+
+    No test imports pyicloud — the same stance `test_icloud.py` takes.
+    """
+
+    def __init__(
+        self,
+        apple_id: str,
+        password: str,
+        cookie_directory: str | None = None,
+        *,
+        good_password: str = "correct-horse",
+        requires_2fa: bool = True,
+        requires_2sa: bool = False,
+        code_ok: bool = True,
+        trust_works: bool = True,
+    ) -> None:
+        if password != good_password:
+            raise RuntimeError("Invalid email/password combination.")
+        self.apple_id = apple_id
+        self.password = password
+        self.cookie_directory = cookie_directory
+        self.requires_2fa = requires_2fa
+        self.requires_2sa = requires_2sa
+        self.is_trusted_session = not requires_2fa
+        self._code_ok = code_ok
+        self._trust_works = trust_works
+        self.calls: list[str] = ["construct"]
+
+    def validate_2fa_code(self, code: str) -> bool:
+        self.calls.append(f"validate_2fa_code:{code}")
+        if self._code_ok:
+            self.requires_2fa = False
+        return self._code_ok
+
+    def trust_session(self) -> None:
+        self.calls.append("trust_session")
+        if self._trust_works:
+            self.is_trusted_session = True
+
+
+@pytest.fixture
+def fake_icloud(monkeypatch):
+    """Install a `FakeICloudService` behind `login._make_service`; return a handle.
+
+    `_make_service` is the ONE injection point for the whole login flow, so a test
+    never needs the network, a real Apple ID, or pyicloud.
+    """
+    from voice_bridge import login as login_mod
+
+    state: dict = {"service": None, "kwargs": {}}
+
+    def install(**kwargs):
+        state["kwargs"] = kwargs
+
+        def _make(apple_id, password, cookie_dir):
+            svc = FakeICloudService(apple_id, password, str(cookie_dir), **state["kwargs"])
+            state["service"] = svc
+            return svc
+
+        monkeypatch.setattr(login_mod, "_make_service", _make)
+        return state
+
+    install()  # sensible defaults; a test may re-install with its own
+    return install

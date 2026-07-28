@@ -1,4 +1,4 @@
-"""Manage the self-hosted Radicale CalDAV server — the server half of the Radicale
+"""Manage the self-hosted Radicale CalDAV server - the server half of the Radicale
 transport, folded in from the former root `radicale/` dir. Everything lives under
 `state_dir/radicale/`; `init` also seeds the client creds so the two can't drift.
 
@@ -46,7 +46,7 @@ def client_url(cfg: Config) -> str:
 
 
 def _render_config(cfg: Config, p: ServerPaths, host: str, port: int) -> str:
-    return f"""# voice-bridge managed Radicale config (generated — edit via config fields)
+    return f"""# voice-bridge managed Radicale config (generated - edit via config fields)
 [server]
 hosts = {host}:{port}
 max_connections = 20
@@ -72,12 +72,12 @@ class ServerExtraMissing(RuntimeError):
 
 
 def _make_user(users: Path, user: str, password: str) -> None:
-    """Write a bcrypt htpasswd line `user:$2b$…` — the password is never stored plain."""
+    """Write a bcrypt htpasswd line `user:$2b$...` - the password is never stored plain."""
     try:
         import bcrypt
     except ImportError as exc:
         raise ServerExtraMissing(
-            "the self-hosted server needs its optional dependencies — install voice-bridge[server]"
+            "the self-hosted server needs its optional dependencies - install voice-bridge[server]"
         ) from exc
 
     digest = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("ascii")
@@ -86,7 +86,7 @@ def _make_user(users: Path, user: str, password: str) -> None:
 
 
 def radicale_creds_path(cfg: Config) -> Path:
-    """Where THIS server's credentials live — always `radicale.env`, never derived.
+    """Where THIS server's credentials live - always `radicale.env`, never derived.
 
     `cfg.creds_env` is `{state_dir}/{transport}.env`, so on the iCloud transport it
     names `icloud.env`. Writing there would overwrite an Apple password that cost a
@@ -122,7 +122,7 @@ def init(
     creds_path = radicale_creds_path(cfg)
     if creds_path.exists() and not force:
         raise FileExistsError(
-            f"{creds_path} already holds credentials — re-run with --force to rotate "
+            f"{creds_path} already holds credentials - re-run with --force to rotate "
             "the password (the phone's CalDAV account will need updating to match)"
         )
 
@@ -131,7 +131,7 @@ def init(
     p.config.write_text(_render_config(cfg, p, host, port), encoding="utf-8")
     _make_user(p.users, user, password)
 
-    # 0600 where the platform supports it, and verbatim — the password may
+    # 0600 where the platform supports it, and verbatim - the password may
     # contain anything the user typed.
     write_env(
         creds_path,
@@ -147,7 +147,7 @@ def init(
         # Said once, at the moment it becomes true: anyone who can reach the port
         # can read every dictation, because this speaks plain HTTP.
         print(
-            f"warning: binding {host} over plain HTTP — anyone who can reach port {port} "
+            f"warning: binding {host} over plain HTTP - anyone who can reach port {port} "
             "can read your messages. Keep it on a private network or tunnel (no TLS here)."
         )
 
@@ -162,7 +162,7 @@ def _prompt_password() -> str:  # pragma: no cover - interactive
 
 
 def is_reachable(url: str, *, timeout: float = 2.0) -> bool:
-    """True if the server answers at all (even 401) — i.e. it's up."""
+    """True if the server answers at all (even 401) - i.e. it's up."""
     try:
         req = urllib.request.Request(url, method="GET")
         urllib.request.urlopen(req, timeout=timeout)
@@ -195,7 +195,7 @@ def start(cfg: Config, *, background: bool = False) -> int:
     """Foreground (blocks) or detached background (writes a pidfile, waits until reachable)."""
     p = paths(cfg)
     if not p.config.exists():
-        print(f"error: not initialised — run `voice-bridge radicale-server init` (no {p.config})")
+        print(f"error: not initialised - run `voice-bridge radicale-server init` (no {p.config})")
         return 2
     if is_reachable(client_url(cfg)):
         print(f"already running at {client_url(cfg)}")
@@ -216,7 +216,7 @@ def start(cfg: Config, *, background: bool = False) -> int:
             print(f"started (pid {proc.pid}) at {client_url(cfg)}")
             return 0
         time.sleep(0.2)
-    print("started but not reachable yet — check server.log")
+    print("started but not reachable yet - check server.log")
     return 1
 
 
@@ -265,7 +265,7 @@ def status(cfg: Config) -> dict:
 
 
 def ensure_running(cfg: Config, *, spawn_child: bool = False) -> subprocess.Popen | None:
-    """For `run`: if already reachable, no-op. Else spawn a CHILD (not detached — dies
+    """For `run`: if already reachable, no-op. Else spawn a CHILD (not detached - dies
     with the caller) when spawn_child, so `run --with-server` owns its lifecycle. Returns
     the child Popen (caller must terminate it) or None."""
     if is_reachable(client_url(cfg)):

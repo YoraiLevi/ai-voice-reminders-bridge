@@ -2,7 +2,7 @@
 `_caldav.py` plumbing plus the CalDAV backend halves of `reminder_bridge.py` and
 `bootstrap.py`, all behind the Transport interface.
 
-iCloud CalDAV forbids list creation; a self-hosted Radicale server allows it — so
+iCloud CalDAV forbids list creation; a self-hosted Radicale server allows it - so
 `create_list` works on Radicale and is guarded against an iCloud URL.
 """
 
@@ -124,7 +124,7 @@ class CalDAVTransport(Transport):
             # run loop stops and says what to fix.
             raise CredsError("server rejected the credentials (401 or 403).") from exc
         except DAVError:
-            # Everything else — the server is down, restarting, or unreachable —
+            # Everything else - the server is down, restarting, or unreachable -
             # is a different question with a different answer: retry. Collapsing
             # it into CredsError told the loop to stop with "fix your
             # credentials" while the credentials were perfectly good (FMA-10).
@@ -171,7 +171,7 @@ class CalDAVTransport(Transport):
         raise LookupError(f"{name!r} list is not visible over CalDAV")
 
     def _iter_objects(self, cal: Any):
-        """Per-item load that SKIPS un-loadable entries — a dangling Radicale index
+        """Per-item load that SKIPS un-loadable entries - a dangling Radicale index
         entry 404s on load, and a bulk load would fail the whole poll on it."""
         for todo in cal.objects(load_objects=False):
             try:
@@ -232,7 +232,7 @@ class CalDAVTransport(Transport):
         _, _, url = _creds(self.cfg)
         if "icloud.com" in url:
             raise NotSupportedError(
-                "iCloud CalDAV forbids creating lists — create them on the iPhone, or "
+                "iCloud CalDAV forbids creating lists - create them on the iPhone, or "
                 "point ICLOUD_CALDAV_URL at a self-hosted Radicale server."
             )
         try:
@@ -244,9 +244,9 @@ class CalDAVTransport(Transport):
             name=name, cal_id=cal_id, supported_calendar_component_set=["VTODO"]
         )
         ref = self.resolve_list(name)
-        try:  # seed a placeholder — an empty CalDAV list doesn't sync to the iPhone
+        try:  # seed a placeholder - an empty CalDAV list doesn't sync to the iPhone
             self._cals[ref.id].save_todo(
-                summary=f"{name} is live — the voice bridge created this list. Safe to delete."
+                summary=f"{name} is live - the voice bridge created this list. Safe to delete."
             )
         except Exception:
             pass

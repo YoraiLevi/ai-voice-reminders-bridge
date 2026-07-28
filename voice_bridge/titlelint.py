@@ -1,4 +1,4 @@
-"""Will the phone actually render this? — a machine-side renderability verdict.
+"""Will the phone actually render this? - a machine-side renderability verdict.
 
 Every instrument we had was blind to LIVE-5. pyicloud's decoder reads only
 `value.string`, so a title whose CRDT scaffolding was malformed round-tripped
@@ -9,7 +9,7 @@ This module removes that dependency. A CRDT document is *internally checkable*:
 the content run, the attribute run and the replica clock each declare a length,
 and all three must equal the UTF-16 length of the string they describe. When they
 disagree the document is inconsistent, and an inconsistent document is what Apple
-refuses to draw — which is a verdict a machine can reach on its own.
+refuses to draw - which is a verdict a machine can reach on its own.
 
 Two entry points, deliberately:
 
@@ -40,7 +40,7 @@ class Verdict:
     def describe(self) -> str:
         if self.ok:
             return f"renderable: {self.text!r}"
-        return f"NOT renderable: {self.text!r} — " + "; ".join(self.problems)
+        return f"NOT renderable: {self.text!r} - " + "; ".join(self.problems)
 
 
 def utf16_length(text: str) -> int:
@@ -106,12 +106,12 @@ def check_stored(service: object, reminder_id: str) -> Verdict:
     """Fetch what the SERVER holds for one reminder and check that.
 
     Reaches through pyicloud's private read path because the typed model discards
-    the raw record — and the raw record is the only thing that shows what the
+    the raw record - and the raw record is the only thing that shows what the
     phone will be asked to parse.
     """
     # Resolve the helpers from the module that already imported them, rather than
     # naming a source module. The first attempt guessed `_protocol` for the zone
-    # constant, which actually lives in `_constants` — an assumed private surface,
+    # constant, which actually lives in `_constants` - an assumed private surface,
     # inside the tool built to retire assumed private surfaces. `_reads` binds both
     # names because it uses them, and `_reads` is what we call, so taking them from
     # there cannot disagree with the call we are about to make.

@@ -1,4 +1,4 @@
-"""The `voice-bridge` command — argparse subcommands over the package. Uniform exit
+"""The `voice-bridge` command - argparse subcommands over the package. Uniform exit
 codes: 0 success · 1 soft-negative · 2 usage/config/guard error."""
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ _EXIT_CODES = """
 exit codes:
   0  success
   1  nothing to do, or a transient failure worth retrying
-  2  you must act — usage, configuration, or something missing
+  2  you must act - usage, configuration, or something missing
 """
 
 _RAW = argparse.RawDescriptionHelpFormatter
@@ -71,7 +71,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="ensure everything, then bridge (the main command)",
         formatter_class=_RAW,
         epilog=_epilog(
-            "--once exits 1 when it ran fine and there was simply nothing new — that is a\n"
+            "--once exits 1 when it ran fine and there was simply nothing new - that is a\n"
             "normal result, not a failure. It refuses to start beside a live poller unless\n"
             "--force is given, and --dry-run writes nothing at all."
         ),
@@ -110,7 +110,7 @@ def _build_parser() -> argparse.ArgumentParser:
         formatter_class=_RAW,
         epilog=_epilog(
             "Read-only: the survey never creates anything, so a missing mailbox is REPORTED\n"
-            "rather than silently made — --fix is the consent to repair. The exit code is the\n"
+            "rather than silently made - --fix is the consent to repair. The exit code is the\n"
             "worst row found, so a script can gate on it."
         ),
     )
@@ -122,7 +122,7 @@ def _build_parser() -> argparse.ArgumentParser:
         formatter_class=_RAW,
         epilog=_epilog(
             "--select chooses which list each role uses. It opens with the roles and\n"
-            "their current selections, so you pick what to change and leave — it does\n"
+            "their current selections, so you pick what to change and leave - it does\n"
             "not walk you through every list. It runs even when a name is unambiguous,\n"
             "because 'change' means change. It needs a terminal.\n"
             "\n"
@@ -147,7 +147,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="push a phone banner",
         formatter_class=_RAW,
         epilog=_epilog(
-            "Exits 2 when no topic is configured and 1 when a configured send failed —\n"
+            "Exits 2 when no topic is configured and 1 when a configured send failed -\n"
             "the two used to be reported identically, so a network outage looked like\n"
             "missing configuration."
         ),
@@ -239,7 +239,7 @@ def _force_utf8_output() -> None:
     """Emit UTF-8 whatever the console's default codec is.
 
     On Windows a redirected stdout defaults to cp1252, which cannot encode the
-    characters this tool routinely prints — the phone prompt contains `→`, and any
+    characters this tool routinely prints - the phone prompt contains `→`, and any
     dictation may contain an emoji. Without this, `voice-bridge vox-prompt | clip`
     dies with a UnicodeEncodeError, and because that subclasses ValueError it was
     being reported as a generic `error:` with exit 2 rather than as the encoding
@@ -405,7 +405,7 @@ def _tail_cmd(cfg, args) -> int:
     Both behaviours come from `tailer`, which is where they are actually tested:
     the previous inline loop dumped a file's entire history, and it compared
     `len(data) > size` so a truncated or rotated file left the offset past the
-    end — following then went silent for ever, which looks exactly like "nothing
+    end - following then went silent for ever, which looks exactly like "nothing
     is happening" (TAIL-1/TAIL-2).
     """
     import time
@@ -498,5 +498,5 @@ def _config_cmd(args, cfg_path) -> int:
 
 if __name__ == "__main__":  # pragma: no cover - exercised via subprocess in tests
     # Without this, `python -m voice_bridge.cli` imports the module, defines
-    # main(), never calls it, and exits 0 — a command that succeeds at nothing.
+    # main(), never calls it, and exits 0 - a command that succeeds at nothing.
     raise SystemExit(main())

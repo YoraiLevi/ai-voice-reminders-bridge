@@ -35,13 +35,23 @@ def _outbox(cfg, t):
 
 
 class _Banners:
-    """Counts pushes, because 'one banner' is half the point of the feature."""
+    """Counts pushes, because 'one banner' is half the point of the feature.
+
+    Banners are DELAYED now (notify_delay, default 3s) so the buzz lands after the
+    reminder it announces. `.settled` flushes anything still waiting, so these
+    tests exercise the real scheduling path rather than side-stepping it.
+    """
 
     def __init__(self, monkeypatch):
         self.sent: list[str] = []
         monkeypatch.setattr(
             poller.ntfy, "push", lambda cfg, text, click=None: self.sent.append(text)
         )
+
+    @property
+    def settled(self) -> list[str]:
+        poller.ntfy.flush()
+        return self.sent
 
 
 # --------------------------------------------------------------------------- #
@@ -61,7 +71,7 @@ def test_a_single_reply_is_not_digested(sample_config, fake_transport, monkeypat
     assert len(items) == 1
     assert "the build is green" in items[0].title
     assert "replies" not in items[0].title
-    assert len(banners.sent) == 1
+    assert len(banners.settled) == 1
 
 
 # --------------------------------------------------------------------------- #
@@ -82,7 +92,7 @@ def test_a_burst_becomes_one_reminder(sample_config, fake_transport, monkeypatch
 
     items = _outbox(sample_config, fake_transport)
     assert len(items) == 1, "three replies, ONE reminder"
-    assert len(banners.sent) == 1, "three replies, ONE banner"
+    assert len(banners.settled) == 1, "three replies, ONE banner"
 
 
 def test_the_digest_title_counts_and_the_notes_carry_every_line(
@@ -253,3 +263,71 @@ def test_appended_lines_are_lf_on_every_platform(sample_config):
 
     append_line(sample_config.our_inbox, "- [10:00] (vox) hello")
     assert b"\r\n" not in sample_config.our_inbox.read_bytes()
+
+
+# --------------------------------------------------------------------------- #
+# the banner is held back so it lands AFTER the reminder
+# --------------------------------------------------------------------------- #
+
+
+def test_the_banner_does_not_fire_during_the_poll_cycle(sample_config, fake_transport, monkeypatch):
+    """Reported from live use: the buzz arrived a beat BEFORE the reminder.
+
+    A push is one fast POST; the reminder has to sync to the phone. So the banner
+    is held back - and the hold must not happen inside the cycle, which would
+    stall polling for every message.
+    """
+    banners = _Banners(monkeypatch)
+    started: list[float] = []
+
+    class _FakeTimer:
+        def __init__(self, delay, fn):
+            started.append(delay)
+            self.fn, self.daemon = fn, False
+
+        def start(self):
+            pass  # never fires on its own: the delay has not elapsed
+
+        def cancel(self):
+            pass
+
+    monkeypatch.setattr(poller.ntfy, "_TIMER", _FakeTimer)
+    _write(sample_config, "- [10:00] (manager) hello")
+    poller.drain_replies(sample_config, fake_transport)
+
+    assert started == [3.0], "it must schedule at the configured delay, not send"
+    assert banners.sent == [], "nothing may be pushed inside the poll cycle"
+    assert poller.ntfy.pending_count() == 1
+
+    poller.ntfy.flush()
+    # The time is vox's own stamp, applied when the reply goes out, so assert the
+    # content rather than a clock reading this test does not control.
+    assert len(banners.sent) == 1, "and it must still ring afterwards"
+    assert banners.sent[0].endswith("[vox] hello")
+
+
+def test_zero_delay_sends_immediately(sample_config, fake_transport, monkeypatch):
+    """0 restores the old behaviour exactly, for anyone who preferred it."""
+    banners = _Banners(monkeypatch)
+    cfg = _cfg(sample_config, notify_delay=0)
+
+    _write(cfg, "- [10:00] (manager) hello")
+    poller.drain_replies(cfg, fake_transport)
+
+    assert banners.sent, "with no delay the push happens inline"
+    assert poller.ntfy.pending_count() == 0
+
+
+def test_a_digest_delays_ONE_banner_not_one_per_reply(sample_config, fake_transport, monkeypatch):
+    """The delay must not multiply with the number of replies bundled."""
+    banners = _Banners(monkeypatch)
+    _write(
+        sample_config,
+        "- [10:00] (manager) first",
+        "- [10:00] (manager) second",
+        "- [10:00] (manager) third",
+    )
+    poller.drain_replies(sample_config, fake_transport)
+
+    assert poller.ntfy.pending_count() == 1, "three replies, ONE delayed banner"
+    assert len(banners.settled) == 1

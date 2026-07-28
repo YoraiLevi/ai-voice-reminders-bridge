@@ -1,5 +1,5 @@
-"""The Transport abstraction — the ~5 backend ops that actually differ between iCloud
-and Radicale — plus an in-memory FakeTransport for tests.
+"""The Transport abstraction - the ~5 backend ops that actually differ between iCloud
+and Radicale - plus an in-memory FakeTransport for tests.
 
 Everything else (mailbox contract, dedupe, ntfy, the poll/drain loop) is shared and
 transport-agnostic; it talks only to this interface. This is what lets the whole spoke
@@ -15,12 +15,12 @@ from dataclasses import dataclass, field
 
 @dataclass(frozen=True)
 class ListRef:
-    """A todo list as the backend sees it — name plus a stable id (GUID / record id).
+    """A todo list as the backend sees it - name plus a stable id (GUID / record id).
     The id is what makes list resolution ghost-safe (duplicate titles disambiguated).
 
     The trailing fields are OPTIONAL display metadata, used to tell same-named lists
     apart in the picker. They are deliberately the things a user can SEE on their
-    phone, so a row can be matched to the list they recognise — and they ride along
+    phone, so a row can be matched to the list they recognise - and they ride along
     in data the backend already returned, so showing them costs no extra call.
 
     There is no date field because pyicloud 2.6.5's RemindersList has none
@@ -57,7 +57,7 @@ class Transport(ABC):
 
     @abstractmethod
     def list_todo_lists(self) -> list[ListRef]:
-        """Every VTODO-capable list (name + id) — powers `lists` and ghost detection."""
+        """Every VTODO-capable list (name + id) - powers `lists` and ghost detection."""
 
     @abstractmethod
     def resolve_list(self, name: str, list_id: str = "") -> ListRef:
@@ -66,11 +66,11 @@ class Transport(ABC):
 
     @abstractmethod
     def read_incomplete(self, lst: ListRef) -> list[Item]:
-        """Incomplete items in the list (completed ones excluded) — the poll hot path."""
+        """Incomplete items in the list (completed ones excluded) - the poll hot path."""
 
     @abstractmethod
     def read_completed(self, lst: ListRef) -> list[Item]:
-        """Completed items — observability only (`peek --completed`); the poller never
+        """Completed items - observability only (`peek --completed`); the poller never
         calls this."""
 
     @abstractmethod
@@ -98,12 +98,12 @@ class NotSupportedError(RuntimeError):
 @dataclass
 class FakeTransport(Transport):
     """In-memory backend for tests. Lists are held as a LIST (not name-keyed) so it can
-    model ghosts — two lists sharing a title but with distinct ids, exactly what
+    model ghosts - two lists sharing a title but with distinct ids, exactly what
     id-pinning exists to disambiguate. Items are id->[Item]; completed ids are tracked
     so read_incomplete hides them. Deterministic ids."""
 
     _lists: list[ListRef] = field(default_factory=list)
-    #: Lists that exist but are not visible yet — the create-lag knob. iCloud sync
+    #: Lists that exist but are not visible yet - the create-lag knob. iCloud sync
     #: is not instant, so a list the user just made on their phone is absent from
     #: the next read. `reveal()` is the test's stand-in for sync catching up, which
     #: is what makes the picker's refresh loop drivable without a real account.
@@ -175,7 +175,7 @@ class FakeTransport(Transport):
         """Honour the contract: not-found RAISES.
 
         This used to add ANY id to the completed set, including one that was never
-        there — so the fake certified a poller that silently lost completions. A
+        there - so the fake certified a poller that silently lost completions. A
         double must not be more forgiving than the thing it stands for.
         """
         if not any(it.id == item_id for it in self._items.get(lst.id, [])):

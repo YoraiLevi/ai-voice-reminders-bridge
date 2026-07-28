@@ -14,7 +14,7 @@ _NAME = "voice-bridge"
 def configure(
     *, verbose: bool = False, quiet: bool = False, logfile: str | Path | None = None
 ) -> None:
-    """Set up the logger. Idempotent — repeated calls don't stack handlers.
+    """Set up the logger. Idempotent - repeated calls don't stack handlers.
     Level: WARNING default · INFO on -v · ERROR on -q."""
     level = logging.INFO if verbose else logging.ERROR if quiet else logging.WARNING
     logger = logging.getLogger(_NAME)

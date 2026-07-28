@@ -321,3 +321,26 @@ def wired_config(sample_config):
         inbox_list_id="list-vox-message-outbox",
         output_list_id="list-vox-message-inbox",
     )
+
+
+@pytest.fixture(autouse=True)
+def _isolate_pending_banners():
+    """Keep delayed banners from leaking between tests.
+
+    `ntfy` holds waiting banners in module-level state, which is right for a
+    process with one bridge in it and wrong for a test suite: a banner scheduled
+    by one test would still be pending when the next one counted them. Cleared
+    rather than flushed, because firing another test's banner is exactly the
+    cross-talk this prevents.
+    """
+    from voice_bridge import ntfy
+
+    def _clear():
+        with ntfy._pending_lock:
+            for timer, *_ in ntfy._pending:
+                timer.cancel()
+            ntfy._pending.clear()
+
+    _clear()
+    yield
+    _clear()

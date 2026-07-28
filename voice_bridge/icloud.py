@@ -1,6 +1,6 @@
 """iCloud transport over the pyicloud private CloudKit Reminders API. Folds in the
 backend half of `pyicloud_bridge.py`. Cannot create lists (pyicloud exposes no
-create-list API) — `create_list` raises NotSupportedError.
+create-list API) - `create_list` raises NotSupportedError.
 
 Not integration-tested (2FA + a private API can't run in CI). The Transport ABC +
 FakeTransport give the *path* behavioural coverage; this module has a thin unit test
@@ -50,7 +50,7 @@ def _item(rem: Any) -> Item:
 
     The model is TYPED (`id`, `title`, `desc`, `completed`), so this reads
     attributes directly. The previous adapter went through dict-or-attr helpers,
-    which quietly tolerated any shape at all — including shapes the library never
+    which quietly tolerated any shape at all - including shapes the library never
     returns, which is how a call to a non-existent method survived to a live run.
     """
     return Item(
@@ -84,7 +84,7 @@ class ICloudTransport(Transport):
         # Correct the CRDT length computation before any write happens. Without
         # this, a reminder whose text contains an emoji is stored with declared
         # lengths in codepoints where Apple counts UTF-16 units, and the phone
-        # renders it BLANK — while every read-back through the API looks perfect
+        # renders it BLANK - while every read-back through the API looks perfect
         # (LIVE-5). See _icloud_crdt for why the API cannot detect it.
         _icloud_crdt.install()
         try:
@@ -93,7 +93,7 @@ class ICloudTransport(Transport):
             raise ICloudError(f"pyicloud login failed: {type(exc).__name__}: {exc}") from exc
         if getattr(api, "requires_2fa", False):
             raise ICloudError(
-                f"session needs 2FA — the cached session under {self.cfg.cookie_dir} "
+                f"session needs 2FA - the cached session under {self.cfg.cookie_dir} "
                 "expired. Re-run `voice-bridge icloud-login`."
             )
         r = api.reminders
@@ -152,8 +152,8 @@ class ICloudTransport(Transport):
             )
         )
 
-        # LIVE-4: roughly one create in two came back titled "New Reminder" —
-        # Apple's default for a reminder with no title — while the notes held the
+        # LIVE-4: roughly one create in two came back titled "New Reminder" -
+        # Apple's default for a reminder with no title - while the notes held the
         # full text. Identical text succeeded on the next attempt, so it is not
         # content-dependent: `create` writes a CRDT title document and then reads
         # the record back, and that read-back can land before the title has
@@ -169,8 +169,8 @@ class ICloudTransport(Transport):
     def complete(self, lst: ListRef, item_id: str) -> None:
         """Mark an item handled. RAISES on failure and on not-found.
 
-        Both used to be silent — an inner catch swallowed backend errors and a
-        missing id fell off the end of a loop — so the caller could not tell
+        Both used to be silent - an inner catch swallowed backend errors and a
+        missing id fell off the end of a loop - so the caller could not tell
         "cleared off the phone" from "quietly didn't", the reminder stayed
         visible, the user re-dictated it, and the agent got it twice (FMA-2).
         """
@@ -185,6 +185,6 @@ class ICloudTransport(Transport):
 
     def create_list(self, name: str) -> ListRef:
         raise NotSupportedError(
-            "iCloud (pyicloud) exposes no create-list API — create the two lists once "
+            "iCloud (pyicloud) exposes no create-list API - create the two lists once "
             "on the iPhone Reminders app, then retry."
         )

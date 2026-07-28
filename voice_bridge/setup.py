@@ -26,7 +26,7 @@ from .mailbox import format_mailbox_line
 from .selection import confirm_selection, pick, resolve_selection
 from .transport import ListRef, NotSupportedError, Transport
 
-#: Fields worth asking about on a guided run — the ones people actually change.
+#: Fields worth asking about on a guided run - the ones people actually change.
 #: Everything else has a sensible default and can be set later with `config set`.
 _PROMPTABLE = (
     ("transport", "transport (icloud/radicale)"),
@@ -51,7 +51,7 @@ def prompt_fields(cfg: Config, *, preset: dict[str, Any]) -> dict[str, Any]:
 
     Returns ONLY what the user actually changed, so an empty answer means "keep
     the default" rather than "set it to empty". Fields already answered by `--set`
-    are not asked about again, and without a terminal nothing is asked at all —
+    are not asked about again, and without a terminal nothing is asked at all -
     a scripted run must never block on a question nobody can answer.
     """
     if not _is_tty():
@@ -107,10 +107,10 @@ def provision(
                 created[field] = ref.id
         return [
             f"Radicale: created / verified {cfg.inbox_list!r} and {cfg.output_list!r}.",
-            "They sync to the phone via the shared CalDAV account — no phone step.",
+            "They sync to the phone via the shared CalDAV account - no phone step.",
         ]
     # Connect and look up separately, because they fail for different reasons and
-    # the old blanket catch reported both as "create the lists by hand" — telling
+    # the old blanket catch reported both as "create the lists by hand" - telling
     # someone with a wrong password to go make lists they may already have.
     t.connect()  # auth/network failures propagate as typed CommandErrors
     try:
@@ -134,7 +134,7 @@ def _check_title(t: Transport, item_id: str) -> tuple[bool | None, str]:
     """Renderability of the probe's stored title, or (None, why) if unavailable.
 
     Only meaningful where the backend stores a CRDT document, so a backend without
-    one reports None rather than a false pass — "not applicable" and "fine" must
+    one reports None rather than a false pass - "not applicable" and "fine" must
     not look the same.
     """
     from .titlelint import check_stored
@@ -150,7 +150,7 @@ def verify(cfg: Config, t: Transport) -> dict[str, Any]:
     """Push a real probe through the real path, then clean up after itself.
 
     "Setup complete" previously meant "the files exist", which is a claim about
-    the wrong thing — the question a user is asking is whether a message can
+    the wrong thing - the question a user is asking is whether a message can
     actually travel. So this drives the genuine legs: a dictation placed in the
     inbox list must reach the mailbox file, a reply must reach the outbox list,
     and a banner must actually be posted.
@@ -189,7 +189,7 @@ def verify(cfg: Config, t: Transport) -> dict[str, Any]:
 
         # Ask whether the phone could actually RENDER what we just wrote. Every
         # other check here reads the text back through the same API that wrote it,
-        # which cannot see a malformed title document (LIVE-5) — this inspects the
+        # which cannot see a malformed title document (LIVE-5) - this inspects the
         # stored structure instead, so the verdict needs no phone.
         report_out["title_renderable"], report_out["title_detail"] = _check_title(t, reply_id)
         pushed = ntfy.push(cfg, _PROBE)
@@ -204,7 +204,7 @@ def verify(cfg: Config, t: Transport) -> dict[str, Any]:
 
 
 def report(cfg: Config, t: Transport, *, as_json: bool = False) -> int:
-    """Print the setup state — structured behind --json, prose otherwise."""
+    """Print the setup state - structured behind --json, prose otherwise."""
     import json as _json
 
     try:
@@ -243,7 +243,7 @@ def run_setup(
 ) -> int:
     """Write config + provision, optionally proving a message round-trips.
 
-    Returns 0, or 2 on a guard error / a failed verification — a `--verify` that
+    Returns 0, or 2 on a guard error / a failed verification - a `--verify` that
     exits 0 when a leg failed would defeat its own purpose.
     """
     from . import onboard
@@ -313,7 +313,7 @@ def run_setup(
         print(f"error: {exc}")
         return 2
     except Exception as exc:
-        # Can't reach the backend yet — almost always "no credentials on a fresh
+        # Can't reach the backend yet - almost always "no credentials on a fresh
         # machine". The config IS written, so say what remains, mirroring the
         # Radicale branch above. Previously this was swallowed into "create the
         # lists by hand", which sent someone with a bad password to make lists
@@ -338,13 +338,13 @@ def run_setup(
         if not result["banner_sent"]:
             print(f"         notification: {result['banner_detail']}")
         if result["title_renderable"] is False:
-            print(f"  [FAIL] the phone will not render that title — {result['title_detail']}")
+            print(f"  [FAIL] the phone will not render that title - {result['title_detail']}")
         elif result["title_renderable"]:
             print("  [ok  ] title is renderable on the phone")
         # The notification leg is best-effort by design, so it does not fail the
         # verification; the two delivery legs are the actual contract.
         if not (result["dictation_delivered"] and result["reply_delivered"]):
-            print("verification FAILED — a message did not complete the round trip.")
+            print("verification FAILED - a message did not complete the round trip.")
             return 2
         print("verified: a message makes the round trip.")
 
@@ -365,9 +365,9 @@ def run_setup(
             ok = result["dictation_delivered"] and result["reply_delivered"]
             print(f"  [{'ok  ' if ok else 'FAIL'}] a message makes the round trip")
             if not ok:
-                print("       something is not connected yet — `voice-bridge doctor` says what.")
+                print("       something is not connected yet - `voice-bridge doctor` says what.")
         else:
-            print("  skipped — check it later with:  voice-bridge setup --verify")
+            print("  skipped - check it later with:  voice-bridge setup --verify")
     else:
         print("  already verified above.")
 
@@ -375,7 +375,7 @@ def run_setup(
 
     print("")
     if onboard._yes(input, "Start the bridge now?"):
-        print("  starting — press Ctrl-C to stop.")
+        print("  starting - press Ctrl-C to stop.")
         from .runner import run_command
 
         return run_command(config_path=str(path))
@@ -385,7 +385,7 @@ def run_setup(
 
 _ICLOUD_GUIDE = (
     "iCloud does not allow creating lists over the API, so make them on your phone:",
-    "  Reminders -> new list, twice. Any names you like — you will choose them here",
+    "  Reminders -> new list, twice. Any names you like - you will choose them here",
     "  by id, so the names are yours, not ours.",
     "  Suggested: {inbox} (you dictate into) and {outbox} (replies appear in).",
     "",
@@ -407,7 +407,7 @@ def settle_selection(
     """Choose a list for each role, and record BOTH its id and its real name.
 
     Nothing is ever inferred from a title. A list is used because someone chose it,
-    which is why this asks rather than matching — the point of the whole feature is
+    which is why this asks rather than matching - the point of the whole feature is
     that setting up the lists correctly replaces relying on hardcoded names.
 
     The name is written alongside the id because the phone prompt shows both, and
@@ -416,7 +416,7 @@ def settle_selection(
     not match its picture.
 
     `created` maps a config field to an id the transport just returned from
-    `create_list`. Recording that is knowledge, not inference — we made the list a
+    `create_list`. Recording that is knowledge, not inference - we made the list a
     moment ago. Only Radicale can create lists.
 
     Without a terminal nothing is asked: a prompt written to a pipe blocks for
@@ -466,7 +466,7 @@ def settle_selection(
             continue
 
         if res.status == "stale":
-            show(f"  the selected list no longer exists ({res.current}) — choose a replacement.")
+            show(f"  the selected list no longer exists ({res.current}) - choose a replacement.")
 
         choice = pick(res, ask=ask, show=show, refresh=t.list_todo_lists)
         if choice.action == "select":
@@ -474,7 +474,7 @@ def settle_selection(
             _record(res, ref)
         else:
             show(
-                "  left unselected — nothing will be delivered for this role until you"
+                "  left unselected - nothing will be delivered for this role until you"
                 " run `voice-bridge lists --select`."
             )
 
@@ -486,7 +486,7 @@ def ask_radicale_creation(*, ask: Callable[[str], str], show: Callable[[str], No
 
     Radicale *can* create lists, but doing it silently would make the two
     transports behave differently for no reason the user chose. Asking unifies
-    them: answer "no" and the flow is exactly iCloud's — create the lists
+    them: answer "no" and the flow is exactly iCloud's - create the lists
     yourself, refresh, select.
     """
     show("Radicale can create the two lists for you, or you can make them yourself")

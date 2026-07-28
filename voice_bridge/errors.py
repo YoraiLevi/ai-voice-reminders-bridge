@@ -1,10 +1,10 @@
-"""Error classification and typed CLI failures — the spine every command rides.
+"""Error classification and typed CLI failures - the spine every command rides.
 
 Two rules earn this module its place:
 
 **Auth is never transient.** The run loop used to retry every exception forever,
-so an expired session — which no retry can fix, since only a human can enter a
-2FA code — was indistinguishable from a network blip. `is_transient` decides
+so an expired session - which no retry can fix, since only a human can enter a
+2FA code - was indistinguishable from a network blip. `is_transient` decides
 retry-vs-stop, and answers False for anything auth-shaped.
 
 **Never disguise a bug.** `raise_command_error` maps the failures we genuinely
@@ -20,12 +20,12 @@ from __future__ import annotations
 
 import re
 
-try:  # optional extra — present with [icloud] or [caldav]
+try:  # optional extra - present with [icloud] or [caldav]
     from requests import exceptions as _requests_exc
 except ImportError:  # pragma: no cover - exercised by the dependency-free install
     _requests_exc = None  # type: ignore[assignment]
 
-try:  # optional extra — present with [caldav] or [server]
+try:  # optional extra - present with [caldav] or [server]
     from caldav.lib import error as _dav
 except ImportError:  # pragma: no cover - exercised by the dependency-free install
     _dav = None  # type: ignore[assignment]
@@ -63,7 +63,7 @@ def _is_requests_network(exc: BaseException) -> bool:
     """A connection/timeout error from `requests`.
 
     Named explicitly, because `requests.exceptions.ConnectionError` is *not*
-    `builtins.ConnectionError` — its MRO runs `RequestException -> OSError`.
+    `builtins.ConnectionError` - its MRO runs `RequestException -> OSError`.
     Matching the builtin misses the commonest mid-poll transient; matching
     `OSError` broadly would swallow `FileNotFoundError` and friends.
     """
@@ -75,8 +75,8 @@ def _is_requests_network(exc: BaseException) -> bool:
 def _dav_status(exc: BaseException) -> int | None:
     """Best-effort HTTP status for a caldav error.
 
-    `DAVError` carries no status attribute — only `.url` and a free-text
-    `.reason` — and caldav passes `errmsg()` *positionally*, so the status text
+    `DAVError` carries no status attribute - only `.url` and a free-text
+    `.reason` - and caldav passes `errmsg()` *positionally*, so the status text
     lands in `.url`. `.url` is optional and class-defaults to None, hence the
     guard before parsing.
     """
@@ -96,7 +96,7 @@ def _classify_dav(exc: BaseException) -> bool | None:
     if isinstance(exc, _dav.RateLimitError):
         return True
     if isinstance(exc, _dav.AuthorizationError):
-        return False  # covers 401 AND 403 — credentials or permissions, not a blip
+        return False  # covers 401 AND 403 - credentials or permissions, not a blip
     status = _dav_status(exc)
     if status is not None and 500 <= status <= 599:
         return True
@@ -109,7 +109,7 @@ def is_transient(exc: BaseException) -> bool:
     False for auth, usage, and anything unrecognised: an unclassified error gets
     a bounded retry and then stops, rather than backing off forever.
     """
-    if isinstance(exc, LookupError):  # includes KeyError/IndexError — all bugs or usage
+    if isinstance(exc, LookupError):  # includes KeyError/IndexError - all bugs or usage
         return False
 
     dav = _classify_dav(exc)
@@ -158,7 +158,7 @@ def raise_command_error(exc: BaseException) -> None:
     """Translate a backend failure into a `CommandError`, or re-raise it.
 
     Exit codes: **1** the transport is unavailable or not set up (try again or
-    finish setup), **2** you must act (usage — a missing list, a bad key).
+    finish setup), **2** you must act (usage - a missing list, a bad key).
     Anything unrecognised is re-raised untouched.
     """
     if _is_auth(exc):

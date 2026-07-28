@@ -1,12 +1,12 @@
-"""Configuration for the vox spoke — resolution, defaults, and derivation.
+"""Configuration for the vox spoke - resolution, defaults, and derivation.
 
 Three concerns live in one flat config, separated by *where things live* (see the
 design spec, section 5):
 
-  identity/routing  — who we are (`spoke_name`) and who we route to (`route_to`)
-  phone bus         — the two Reminders list names (+ optional GUID pins)
-  shared mailbox    — the protocol's dir (theirs) we read/write files in
-  our private state — creds/session/topic, under an XDG state dir (ours)
+  identity/routing  - who we are (`spoke_name`) and who we route to (`route_to`)
+  phone bus         - the two Reminders list names (+ optional GUID pins)
+  shared mailbox    - the protocol's dir (theirs) we read/write files in
+  our private state - creds/session/topic, under an XDG state dir (ours)
 
 Resolution order (first that exists wins):
   1. explicit path passed to load_config(path=...) / --config PATH
@@ -15,7 +15,7 @@ Resolution order (first that exists wins):
   4. no file -> pure built-in defaults
 
 Every field has a default, so `{}` is valid. `~` is expanded in path fields. Secrets
-never live here — only the *locations* of secret files under `state_dir` do.
+never live here - only the *locations* of secret files under `state_dir` do.
 """
 
 from __future__ import annotations
@@ -50,7 +50,7 @@ DEFAULTS: dict[str, Any] = {
     # phone bus
     # NOTE the deliberate crossing, ruled from live use (UX-1): the list NAMES are
     # written from the PHONE USER's seat, while these FIELD names are written from
-    # the bridge's. So the bridge's inbox — where it reads dictations from — is the
+    # the bridge's. So the bridge's inbox - where it reads dictations from - is the
     # user's OUTBOX, because that is where they send from. An inbox belongs to
     # whoever reads it, and the person reading the phone is the user.
     "inbox_list": "Vox-Message-Outbox",  # user dictates here -> we read (phone -> us)
@@ -59,7 +59,7 @@ DEFAULTS: dict[str, Any] = {
     "output_list_id": "",
     # shared mailbox (the protocol's, theirs)
     "mailbox_dir": "~/.agent-mail",
-    # our private state (ours) — "" state_dir -> XDG default
+    # our private state (ours) - "" state_dir -> XDG default
     "state_dir": "",
     # transport
     "transport": "icloud",  # icloud | radicale
@@ -69,12 +69,17 @@ DEFAULTS: dict[str, Any] = {
     "radicale_user": "vox",  # the single CalDAV user
     # ntfy
     "ntfy_server": "https://ntfy.sh",
+    # Seconds to hold a banner back so it lands AFTER the reminder it announces.
+    # A push is one fast POST; the reminder has to sync to the phone, so the
+    # buzz used to beat the thing it was announcing. 0 restores that. Sending
+    # happens on a timer thread, so the poll cycle never waits.
+    "notify_delay": 3.0,
     "ntfy_title": "Vox",
     "ntfy_tags": "robot",
     "ntfy_priority": "high",
     "ntfy_body_limit": -1,  # -1 = no clip
     # tuning
-    # Emoji in reminder titles render correctly — confirmed on a device against
+    # Emoji in reminder titles render correctly - confirmed on a device against
     # the CRDT length fix. "strip" remains available as an escape hatch for the
     # case that made it necessary: an unfixed pyicloud, whose encoder declares
     # codepoints where Apple counts UTF-16 units, so astral titles arrive blank.
@@ -84,6 +89,10 @@ DEFAULTS: dict[str, Any] = {
 }
 
 _INT_FIELDS = {"ntfy_body_limit", "reply_summary_limit", "poll_interval", "radicale_port"}
+#: Coerced (and therefore VALIDATED) at set time. Without this, `config set
+#: notify_delay abc` would store a string that only fails at the next load, far
+#: from the mistake.
+_FLOAT_FIELDS = {"notify_delay"}
 _ALLOWED_KEYS = set(DEFAULTS) | set(_STATE_DERIVED) | {"creds_env"}
 
 
@@ -120,6 +129,7 @@ class Config:
     state_dir: Path
     transport: str
     ntfy_server: str
+    notify_delay: float
     ntfy_title: str
     ntfy_tags: str
     ntfy_priority: str
@@ -168,7 +178,12 @@ def parse_overrides(pairs: list[str] | None) -> dict[str, Any]:
             raise ValueError(
                 f"--set unknown key {key!r}; allowed: {', '.join(sorted(_ALLOWED_KEYS))}"
             )
-        out[key] = int(value) if key in _INT_FIELDS else value
+        if key in _INT_FIELDS:
+            out[key] = int(value)
+        elif key in _FLOAT_FIELDS:
+            out[key] = float(value)
+        else:
+            out[key] = value
     return out
 
 
@@ -199,7 +214,7 @@ def set_value(path: Path, key: str, value: str) -> None:
 
 
 def field_help() -> list[tuple[str, str]]:
-    """(field, default) pairs for `config --help` — every settable key."""
+    """(field, default) pairs for `config --help` - every settable key."""
     rows = [(k, repr(v)) for k, v in DEFAULTS.items()]
     rows.append(("creds_env", "{state_dir}/{transport}.env"))
     for k, v in _STATE_DERIVED.items():
@@ -217,7 +232,7 @@ def resolve_config_path(
     first, so with the variable set a `config set` appeared to succeed and then
     silently did nothing (CFG-1).
 
-    `must_exist=True` (reads) returns `(None, ...)` when no file is present —
+    `must_exist=True` (reads) returns `(None, ...)` when no file is present -
     the caller falls back to defaults. `must_exist=False` (writes) still names
     the project-local path, because that is the file to *create*.
 
@@ -294,6 +309,7 @@ def load_config(
         state_dir=state_dir,
         transport=transport,
         ntfy_server=str(merged["ntfy_server"]).rstrip("/"),
+        notify_delay=float(merged["notify_delay"]),
         ntfy_title=str(merged["ntfy_title"]),
         ntfy_tags=str(merged["ntfy_tags"]),
         ntfy_priority=str(merged["ntfy_priority"]),

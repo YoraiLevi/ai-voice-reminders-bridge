@@ -1,11 +1,11 @@
 """Corrected CRDT title/notes encoding for Apple Reminders (LIVE-5).
 
 Reminders created through pyicloud rendered EMPTY on the phone whenever the text
-contained an emoji, while plain text rendered fine — and every read-back through
+contained an emoji, while plain text rendered fine - and every read-back through
 the API looked correct throughout.
 
 The cause is one expression. pyicloud's `_encode_crdt_document` declares
-`len(text)` — Python CODEPOINTS — as the length of the CRDT content run, the
+`len(text)` - Python CODEPOINTS - as the length of the CRDT content run, the
 attribute run, and the replica clock. Apple's topotext uses Foundation string
 semantics: UTF-16 CODE UNITS. An astral character (any emoji) is two units there
 and one in Python, so an emoji-bearing title shipped a document whose declared
@@ -20,7 +20,7 @@ corrected, installed over the name `_writes` actually calls. It is deliberately
 NOT a fork of pyicloud: the surface is one private function, and a copy that
 close is cheap to drop once upstream is fixed. `test_icloud_crdt.py` pins both
 the correction and the install site, so a pyicloud upgrade that renames the
-symbol — or fixes the bug — fails loudly instead of silently reverting to a
+symbol - or fixes the bug - fails loudly instead of silently reverting to a
 defect only a human holding a phone could detect.
 
 Upstream: pyicloud/services/reminders/_protocol.py::_encode_crdt_document (2.6.5).
@@ -37,7 +37,7 @@ _CLOCK_MAX = 0xFFFF_FFFF
 
 
 def utf16_length(text: str) -> int:
-    """Length in UTF-16 code units — what Foundation counts, not what Python does."""
+    """Length in UTF-16 code units - what Foundation counts, not what Python does."""
     return len(text.encode("utf-16-le")) // 2 if text else 0
 
 
@@ -105,7 +105,7 @@ def install() -> bool:
     """Point pyicloud's write path at the corrected encoder. Idempotent.
 
     `_writes` does `from ._protocol import _encode_crdt_document`, binding the
-    name at import — so the module that CALLS it is the one that must be patched.
+    name at import - so the module that CALLS it is the one that must be patched.
     Patching `_protocol` alone would appear to work and change nothing.
     """
     try:

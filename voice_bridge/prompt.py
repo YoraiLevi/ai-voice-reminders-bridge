@@ -7,7 +7,7 @@ which failed three ways (VOX-1/2/3):
   tokens rewritten, so a note explaining the defaults became a confident, false
   claim that one list name equalled another;
 * a placeholder the config could not fill shipped to the phone **literally**,
-  with a success exit code — the model then reads `${something}` as if it were a
+  with a success exit code - the model then reads `${something}` as if it were a
   list name, and a broken prompt is indistinguishable from a working one;
 * a missing template file produced a traceback rather than an explanation.
 
@@ -34,7 +34,7 @@ def _load_template() -> str:
 
 
 def _strip_comments(text: str) -> str:
-    """Remove HTML comments — they are notes to maintainers, not phone instructions."""
+    """Remove HTML comments - they are notes to maintainers, not phone instructions."""
     out = []
     rest = text
     while True:
@@ -55,7 +55,7 @@ def render_vox_prompt(cfg: Config) -> str:
     """The prompt to paste into the phone, rendered for this configuration.
 
     Raises `CommandError(2)` if the template is missing, and `KeyError` if it
-    contains a token this version cannot fill — loudly, rather than shipping the
+    contains a token this version cannot fill - loudly, rather than shipping the
     token verbatim to the phone.
     """
     try:
@@ -63,7 +63,7 @@ def render_vox_prompt(cfg: Config) -> str:
     except (FileNotFoundError, ModuleNotFoundError, OSError) as exc:
         raise CommandError(
             2,
-            "could not read the vox prompt template (prompts/vox.md) — "
+            "could not read the vox prompt template (prompts/vox.md) - "
             f"the installation looks incomplete: {exc}",
         ) from exc
 
@@ -80,7 +80,7 @@ def _selected_ids(cfg: Config) -> str:
     Requested by the phone persona itself, which was having to guess which list it
     meant. A real account can hold dozens of lists including same-named ghosts, so
     matching by name is a coin flip that silently sends dictations to a list nobody
-    reads — and the config already knows the answer.
+    reads - and the config already knows the answer.
 
     Nothing is emitted when the pins are absent: an identifier line that is not
     authoritative is worse than no line at all, because it invites the same
@@ -91,7 +91,7 @@ def _selected_ids(cfg: Config) -> str:
 
     lines = [
         "",
-        "AUTHORITATIVE LIST IDENTIFIERS — use these exactly; do NOT match by name,",
+        "AUTHORITATIVE LIST IDENTIFIERS - use these exactly; do NOT match by name,",
         "because several lists may share a title and only these ids are unambiguous.",
     ]
     if cfg.inbox_list_id:

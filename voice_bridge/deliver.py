@@ -1,11 +1,11 @@
-"""`deliver` — surface long content the phone can't hold, by publishing a file as a
+"""`deliver` - surface long content the phone can't hold, by publishing a file as a
 GitHub gist and pushing a tappable banner whose Click opens it.
 
 This is the only command that hands your data to a third party, so it holds itself
 to a higher bar than the rest of the tool on two counts:
 
 **The question it asks.** The old prompt said "publish X as a gist to get a link?",
-which understated it twice — it did not say the file's CONTENTS leave the machine,
+which understated it twice - it did not say the file's CONTENTS leave the machine,
 and it implied a "private" gist is secret. It is not: GitHub's private gists are
 *unlisted*, readable by anyone holding the URL. That matters here specifically,
 because the URL is then sent through a notification topic which is itself a bearer
@@ -40,7 +40,7 @@ def _consent_prompt(file: str, *, public: bool) -> str:
         visibility = "It will be PUBLIC: listed on your profile, searchable, readable by anyone."
     else:
         visibility = (
-            "A private gist is UNLISTED, not secret — anyone with the link can read it, "
+            "A private gist is UNLISTED, not secret - anyone with the link can read it, "
             "and that link is about to be sent to your phone through a notification topic."
         )
     return (
@@ -58,7 +58,7 @@ def deliver(
 ) -> int:
     """Publish `file` and notify. Exit 0 published (or declined), 2 refused / failed."""
     if not shutil.which("gh"):
-        print("error: `gh` not installed / not on PATH — see https://cli.github.com")
+        print("error: `gh` not installed / not on PATH - see https://cli.github.com")
         return 2
 
     if not assume_yes:
@@ -66,13 +66,13 @@ def deliver(
             # Refusing beats crashing on EOF, and beats uploading unasked: consent
             # for an external upload cannot be inferred from silence.
             print(
-                "error: refusing to publish without confirmation — no terminal to ask on.\n"
+                "error: refusing to publish without confirmation - no terminal to ask on.\n"
                 "       pass --yes if you are sure you want the file uploaded to GitHub."
             )
             return 2
         try:
             if not _ask_consent(_consent_prompt(file, public=public)):
-                print("aborted — nothing published.")
+                print("aborted - nothing published.")
                 return 0
         except EOFError:  # isatty can lie; no answer means no consent
             print("error: refusing to publish without confirmation.")

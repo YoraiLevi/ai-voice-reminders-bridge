@@ -1,4 +1,4 @@
-"""The transport-agnostic orchestration loop — the shared heart both legacy bridges
+"""The transport-agnostic orchestration loop - the shared heart both legacy bridges
 duplicated. It talks ONLY to the Transport interface, never a concrete backend.
 
 Two directions across the two buffers:
@@ -52,7 +52,7 @@ def poll_inbox(cfg: Config, t: Transport, *, now: datetime | None = None) -> int
     n = 0
     for item in items:
         if item.id in seen:
-            # Already delivered, yet still live on the backend — so a previous
+            # Already delivered, yet still live on the backend - so a previous
             # completion failed. Retry it rather than leaving the reminder
             # visible: the user reads "still there" as "not processed", re-dictates,
             # and the agent receives the message twice (FMA-2). This is the
@@ -60,7 +60,7 @@ def poll_inbox(cfg: Config, t: Transport, *, now: datetime | None = None) -> int
             t.complete(inbox, item.id)
             continue
 
-        text = f"{item.title} — {item.notes}" if item.notes else item.title
+        text = f"{item.title} - {item.notes}" if item.notes else item.title
         # fsync BEFORE marking handled: the completion below is durable remotely
         # the moment the server accepts it, while this append is not durable until
         # flushed. Ordering alone cannot close that window (FMA-16, ruled fix).
@@ -91,21 +91,21 @@ def send_reply(
     needs_input: bool = True,
     now: datetime | None = None,
 ) -> str:
-    """Frame one reply — stamp `[HH:MM][spoke]`, front-load any URL, clip the title —
+    """Frame one reply - stamp `[HH:MM][spoke]`, front-load any URL, clip the title -
     then write it to the phone's output list and (notify) fire a banner. Returns the
     created item id. The framing is shared; the write crosses the seam into `t.add_todo`."""
     url = first_url(text)
     body = frontload_link(text.strip(), url)
     stamped = f"[{_hhmm(now)}][{cfg.spoke_name}] {body}"
     flat = " ".join(stamped.split())
-    # The TITLE may be stripped of emoji; `stamped` — which carries the original
-    # text — is what goes into the notes and the banner, so nothing is lost.
+    # The TITLE may be stripped of emoji; `stamped` - which carries the original
+    # text - is what goes into the notes and the banner, so nothing is lost.
     titled = strip_astral(flat) if cfg.emoji_titles == "strip" else flat
     summary = clip(titled, cfg.reply_summary_limit, ellipsis=False) or "(reply)"
     out = t.resolve_list(cfg.output_list, cfg.output_list_id)
     rid = t.add_todo(out, summary, notes=stamped, needs_input=needs_input)
     if notify:
-        ntfy.push(cfg, stamped, click=url)
+        ntfy.schedule(cfg, stamped, click=url)
     return rid
 
 
@@ -126,7 +126,7 @@ def send_digest(
     """Bundle a burst into ONE reminder and ONE banner.
 
     Three replies written in one cycle used to arrive as three reminders and three
-    banners — three interruptions for one thought. The title is a count, so the
+    banners - three interruptions for one thought. The title is a count, so the
     content has to live in the notes: a digest that summarises the replies away has
     thrown the message out.
 
@@ -140,7 +140,9 @@ def send_digest(
     out = t.resolve_list(cfg.output_list, cfg.output_list_id)
     rid = t.add_todo(out, title, notes=body, needs_input=True)
     if notify:
-        ntfy.push(cfg, body, click=first_url(body))
+        # ONE banner for the whole digest, delayed once. The delay must not
+        # multiply with the number of replies bundled into it.
+        ntfy.schedule(cfg, body, click=first_url(body))
     return rid
 
 
@@ -150,13 +152,13 @@ def drain_replies(cfg: Config, t: Transport, *, now: datetime | None = None) -> 
 
     A burst of `DIGEST_MIN`+ lines is presented as one reminder (UX-2), but that is
     **presentation only**. The cursor still advances per line, and only after a
-    successful send — the moment bundling becomes a durability batch, FMA-1 returns.
+    successful send - the moment bundling becomes a durability batch, FMA-1 returns.
     """
     # Offsets come from the reader, which measures real bytes. Deriving them here
     # with len(line + "\n") assumed a ONE-byte terminator: on Windows the mailbox
     # is written through text mode, so the terminator is two, the cursor fell a
     # byte behind per line, and after three lines it landed inside the text of the
-    # last one — re-sending its tail next cycle as its own reply.
+    # last one - re-sending its tail next cycle as its own reply.
     raw_entries, _ = read_new_entries(cfg.our_inbox, cfg.reply_cursor_file)
 
     # Blank lines and comments get an empty text: they are never sent, but they
@@ -173,7 +175,7 @@ def drain_replies(cfg: Config, t: Transport, *, now: datetime | None = None) -> 
 
     if len(sendable) >= DIGEST_MIN:
         # ONE send for the burst. If it raises, the cursor is untouched and the
-        # whole burst is retried next cycle — replies that never arrived must never
+        # whole burst is retried next cycle - replies that never arrived must never
         # be marked delivered. Only once it has succeeded do the offsets advance,
         # still one line at a time.
         send_digest(cfg, t, sendable, now=now)
@@ -183,7 +185,7 @@ def drain_replies(cfg: Config, t: Transport, *, now: datetime | None = None) -> 
 
     for text, off in entries:
         # Advance PER LINE, not once per batch. Saving only at the end meant a
-        # failure on reply three re-sent replies one and two on the next cycle —
+        # failure on reply three re-sent replies one and two on the next cycle -
         # and again on every retry after that. Per-line, a crash costs at most one
         # duplicate: the line that was in flight (FMA-1).
         if text:
@@ -198,7 +200,7 @@ def announce_join(cfg: Config, *, now: datetime | None = None) -> None:
 
 
 def announce_eject(cfg: Config, *, now: datetime | None = None) -> None:
-    """Write the eject line and delete our own inbox file — exactly the protocol's
+    """Write the eject line and delete our own inbox file - exactly the protocol's
     clean-exit convention (a missed cleanup is harmless under the keystone rule)."""
     append_line(cfg.peer_inbox, eject_line(cfg.from_name, now=now))
     if cfg.our_inbox.exists():
@@ -211,7 +213,7 @@ def run_once(cfg: Config, t: Transport, *, now: datetime | None = None) -> tuple
 
 
 def dry_run(cfg: Config) -> int:
-    """Print the resolved config and the exact mailbox line a dictation would become —
+    """Print the resolved config and the exact mailbox line a dictation would become -
     no transport, no network."""
     for k, v in cfg.as_dict().items():
         print(f"  {k:<20} : {v}")
@@ -243,7 +245,7 @@ def preflight_lists(cfg: Config, *, show=print) -> int:
 
     Deliberately config-only: it contacts no backend, so it costs nothing and
     cannot itself fail. "Nothing selected" is knowable without asking anyone, and
-    it is checked BEFORE the mailbox is claimed — starting, announcing a join and
+    it is checked BEFORE the mailbox is claimed - starting, announcing a join and
     then dying every cycle is worse than never starting, because the peer sees a
     spoke that is present and silent.
 
@@ -251,8 +253,8 @@ def preflight_lists(cfg: Config, *, show=print) -> int:
     used to fall back to matching a title at runtime, which is exactly the silent
     guess the whole feature removed.
 
-    A selection that points at a DELETED list is not detectable here — that needs
-    the backend — so the run loop catches it as a LookupError and stops with the
+    A selection that points at a DELETED list is not detectable here - that needs
+    the backend - so the run loop catches it as a LookupError and stops with the
     same advice.
     """
     missing = [
@@ -292,14 +294,14 @@ def run(
     Failures are classified rather than uniformly retried, because they need
     opposite responses:
 
-    * **auth** — no retry can enter a 2FA code, so retrying is only a quieter way
+    * **auth** - no retry can enter a 2FA code, so retrying is only a quieter way
       to fail. Stop immediately and say what to run (RUN-1).
-    * **transient** — back off, but BOUNDED. A 503 that never clears used to be
+    * **transient** - back off, but BOUNDED. A 503 that never clears used to be
       retried for ever: silent death dressed up as patience (FMA-12).
-    * **anything else** — probably a bug. A few attempts, then stop and surface it
+    * **anything else** - probably a bug. A few attempts, then stop and surface it
       rather than looping on it for ever (RUN-2).
 
-    `--once` does a single attempt — 0 if anything new, 1 if nothing, 2 on error.
+    `--once` does a single attempt - 0 if anything new, 1 if nothing, 2 on error.
     """
     log = _log.get()
     period = interval if interval is not None else cfg.poll_interval
@@ -328,7 +330,7 @@ def run(
         # One handler around the WHOLE loop: Ctrl-C can land in either sleep, in
         # connect, or mid-cycle, and a handler that covers only some of those is
         # the reason this escaped once already. Ctrl-C is how a person stops a
-        # foreground daemon — deliberate, not a failure — and it is a
+        # foreground daemon - deliberate, not a failure - and it is a
         # BaseException, so `except Exception` never saw it and it surfaced as a
         # traceback that said something broke when nothing had. The eject in
         # `finally` was never at risk; only the reporting was (LIVE-6).
@@ -348,15 +350,15 @@ def run(
                 except Exception as exc:
                     if _is_auth(exc):
                         print(f"error: {exc}")
-                        print("The session needs attention — run `voice-bridge icloud-login`.")
+                        print("The session needs attention - run `voice-bridge icloud-login`.")
                         return 2
 
                     if isinstance(exc, LookupError):
-                        # A selected list stopped existing — deleted on the phone,
+                        # A selected list stopped existing - deleted on the phone,
                         # most likely, mid-run. Retrying cannot bring it back, and
                         # the generic give-up message blames connectivity, sending
                         # the user to look at their network for a list they deleted.
-                        print(f"error: a selected list is gone — {exc}")
+                        print(f"error: a selected list is gone - {exc}")
                         print("       Nothing can be delivered until you choose another:")
                         print("         voice-bridge lists --select")
                         return 2
@@ -374,12 +376,12 @@ def run(
                         hint = (
                             "       check connectivity, or whether a second poller is running."
                             if kind == "transient"
-                            else "       this is not a connectivity problem — read the error above."
+                            else "       this is not a connectivity problem - read the error above."
                         )
-                        print(f"error: giving up after {attempts} {kind} failures — {exc}\n{hint}")
+                        print(f"error: giving up after {attempts} {kind} failures - {exc}\n{hint}")
                         return 2
 
-                    log.warning("%s error: %s — retrying in %ss", kind, exc, backoff)
+                    log.warning("%s error: %s - retrying in %ss", kind, exc, backoff)
                     if backoff:
                         time.sleep(backoff)
                     backoff = min(max(backoff * 2, 1), max_backoff)
@@ -389,5 +391,9 @@ def run(
             print("stopped.")
             return 0
     finally:
+        # Ring anything still waiting rather than waiting out its delay (which
+        # would make Ctrl-C feel broken) or dropping it (which would lose a
+        # banner the user was told to expect).
+        ntfy.flush()
         announce_eject(cfg)
         pidfile.unlink(missing_ok=True)

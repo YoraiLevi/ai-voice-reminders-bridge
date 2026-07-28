@@ -11,7 +11,7 @@ def test_line_grammar_and_flattening(fixed_clock):
 
 
 def test_join_and_eject_lines(fixed_clock):
-    assert mailbox.join_line("vox", now=fixed_clock) == "- [08:48] (vox) joined — async voice spoke"
+    assert mailbox.join_line("vox", now=fixed_clock) == "- [08:48] (vox) joined - async voice spoke"
     assert mailbox.eject_line("vox", now=fixed_clock) == "- [08:48] (vox) stopping"
 
 
@@ -39,7 +39,7 @@ def test_clip_word_boundary_with_ellipsis():
     text = "word " * 60  # 300 chars
     out = mailbox.clip(text, 150)
     assert len(out) <= 150
-    assert out.endswith("…")
+    assert out.endswith("...")
 
 
 def test_clip_hard_cut_without_ellipsis():
@@ -55,7 +55,7 @@ def test_first_url_found_and_none():
 def test_frontload_link_moves_url_to_front():
     assert (
         mailbox.frontload_link("done, see https://x/y", "https://x/y")
-        == "https://x/y — done, see https://x/y"
+        == "https://x/y - done, see https://x/y"
     )
     assert mailbox.frontload_link("plain text", None) == "plain text"
     assert (

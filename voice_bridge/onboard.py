@@ -2,7 +2,7 @@
 
 Every individual step already worked. The *sequence* did not: a new user finished
 `setup` and still had to discover `icloud-login`, then a topic file, then
-`--verify`, then `vox-prompt`, then `run` — five more commands, none of which
+`--verify`, then `vox-prompt`, then `run` - five more commands, none of which
 announced itself. Knowing each step exists is not the same as being led through
 them, and the gap between those two is where people give up.
 
@@ -10,8 +10,8 @@ So this chains the whole journey and narrates it. Two rules govern every step,
 both from the person who has to use it:
 
 **Non-intrusive.** No step touches the user's machine or their accounts without
-saying so first. The clipboard is asked about rather than overwritten — it may
-hold something they care about — and every optional step states what skipping it
+saying so first. The clipboard is asked about rather than overwritten - it may
+hold something they care about - and every optional step states what skipping it
 costs, then names the command that does it later.
 
 **Explicit guidance.** At each point the user is told what is happening now and
@@ -21,10 +21,13 @@ behalf that they cannot see.
 
 from __future__ import annotations
 
+import contextlib
+import os
 import secrets
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Callable
 
@@ -65,13 +68,13 @@ def suggest_topic() -> str:
 
     A banner topic is a public URL on a public server: anyone who knows the name
     can read every reply. So the suggestion is random rather than something
-    memorable like "vox-alice" — memorable is exactly what makes it guessable.
+    memorable like "vox-alice" - memorable is exactly what makes it guessable.
     """
     return f"vox-{secrets.token_hex(8)}"
 
 
 # --------------------------------------------------------------------------- #
-# step 1 — credentials
+# step 1 - credentials
 # --------------------------------------------------------------------------- #
 
 
@@ -82,17 +85,17 @@ def step_credentials(cfg: Config, *, ask: Ask, show: Show, login: Callable[[], i
         show(f"  already configured: {cfg.creds_env}")
         return True
 
-    show("  No credentials yet — they are what lets this reach your Reminders.")
+    show("  No credentials yet - they are what lets this reach your Reminders.")
     show(f"  They are stored in {cfg.creds_env}, on this machine only.")
     if not _yes(ask, "  Set them up now?"):
-        show("  skipped — nothing will connect until you run:  voice-bridge icloud-login")
+        show("  skipped - nothing will connect until you run:  voice-bridge icloud-login")
         return False
 
     return login() == 0
 
 
 # --------------------------------------------------------------------------- #
-# step 3 — notifications
+# step 3 - notifications
 # --------------------------------------------------------------------------- #
 
 
@@ -110,7 +113,7 @@ def step_notifications(cfg: Config, *, config_path: Path, ask: Ask, show: Show) 
         return True
 
     show("  A banner on your phone the moment a reply arrives. Without one, replies")
-    show("  still arrive in your list — you just have to look.")
+    show("  still arrive in your list - you just have to look.")
     show("")
     suggested = suggest_topic()
     show(f"    1) use a private topic I generate for you   ({suggested})")
@@ -143,7 +146,7 @@ def step_notifications(cfg: Config, *, config_path: Path, ask: Ask, show: Show) 
                 continue
             set_value(config_path, "ntfy_server", server.rstrip("/"))
         elif choice == "4":
-            show("  skipped — no banners. Set one later by writing a topic to:")
+            show("  skipped - no banners. Set one later by writing a topic to:")
             show(f"    {cfg.ntfy_topic_file}")
             return False
         else:
@@ -158,15 +161,64 @@ def step_notifications(cfg: Config, *, config_path: Path, ask: Ask, show: Show) 
 
 
 # --------------------------------------------------------------------------- #
-# step 5 — the phone prompt
+# step 5 - the phone prompt
 # --------------------------------------------------------------------------- #
 
 
+def _copy_windows(text: str) -> bool:
+    """Put text on the Windows clipboard without going through a codepage.
+
+    `clip.exe` decodes whatever is piped to it using the CONSOLE CODE PAGE, not
+    UTF-8. Measured on this machine, piping UTF-8 bytes for "A-B rocket 🚀":
+
+        chcp 65001  ->  A-B rocket 🚀        (clean)
+        chcp 1252   ->  Aâ€"B rocket ðŸš€    (mangled)
+        chcp  437   ->  AΓÇöB rocket ≡ƒÜÇ    (worse)
+
+    A default Windows console is 1252 or 437, so the old pipe was correct only by
+    the accident of the terminal it happened to run in - and the failure is silent
+    and lands in the user's clipboard.
+
+    So the text never crosses a codepage boundary: it is written as UTF-8 bytes to
+    a file, and PowerShell is told explicitly to read it as UTF-8 and hand the
+    resulting string to the clipboard API. Every step names its encoding, which is
+    what makes emoji and any future non-ASCII safe rather than lucky.
+    """
+    tmp = tempfile.NamedTemporaryFile(  # noqa: SIM115 - closed before PowerShell reads it
+        mode="wb", suffix=".txt", delete=False
+    )
+    try:
+        tmp.write(text.encode("utf-8"))
+        tmp.close()
+        subprocess.run(
+            [
+                "powershell",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                f"Set-Clipboard -Value (Get-Content -Raw -Encoding UTF8 -LiteralPath '{tmp.name}')",
+            ],
+            check=True,
+            capture_output=True,
+        )
+        return True
+    except (OSError, subprocess.SubprocessError):
+        return False
+    finally:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp.name)
+
+
 def copy_to_clipboard(text: str) -> bool:
-    """Best-effort clipboard write. False when there is no tool to do it with."""
+    """Best-effort clipboard write. False when there is no tool to do it with.
+
+    Encoding-correct on every platform: what comes back out must equal what went
+    in, including em dashes and emoji.
+    """
     if sys.platform == "win32":
-        cmd = ["clip"]
-    elif sys.platform == "darwin":
+        return _copy_windows(text)
+
+    if sys.platform == "darwin":
         cmd = ["pbcopy"]
     elif shutil.which("wl-copy"):
         cmd = ["wl-copy"]
@@ -175,6 +227,7 @@ def copy_to_clipboard(text: str) -> bool:
     else:
         return False
     try:
+        # pbcopy/wl-copy/xclip take bytes as given; no console codepage involved.
         subprocess.run(cmd, input=text.encode("utf-8"), check=True)
         return True
     except (OSError, subprocess.SubprocessError):
@@ -182,7 +235,7 @@ def copy_to_clipboard(text: str) -> bool:
 
 
 def step_phone_prompt(cfg: Config, *, ask: Ask, show: Show) -> None:
-    """Hand over the prompt — asking before touching the clipboard.
+    """Hand over the prompt - asking before touching the clipboard.
 
     Overwriting a clipboard unasked is a small theft of something the user may
     have been holding on purpose. The prompt is long enough that copying it is
@@ -194,12 +247,12 @@ def step_phone_prompt(cfg: Config, *, ask: Ask, show: Show) -> None:
     text = render_vox_prompt(cfg)
 
     show("  This is the instruction set your phone runs. It carries the lists you")
-    show("  chose — their names and their ids — so the phone never has to guess.")
+    show("  chose - their names and their ids - so the phone never has to guess.")
 
     # PRINTED UNCONDITIONALLY, and before the question. Showing it only when the
     # copy is declined would make the prompt feel like a consolation prize for
     # saying no, and it leaves someone who said yes with nothing on screen to
-    # check against — while the clipboard is the one thing here that belongs to
+    # check against - while the clipboard is the one thing here that belongs to
     # the user, so taking it stays a question with a NO default.
     show("")
     show(text)
@@ -211,7 +264,7 @@ def step_phone_prompt(cfg: Config, *, ask: Ask, show: Show) -> None:
         if copy_to_clipboard(text):
             show("  copied.")
         else:
-            show("  no clipboard tool available here — copy the text above by hand.")
+            show("  no clipboard tool available here - copy the text above by hand.")
 
 
 # --------------------------------------------------------------------------- #
@@ -220,20 +273,20 @@ def step_phone_prompt(cfg: Config, *, ask: Ask, show: Show) -> None:
 
 
 def welcome(show: Show) -> None:
-    show("Setting up your voice bridge — talk to your agents from your phone.")
+    show("Setting up your voice bridge - talk to your agents from your phone.")
     show("")
     show(f"  {TOTAL_STEPS} steps: credentials, lists, notifications, a test, the phone prompt.")
     show("  Nothing on your machine or your accounts changes without asking first,")
-    show("  and every step can be skipped — each one tells you how to do it later.")
+    show("  and every step can be skipped - each one tells you how to do it later.")
 
 
 def farewell(show: Show, *, ready: bool) -> None:
     show("")
     if ready:
         show("You are set up. Start the bridge with:  voice-bridge run")
-        show("Then talk to your phone — dictations arrive in your mailbox, replies come back.")
+        show("Then talk to your phone - dictations arrive in your mailbox, replies come back.")
         return
-    show("Setup is incomplete — the steps you skipped are named above, each with its")
+    show("Setup is incomplete - the steps you skipped are named above, each with its")
     show("command. `voice-bridge doctor` will tell you what is still missing.")
 
 

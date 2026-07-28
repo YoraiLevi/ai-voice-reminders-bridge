@@ -1,4 +1,4 @@
-"""Which list did you actually mean? — one resolver, one picker (UX-6).
+"""Which list did you actually mean? - one resolver, one picker (UX-6).
 
 A list NAME is not an identity. A real account accumulates lists, and among them
 sit same-named ghosts left behind by earlier experiments. Resolving by name picks
@@ -11,7 +11,7 @@ Two rules shape everything here.
 **One engine.** `resolve_selection` is the only place that decides whether a list
 is selected, unselected or stale. `setup`, `lists --select` and `doctor` are doors
 onto it, not re-implementations of it. Three resolvers would be three
-chances to disagree about the exact question the feature exists to settle — the
+chances to disagree about the exact question the feature exists to settle - the
 same lesson CFG-1 taught about configuration having one resolver.
 
 **Nothing is ever inferred.** A list is used because someone chose it, never
@@ -33,7 +33,7 @@ from .transport import ListRef, Transport
 # The crossing is deliberate and already cost us once (UX-1): the list NAMES are
 # written from the phone user's seat, the FIELD names from the bridge's. The
 # user's outbox is the bridge's inbox. Callers must never redo this mapping by
-# hand — they read `Resolution.field`.
+# hand - they read `Resolution.field`.
 _ROLES: dict[str, tuple[str, str]] = {
     "inbox": ("inbox_list", "inbox_list_id"),
     "outbox": ("output_list", "output_list_id"),
@@ -92,19 +92,19 @@ class Choice:
 def resolve_selection(
     cfg: Config, t: Transport, *, refs: list[ListRef] | None = None
 ) -> SelectionPlan:
-    """Work out, for both roles, whether a list is selected — by ID, never by name.
+    """Work out, for both roles, whether a list is selected - by ID, never by name.
 
     Three states, and none of them involves matching a title:
 
-    * **selected** — the stored id resolves to a list that exists;
-    * **stale** — an id is stored but nothing has it any more;
-    * **unselected** — no id is stored, so a human must choose.
+    * **selected** - the stored id resolves to a list that exists;
+    * **stale** - an id is stored but nothing has it any more;
+    * **unselected** - no id is stored, so a human must choose.
 
     Name matching is gone entirely. It was never a way of knowing which list you
     meant, only a way of guessing quietly: a name is not unique, so on any account
     with duplicates it picked one at random and never said so. Every path that used
     to auto-resolve a name now asks instead, which is why the ambiguous/missing
-    distinction disappeared with it — there is nothing to be ambiguous about when
+    distinction disappeared with it - there is nothing to be ambiguous about when
     nothing is inferred.
 
     `candidates` is therefore the FULL inventory, with the current selection marked,
@@ -138,7 +138,7 @@ def resolve_selection(
 
 
 # --------------------------------------------------------------------------- #
-# the picker — ONE component, used by every conflict site
+# the picker - ONE component, used by every conflict site
 # --------------------------------------------------------------------------- #
 
 
@@ -182,12 +182,12 @@ def pick(
     """Ask a human to choose one list. Returns the decision; writes nothing.
 
     `ask` and `show` are injected so this is testable without a terminal, and so
-    the caller — not this function — decides whether asking is even allowed. It
+    the caller - not this function - decides whether asking is even allowed. It
     must never be called on a non-TTY: a prompt written to a pipe either blocks
     for ever or reads EOF and takes an answer nobody gave.
 
     **`refresh` is what makes this usable on a phone.** iCloud cannot create lists
-    over the API, so the user makes them in Reminders *while this prompt is open* —
+    over the API, so the user makes them in Reminders *while this prompt is open* -
     and sync takes its time. Without a way to re-read the account they would have
     to abandon setup, wait, and start again, guessing at how long is long enough.
     With it, they create the list, press `r` until it appears, and carry on.
@@ -214,10 +214,10 @@ def pick(
 
         # Every other label states what CHOOSING IT DOES, because two of them did
         # not and a user had to discover the difference by trying them (both ruled
-        # from live use): "quit" did not quit — it moved on — and a bare "keep"
+        # from live use): "quit" did not quit - it moved on - and a bare "keep"
         # gave no hint whether it meant keep-and-stop or keep-and-carry-on.
         # `keep` only when there is something valid to keep. Offering to keep a
-        # selection that no longer exists is offering to keep something broken —
+        # selection that no longer exists is offering to keep something broken -
         # found by reading the picker's own output on a stale role. `clear` still
         # applies, because clearing a dead id IS the repair.
         extra = []
@@ -258,7 +258,7 @@ def pick(
 
             # An unusable answer must re-ask. Falling through to a default would
             # be the silent wrong choice arriving by another door.
-            show(f"  not one of the options — choose {'1-%d, or ' % top if top else ''}{letters}.")
+            show(f"  not one of the options - choose {'1-%d, or ' % top if top else ''}{letters}.")
 
 
 def confirm_selection(ref: ListRef, *, role: str, show: Callable[[str], None]) -> None:
@@ -266,7 +266,7 @@ def confirm_selection(ref: ListRef, *, role: str, show: Callable[[str], None]) -
 
     Asked for directly: choosing from a numbered menu tells you which ROW you
     picked, not which list you now own. Echoing the name, the id and the metadata
-    closes that gap while the user can still act on it — and the id is what the
+    closes that gap while the user can still act on it - and the id is what the
     phone prompt will carry, so seeing it here is the same fact they will see there.
     """
     where = "dictations arrive in" if role == "inbox" else "replies go out to"

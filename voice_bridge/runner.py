@@ -1,4 +1,4 @@
-"""The `run` state machine — ensure everything, then bridge. Reuses setup for the
+"""The `run` state machine - ensure everything, then bridge. Reuses setup for the
 config gap; fills only what's missing (self-bootstrapping)."""
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ def run_command(
 
     # RUN-4: --dry-run must write NOTHING. It ran the setup flow first, so asking
     # "what would this do?" on a fresh machine created a config file as a side
-    # effect — the one thing a dry run promises not to do. Resolve in memory
+    # effect - the one thing a dry run promises not to do. Resolve in memory
     # instead, from defaults if no file exists.
     if dry_run:
         cfg = load_config(path, overrides=ov) if path.exists() else load_config(None, overrides=ov)
@@ -55,7 +55,7 @@ def run_command(
         cfg.mailbox_dir.mkdir(parents=True, exist_ok=True)
         cfg.peer_inbox.touch()
         cfg.our_inbox.touch()
-        print(f"mailbox ready at {cfg.mailbox_dir} — a peer must join to process messages")
+        print(f"mailbox ready at {cfg.mailbox_dir} - a peer must join to process messages")
 
     # ensure the Radicale server (child lifecycle owned here) + lists
     child = None
@@ -66,7 +66,7 @@ def run_command(
                 child = server_mod.ensure_running(cfg, spawn_child=True)
             else:
                 print(
-                    f"radicale server not reachable at {url} — "
+                    f"radicale server not reachable at {url} - "
                     "`voice-bridge radicale-server start --background`"
                 )
         if server_mod.is_reachable(url):

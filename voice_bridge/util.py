@@ -4,7 +4,7 @@ credential/env files, writing files atomically, and masking secrets for logs.
 Two distinct readers live here on purpose. `read_env` keeps the shell-ish
 conveniences (strip whitespace, drop surrounding quotes) that suit a config-style
 env file. `read_secret` returns the value **verbatim**, because a password is not
-a shell token — quotes and spaces in it are content, and silently removing them
+a shell token - quotes and spaces in it are content, and silently removing them
 produces a login failure with no visible cause.
 """
 
@@ -39,7 +39,7 @@ def read_kv(path: Path, key: str) -> str | None:
 
 
 def read_secret(path: Path, key: str) -> str | None:
-    """One value from a `KEY=VALUE` file, **verbatim** — no stripping, no unquoting.
+    """One value from a `KEY=VALUE` file, **verbatim** - no stripping, no unquoting.
 
     Only the first `=` splits, so a value containing `=` survives intact. Use this
     for passwords and tokens; use `read_env` for ordinary settings.
@@ -63,7 +63,7 @@ def write_env(path: Path, values: dict[str, str], *, mode: int = 0o600) -> None:
 
     Keys already in the file that are not being changed are preserved, so writing
     a password never silently drops an unrelated setting. The file is created
-    owner-only where the platform supports it — it holds a reusable credential in
+    owner-only where the platform supports it - it holds a reusable credential in
     cleartext (at-rest hardening is tracked separately).
     """
     existing: dict[str, str] = {}
@@ -90,7 +90,7 @@ def atomic_write(path: Path, text: str, *, mode: int | None = None) -> None:
     """Write `text` to `path` all-or-nothing.
 
     A plain `write_text` truncates the target before the new bytes land, so a
-    crash in that window leaves a half-written file — for the config that means
+    crash in that window leaves a half-written file - for the config that means
     every later command fails until a human repairs it (FMA-11). Writing a
     complete temporary file in the *same directory* and then `os.replace`-ing it
     over the target makes the update atomic: readers see either the old file or
@@ -123,5 +123,5 @@ def masked(secret: str) -> str:
     head = s[0]
     tail = ""
     if "@" in s:
-        tail = "@" + s.split("@", 1)[1][:1] + "…"
+        tail = "@" + s.split("@", 1)[1][:1] + "..."
     return f"{head}***{tail} (hidden)"

@@ -1,4 +1,4 @@
-"""A glance at the spoke's health — the quick counterpart to `doctor`'s full survey.
+"""A glance at the spoke's health - the quick counterpart to `doctor`'s full survey.
 File/pidfile/reachability only; no transport auth (that's `doctor`'s job), so it's fast."""
 
 from __future__ import annotations
@@ -22,11 +22,11 @@ def _alive(pid: int) -> bool:
     On POSIX, signal 0 is the standard "does it exist?" probe and sends nothing.
 
     On Windows there is no such signal. `os.kill` maps signal 0 to
-    `GenerateConsoleCtrlEvent(CTRL_C_EVENT, pid)` — an actual Ctrl-C delivered to
+    `GenerateConsoleCtrlEvent(CTRL_C_EVENT, pid)` - an actual Ctrl-C delivered to
     a process GROUP, not a query. So the probe would interrupt whatever shares the
     console, which for a test run is the test runner itself. It is easy to believe
     this is safe, because under a terminal emulator with no real console attached
-    the event silently fails and the call appears to "just return" — which is
+    the event silently fails and the call appears to "just return" - which is
     exactly what an earlier check of this concluded. On a real console it fires.
 
     Windows therefore uses `OpenProcess`, which only asks. A non-positive pid is
@@ -39,7 +39,7 @@ def _alive(pid: int) -> bool:
     if os.name == "nt":
         import ctypes
 
-        # PROCESS_QUERY_LIMITED_INFORMATION — the least authority that answers.
+        # PROCESS_QUERY_LIMITED_INFORMATION - the least authority that answers.
         handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)  # type: ignore[attr-defined]
         if not handle:
             return False
@@ -77,13 +77,13 @@ def _mtime(path: Path) -> str | None:
     return datetime.fromtimestamp(path.stat().st_mtime).isoformat(timespec="seconds")
 
 
-#: `- [HH:MM] (from_name) body` with the TIME wildcarded — an exact match against
+#: `- [HH:MM] (from_name) body` with the TIME wildcarded - an exact match against
 #: an unknown timestamp is impossible. `from_name` is captured greedily up to the
 #: last `") "` so a name containing a bracket cannot truncate the parse.
 _LINE_RE = re.compile(r"^- \[\d{2}:\d{2}\] \((?P<who>.*)\) (?P<body>.*)$")
 
 #: The suffixes our own announcements end with (see mailbox.join_line/eject_line).
-_ANNOUNCEMENTS = ("joined — async voice spoke", "stopping")
+_ANNOUNCEMENTS = ("joined - async voice spoke", "stopping")
 
 
 def _last_complete_line(path: Path) -> str | None:
@@ -101,7 +101,7 @@ def _is_our_announcement(line: str, spoke: str) -> bool:
     """True when the peer file's last line is a join/eject announcement of ours.
 
     The discriminator is FORMAT, not authorship: every line in that file is our
-    write — dictations are forwarded under our own tag — so asking "is this ours?"
+    write - dictations are forwarded under our own tag - so asking "is this ours?"
     would silence the hint permanently.
     """
     m = _LINE_RE.match(line)
@@ -115,7 +115,7 @@ def staleness_hint(cfg: Config, *, stale_after: int = 3600, now: float | None = 
 
     This is the silent half-round-trip: the message is delivered correctly and
     nobody is reading it. voice-bridge does not own peer presence and cannot see
-    whether an agent exists, so it never claims one is absent — it reports only
+    whether an agent exists, so it never claims one is absent - it reports only
     the file facts it can observe, and says "is a peer joined?" rather than
     "no peer is joined" (FMA-9).
     """
@@ -142,7 +142,7 @@ def staleness_hint(cfg: Config, *, stale_after: int = 3600, now: float | None = 
 
     return (
         f"warning: {peer.name} updated {int(elapsed)}s ago with no newer reply "
-        f"in {cfg.our_inbox.name} — is a peer joined?"
+        f"in {cfg.our_inbox.name} - is a peer joined?"
     )
 
 

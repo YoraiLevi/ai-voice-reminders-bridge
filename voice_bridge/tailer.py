@@ -1,7 +1,7 @@
 """Pure helpers for reading the tail of a mailbox file and following it.
 
 Kept free of config and I/O policy so the `tail` command's behaviour can be
-tested directly, without threads or sleeps — the old logic lived inside a follow
+tested directly, without threads or sleeps - the old logic lived inside a follow
 loop and was effectively untestable, which is why both of its bugs survived:
 
 * it printed a file's entire history rather than a useful last-N (TAIL-1);
@@ -37,7 +37,7 @@ def follow_step(path: Path, prev_offset: int) -> tuple[list[str], int]:
 
     Rotation safety is the point. If the file is now *smaller* than the offset we
     were holding, it was truncated or rotated, so the offset is meaningless and we
-    start again from the beginning — otherwise the reader would sit past the end
+    start again from the beginning - otherwise the reader would sit past the end
     and report nothing for ever.
 
     An incomplete trailing line (no newline yet) is held back and re-read once it

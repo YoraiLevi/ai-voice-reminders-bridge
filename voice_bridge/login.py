@@ -1,11 +1,11 @@
-"""`icloud-login` — capture credentials securely, then establish a trusted session.
+"""`icloud-login` - capture credentials securely, then establish a trusted session.
 
 This used to read an Apple ID and password from a file the user had to write by
 hand, and its only real job was passing a 2FA code along. Four things were wrong
 with that, and they are fixed together because they are one flow:
 
 * **It never persisted the trust token.** `validate_2fa_code` alone does not make
-  a session durable — `trust_session()` does. Without it the session lapses far
+  a session durable - `trust_session()` does. Without it the session lapses far
   sooner than expected, and nobody connects the surprise re-prompt weeks later
   back to the login that "worked" (LOGIN-4). Success is now claimed only after
   `is_trusted_session` has actually been observed.
@@ -21,7 +21,7 @@ process list to every other user on the machine. Passwords arrive through
 
 Testability shape: `_make_service` is the single injection point for building the
 service, the interactive helpers are module-level so they can be replaced, and
-`decide_intent` is pure — so the state machine can be exercised without a
+`decide_intent` is pure - so the state machine can be exercised without a
 terminal, which is why its branches are covered at all.
 """
 
@@ -53,7 +53,7 @@ def resolve_code(
 
 
 # --------------------------------------------------------------------------- #
-# seams — replaced wholesale in tests, so nothing here needs pyicloud or a TTY
+# seams - replaced wholesale in tests, so nothing here needs pyicloud or a TTY
 # --------------------------------------------------------------------------- #
 
 
@@ -90,7 +90,7 @@ def _confirm_use_existing() -> bool:
 
 
 def decide_intent(*, has_creds: bool, is_tty: bool, new: bool, enter_2fa: bool) -> str:
-    """What this invocation should do, given only facts — no I/O, no prompting.
+    """What this invocation should do, given only facts - no I/O, no prompting.
 
     Returns one of `capture` (ask for and store credentials), `reauth` (keep the
     credentials, force a fresh 2FA), `confirm` (ask whether to reuse),
@@ -98,7 +98,7 @@ def decide_intent(*, has_creds: bool, is_tty: bool, new: bool, enter_2fa: bool) 
 
     Purity is the point: the previous version's decisions were tangled with
     `input()` calls, so the branches could only be exercised by driving a real
-    terminal — which meant they never were.
+    terminal - which meant they never were.
     """
     if new:
         return "capture"
@@ -112,7 +112,7 @@ def decide_intent(*, has_creds: bool, is_tty: bool, new: bool, enter_2fa: bool) 
 def _looks_quote_wrapped(value: str) -> bool:
     """True when a stored value starts and ends with the same quote character.
 
-    Values are read verbatim — quotes are content, not syntax — so a hand-written
+    Values are read verbatim - quotes are content, not syntax - so a hand-written
     `ICLOUD_PASSWORD="secret"` really does contain them. Stripping silently would
     reintroduce exactly the lossy transformation this module exists to remove, so
     instead we say what we see and let the user decide.
@@ -172,8 +172,8 @@ def icloud_login(  # noqa: C901 - a flat state machine; clearer read end to end
             use_pw = _read_password(from_stdin=password_stdin)
         except EOFError:
             # We asked, and there was nothing to read. `isatty()` is not always
-            # honest — under some Windows shells it reports a terminal even when
-            # stdin is redirected — so reaching EOF here means the same thing the
+            # honest - under some Windows shells it reports a terminal even when
+            # stdin is redirected - so reaching EOF here means the same thing the
             # non-TTY branch means, and deserves the same actionable message
             # rather than a bare "cancelled".
             print(no_terminal_guidance)
@@ -188,7 +188,7 @@ def icloud_login(  # noqa: C901 - a flat state machine; clearer read end to end
         if _looks_quote_wrapped(use_pw):
             print(
                 "note: the stored password starts and ends with a quote character. Values are "
-                "read literally, so those quotes are part of the password — remove them if the "
+                "read literally, so those quotes are part of the password - remove them if the "
                 "login below is rejected."
             )
 
@@ -199,7 +199,7 @@ def icloud_login(  # noqa: C901 - a flat state machine; clearer read end to end
     try:
         api = _make_service(use_id, use_pw, cfg.cookie_dir)
     except ImportError:
-        print("error: pyicloud not installed — install the 'icloud' extra.")
+        print("error: pyicloud not installed - install the 'icloud' extra.")
         return 2
     except OSError as exc:
         print(f"error: could not reach iCloud: {exc}")
@@ -215,14 +215,14 @@ def icloud_login(  # noqa: C901 - a flat state machine; clearer read end to end
     # In pyicloud, `requires_2sa` is `hsaVersion >= 1` and `requires_2fa` is
     # `hsaVersion == 2`, so 2SA is a strict SUPERSET: a modern two-factor account
     # reports BOTH as true. Checking 2SA first therefore rejected every real 2FA
-    # account with "not supported" before the 2FA branch could run — while Apple
+    # account with "not supported" before the 2FA branch could run - while Apple
     # was already showing the code on the user's phone. Only an account that wants
     # 2SA and NOT 2FA is the legacy case we cannot handle (LIVE-1).
     needs_2fa = bool(getattr(api, "requires_2fa", False))
     if getattr(api, "requires_2sa", False) and not needs_2fa:
         print(
             "error: this account uses legacy two-STEP verification (2SA), which is "
-            "not supported — upgrade it to two-FACTOR (2FA) in your Apple ID settings."
+            "not supported - upgrade it to two-FACTOR (2FA) in your Apple ID settings."
         )
         return 2
 
@@ -236,7 +236,7 @@ def icloud_login(  # noqa: C901 - a flat state machine; clearer read end to end
 
     if not (code or code_file or code_stdin) and not _is_tty():
         print(
-            "error: a 2FA code is required and there is no terminal to ask — "
+            "error: a 2FA code is required and there is no terminal to ask - "
             "pass --code, --code-file, or --code-stdin."
         )
         return 2
@@ -260,7 +260,7 @@ def icloud_login(  # noqa: C901 - a flat state machine; clearer read end to end
     if callable(trust):
         trust()
     if not getattr(api, "is_trusted_session", False):
-        print("error: the 2FA code was accepted but the session was not trusted — re-run.")
+        print("error: the 2FA code was accepted but the session was not trusted - re-run.")
         return 1
 
     # Deliberately no lifetime claim: Apple documents no duration, and the old

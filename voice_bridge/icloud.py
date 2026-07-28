@@ -45,6 +45,36 @@ def _retrying(fn: Callable[[], Any], *, tries: int = 4) -> Any:
             delay = min(delay * 2, 30)
 
 
+def _apply_timeout(api: Any, seconds: float) -> None:
+    """Give every iCloud HTTP call a client-side deadline.
+
+    INVESTIGATED after "Request failed to iCloud" took a very long time to appear
+    during interactive setup. It was not our backoff: `_retrying` fires only on a
+    throttle and spends at most ~7s. The real answer is that **there was no
+    client-side timeout at all** - pyicloud builds a plain session, `requests`
+    defaults to waiting indefinitely, and a connection that hangs rather than
+    refuses is bounded only by the OS TCP stack. So the user waited on a socket,
+    not on us, and no amount of reading our code would have shown a number.
+
+    `requests` has no session-level timeout setting, so the default is injected
+    around `session.request`. An explicit per-call timeout still wins - this fills
+    the gap, it does not override a caller who has an opinion.
+
+    Non-fatal by design: a pyicloud that does not expose a session should not stop
+    the bridge from working, it should only mean we cannot bound the wait.
+    """
+    session: Any = getattr(api, "session", None)
+    original = getattr(session, "request", None)
+    if session is None or original is None or seconds <= 0:  # pragma: no cover - defensive
+        return
+
+    def _with_timeout(*args: Any, **kwargs: Any) -> Any:
+        kwargs.setdefault("timeout", seconds)
+        return original(*args, **kwargs)
+
+    session.request = _with_timeout
+
+
 def _item(rem: Any) -> Item:
     """One pyicloud `Reminder` -> our `Item`.
 
@@ -96,6 +126,7 @@ class ICloudTransport(Transport):
                 f"session needs 2FA - the cached session under {self.cfg.cookie_dir} "
                 "expired. Re-run `voice-bridge icloud-login`."
             )
+        _apply_timeout(api, self.cfg.icloud_timeout)
         r = api.reminders
         list(r.lists())  # REQUIRED priming before list_reminders() or the service 400s
         self.r = r
@@ -116,6 +147,18 @@ class ICloudTransport(Transport):
             for lst in lists:
                 if str(lst.id) == list_id:
                     return ListRef(name=lst.title, id=str(lst.id))
+            # An id that matches nothing is a STALE SELECTION, and it must not fall
+            # through to a name. Falling through is how a probe "succeeded": with a
+            # role unselected, the fabricated default name matched a real leftover
+            # list on the account, so a message went somewhere plausible, nobody was
+            # reading it, and the command printed ok. The other two adapters already
+            # raised here; this one - the live one - did not.
+            raise LookupError(
+                f"no list with id {list_id!r} (it was selected once and is gone now) - "
+                f"run `voice-bridge lists --select` to choose again"
+            )
+        if not name:
+            raise LookupError("no list id selected - run `voice-bridge lists --select`")
         same = [lst for lst in lists if lst.title == name]
         if not same:
             raise LookupError(

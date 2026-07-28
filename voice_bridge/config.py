@@ -53,8 +53,15 @@ DEFAULTS: dict[str, Any] = {
     # the bridge's. So the bridge's inbox - where it reads dictations from - is the
     # user's OUTBOX, because that is where they send from. An inbox belongs to
     # whoever reads it, and the person reading the phone is the user.
-    "inbox_list": "Vox-Message-Outbox",  # user dictates here -> we read (phone -> us)
-    "output_list": "Vox-Message-Inbox",  # user reads here    <- we write (us -> phone)
+    # EMPTY until a list is actually chosen. These are a cache of the selected
+    # list's real name, and a cache with a fabricated default is not a cache - it is
+    # an invention that every surface then renders as fact. A fresh config claimed
+    # two lists nobody had selected: the guided flow told the user to look in
+    # "Vox-Message-Inbox" for a role they had skipped, and the phone prompt shipped
+    # that name to the model as an instruction. Written only by the picker, and
+    # refreshed by `doctor`, from the account.
+    "inbox_list": "",  # user dictates here -> we read (phone -> us)
+    "output_list": "",  # user reads here    <- we write (us -> phone)
     "inbox_list_id": "",
     "output_list_id": "",
     # shared mailbox (the protocol's, theirs)
@@ -63,6 +70,11 @@ DEFAULTS: dict[str, Any] = {
     "state_dir": "",
     # transport
     "transport": "icloud",  # icloud | radicale
+    # Client-side deadline for every iCloud HTTP call. There was none: `requests`
+    # waits indefinitely by default, so a hung connection was bounded only by the
+    # OS, which is why one interactive failure took minutes to report itself.
+    # Tighter than a daemon would want on purpose - this path has a person in it.
+    "icloud_timeout": 30.0,
     # self-hosted Radicale server (managed by `voice-bridge radicale-server`)
     "radicale_host": "0.0.0.0",  # bind address
     "radicale_port": 5232,  # int
@@ -124,7 +136,7 @@ _INT_FIELDS = {"ntfy_body_limit", "reply_summary_limit", "poll_interval", "radic
 #: Coerced (and therefore VALIDATED) at set time. Without this, `config set
 #: notify_delay abc` would store a string that only fails at the next load, far
 #: from the mistake.
-_FLOAT_FIELDS = {"notify_delay"}
+_FLOAT_FIELDS = {"notify_delay", "icloud_timeout"}
 _ALLOWED_KEYS = set(DEFAULTS) | set(_STATE_DERIVED) | {"creds_env"}
 
 
@@ -160,6 +172,7 @@ class Config:
     mailbox_dir: Path
     state_dir: Path
     transport: str
+    icloud_timeout: float
     ntfy_server: str
     notify_delay: float
     ntfy_title: str
@@ -377,6 +390,7 @@ def load_config(
         mailbox_dir=mailbox_dir,
         state_dir=state_dir,
         transport=transport,
+        icloud_timeout=float(merged["icloud_timeout"]),
         ntfy_server=str(merged["ntfy_server"]).rstrip("/"),
         notify_delay=float(merged["notify_delay"]),
         ntfy_title=str(merged["ntfy_title"]),

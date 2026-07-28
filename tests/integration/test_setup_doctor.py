@@ -32,16 +32,17 @@ def test_provision_then_doctor_green(radicale_config):
 
     from voice_bridge.config import set_value
 
-    for field, name in (
-        ("inbox_list_id", radicale_config.inbox_list),
-        ("output_list_id", radicale_config.output_list),
-    ):
-        set_value(Path(radicale_config.source), field, t.resolve_list(name, "").id)
-    radicale_config = dataclasses.replace(
-        radicale_config,
-        inbox_list_id=t.resolve_list(radicale_config.inbox_list, "").id,
-        output_list_id=t.resolve_list(radicale_config.output_list, "").id,
-    )
+    # The names come from SUGGESTED_NAMES, which is what `provision` just created -
+    # the config's cached names are empty until something is selected.
+    from voice_bridge.setup import SUGGESTED_NAMES
+
+    ids = {
+        "inbox_list_id": t.resolve_list(SUGGESTED_NAMES["inbox"], "").id,
+        "output_list_id": t.resolve_list(SUGGESTED_NAMES["outbox"], "").id,
+    }
+    for field, value in ids.items():
+        set_value(Path(radicale_config.source), field, value)
+    radicale_config = dataclasses.replace(radicale_config, **ids)
 
     rc = doctor_mod.run(radicale_config, t)
     assert rc == 0  # config + creds + auth + lists + ntfy + mailbox all GREEN

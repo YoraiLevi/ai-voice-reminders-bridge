@@ -93,10 +93,30 @@ def test_selected_ids_are_carried_into_the_prompt(sample_config):
     assert "3D75266C-BBBB" in out
 
 
-def test_unpinned_config_says_nothing_about_ids(sample_config):
-    """No pins, no claim — an id line that isn't authoritative is worse than none."""
+def test_an_unselected_role_refuses_to_render_at_all(unselected_config):
+    """Stronger than the rule it replaces.
+
+    This used to omit the identifier section when nothing was pinned, which left a
+    prompt that still shipped LIST NAMES — and those names were fabricated
+    defaults. A live render went out naming one id in its authoritative section and
+    a made-up list in its body: the renderer already knew a role was unsettled and
+    printed anyway.
+
+    The prompt is instructions to ANOTHER SYSTEM, and no local test can check
+    whether the phone obeys them (GAP-3), so a half-true one manufactures agent
+    errors we cannot catch. It refuses.
+    """
+    with pytest.raises(prompt.CommandError) as err:
+        prompt.render_vox_prompt(unselected_config)
+    assert err.value.code == 2
+    assert "lists --select" in err.value.msg
+
+
+def test_a_rendered_prompt_always_names_BOTH_ids(sample_config):
+    """With the refusal above, the identifier section has no partial shape left."""
     out = prompt.render_vox_prompt(sample_config)
-    assert "identifier" not in out.lower()
+    assert sample_config.inbox_list_id in out
+    assert sample_config.output_list_id in out
 
 
 def test_an_unterminated_comment_keeps_the_remaining_text(sample_config, monkeypatch):

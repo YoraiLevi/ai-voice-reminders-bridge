@@ -20,12 +20,18 @@ from typing import Any, Callable
 
 from . import ntfy
 from .config import Config, load_config, read_raw, resolve_config_path, set_value, write_raw
-from .errors import is_transient
+from .errors import CommandError, is_transient
 from .factory import make_transport
 from .mailbox import append_line, format_mailbox_line
 from .prompting import Cancelled
 from .prompting import ask as _ask_line
-from .selection import confirm_selection, pick, resolve_selection
+from .selection import (
+    confirm_selection,
+    missing_roles,
+    missing_roles_message,
+    pick,
+    resolve_selection,
+)
 from .transport import ListRef, NotSupportedError, Transport
 
 #: Fields worth asking about on a guided run - the ones people actually change.
@@ -109,12 +115,19 @@ def provision(
             ]
         # Keep the ids the backend returns: choosing by them is knowledge, where
         # matching their titles later would only be a guess.
-        for field, name in (("inbox_list_id", cfg.inbox_list), ("output_list_id", cfg.output_list)):
+        #
+        # The NAME to create comes from `SUGGESTED_NAMES`, not from the config's
+        # cached display name - which is empty until something is selected, and is
+        # a record of what you chose rather than an instruction about what to make.
+        for field, name in (
+            ("inbox_list_id", cfg.inbox_list or SUGGESTED_NAMES["inbox"]),
+            ("output_list_id", cfg.output_list or SUGGESTED_NAMES["outbox"]),
+        ):
             ref = t.create_list(name)
             if created is not None:
                 created[field] = ref.id
         return [
-            f"Radicale: created / verified {cfg.inbox_list!r} and {cfg.output_list!r}.",
+            "Radicale: the two lists are created / verified.",
             "They sync to the phone via the shared CalDAV account - no phone step.",
         ]
     # iCloud has nothing to provision - it cannot create lists over the API - so
@@ -132,6 +145,15 @@ def provision(
     t.connect()
     return []
 
+
+#: Names to CREATE or SUGGEST - never a claim about what you have.
+#:
+#: They were the config's defaults for the two display-name fields, which meant a
+#: fresh install already "knew" two list names nobody had chosen. Kept here because
+#: Radicale genuinely has to name the lists it creates, and the iCloud guidance has
+#: to suggest something; separated from the config so a suggestion can never be
+#: mistaken for a selection.
+SUGGESTED_NAMES = {"inbox": "Vox-Message-Outbox", "outbox": "Vox-Message-Inbox"}
 
 _PROBE = "voice-bridge setup --verify probe"
 
@@ -172,6 +194,17 @@ def verify(cfg: Config, t: Transport) -> dict[str, Any]:
         "title_renderable": None,
         "title_detail": "",
     }
+
+    # A TEST THAT CANNOT RUN MUST REFUSE, NOT PASS. With a role unselected this
+    # resolved by NAME - against the fabricated default the config used to carry -
+    # and on a real account that name matched a leftover list from an earlier
+    # setup. So the probe was written, read back, and reported `[ok] machine round
+    # trip`, while the user was told to look in a list the bridge would never poll.
+    # Every layer was honest about what it did; none of them was asked whether the
+    # thing it did meant anything.
+    missing = missing_roles(cfg)
+    if missing:
+        raise CommandError(2, "\n       ".join(missing_roles_message(missing)))
 
     inbox = t.resolve_list(cfg.inbox_list, cfg.inbox_list_id)
     outbox = t.resolve_list(cfg.output_list, cfg.output_list_id)
@@ -241,6 +274,32 @@ def report(cfg: Config, t: Transport, *, as_json: bool = False) -> int:
     return 0
 
 
+def _report_transient(exc: Exception, cfg: Config) -> None:
+    """Say what failed, in enough detail to act on, and log it.
+
+    Asked for directly: *"log what happened? it took a really long time? fix?
+    investigate?"*. Three separate complaints, and the middle one is the important
+    one - a failure with no duration and no exception class is indistinguishable
+    from the program hanging, so the user cannot tell whether to wait or to quit.
+
+    The exception CLASS is named rather than only its message, because "Request
+    failed" is what the library says for every network fault and it identifies
+    nothing. Elapsed time is on the logger, not printed: it matters when you are
+    diagnosing and is noise when you are not.
+    """
+    from . import log as log_mod
+
+    log_mod.get().warning(
+        "transient transport failure during setup: %s: %s (icloud_timeout=%ss)",
+        type(exc).__name__,
+        exc,
+        cfg.icloud_timeout,
+    )
+    print(f"config written, credentials fine. The transport did not answer: {exc}")
+    print(f"That is a temporary failure, not a setup problem ({type(exc).__name__}).")
+    print(f"Calls give up after {cfg.icloud_timeout:g}s; -v logs the detail, --log-file keeps it.")
+
+
 def run_setup(
     *,
     config_path: str | Path | None = None,
@@ -298,74 +357,100 @@ def run_setup(
             )
             return 0
 
-    try:
-        # Constructed INSIDE the try. An adapter's constructor can fail for the
-        # same reasons its calls can - unreadable credentials, a missing optional
-        # dependency - and a failure one line above the handler that exists to
-        # classify it escapes as a traceback instead.
-        t = make_transport(cfg)
-        created: dict[str, str] = {}
-        # Radicale CAN create the lists, but doing so silently would make the two
-        # transports behave differently for no reason the user picked. Asking
-        # unifies them: answer no and the flow is exactly iCloud's.
-        if guided:
-            print("")
-            print("[2/5] Your lists")
-            print("        next: notifications")
-        auto = True
-        if cfg.transport == "radicale" and _is_tty():
-            auto = ask_radicale_creation(ask=_ask_line, show=print)
-        for line in provision(cfg, t, created=created if auto else None, create=auto):
-            print(line)
-        # Choose the lists NOW. Nothing is inferred from a title: either we just
-        # created it and know its id, or the user is asked.
-        if settle_selection(cfg, t, config_path=path, created=created):
-            cfg = load_config(path)
-    except NotSupportedError as exc:
-        print(f"error: {exc}")
-        return 2
-    except Cancelled:
-        # This block contains interactive prompts (list creation, selection), so a
-        # Ctrl-C arrives as an exception like any other and the broad handler below
-        # would dress it up as a transport failure - telling the user their backend
-        # is unreachable when they simply stopped. Re-raise to the one CLI handler.
-        raise
-    except Exception as exc:
-        # THE ADVICE MUST MATCH THE DIAGNOSIS. These two failures were collapsed
-        # into one message that always said "run icloud-login", and a live run hit
-        # the wrong half: a transient iCloud hiccup AFTER a successful login and a
-        # successful first pick was answered with "Request failed / Next:
-        # voice-bridge icloud-login". The credentials were fine. Re-logging in
-        # fixes nothing, and being sent to re-enter working credentials teaches you
-        # to distrust the tool's next instruction too.
-        #
-        # Third appearance of this class (after "create the lists by hand" for a
-        # bad password, and provision's name-based guidance), so it is named
-        # plainly: a message that names a REMEDY is a claim about the CAUSE.
-        if is_transient(exc):
-            print(f"config written, credentials fine. The transport did not answer: {exc}")
-            print("That is a temporary failure, not a setup problem.")
-            if _is_tty() and onboard._yes(_ask_line, "  Try again now?"):
-                # Retry IN PLACE. The alternative is telling someone who just
-                # picked their first list to start the whole flow over, which is
-                # how a transient blip costs a working setup.
-                return run_setup(
-                    config_path=path,
-                    transport=transport,
-                    overrides=overrides,
-                    do_verify=do_verify,
-                    as_json=as_json,
-                )
-            print("Re-run when you are ready:  voice-bridge setup")
-            return 0
-        if type(exc).__name__ in {"ICloudError", "CredsError"}:
-            print(f"config written. Could not authenticate: {exc}")
-            print("Next:  voice-bridge icloud-login    then re-run:  voice-bridge setup")
-            return 0
-        raise
+    # THE RETRY LOOP IS HERE, around the lists step alone.
+    #
+    # It used to be a recursive `run_setup(...)`, which the transcript showed for
+    # what it was: answering "Try again now?" replayed the preamble, re-walked the
+    # credentials step, and reopened the picker from scratch. The batch-2 promise
+    # was an in-place retry OF THE FAILING OPERATION, and a re-entry from the top
+    # is not that - it still costs the whole flow, just politely.
+    #
+    # Looping here keeps everything already settled: the config is written, the
+    # credentials step is done, and any role already picked stays picked, because
+    # `cfg` is re-read from the file each pass.
+    while True:
+        try:
+            # Constructed INSIDE the try. An adapter's constructor can fail for the
+            # same reasons its calls can - unreadable credentials, a missing
+            # optional dependency - and a failure one line above the handler that
+            # exists to classify it escapes as a traceback instead.
+            t = make_transport(cfg)
+            created: dict[str, str] = {}
+            # Radicale CAN create the lists, but doing so silently would make the
+            # two transports behave differently for no reason the user picked.
+            # Asking unifies them: answer no and the flow is exactly iCloud's.
+            if guided:
+                print("")
+                print("[2/5] Your lists")
+                print("        next: notifications")
+            auto = True
+            if cfg.transport == "radicale" and _is_tty():
+                auto = ask_radicale_creation(ask=_ask_line, show=print)
+            for line in provision(cfg, t, created=created if auto else None, create=auto):
+                print(line)
+            # Choose the lists NOW. Nothing is inferred from a title: either we
+            # just created it and know its id, or the user is asked.
+            if settle_selection(cfg, t, config_path=path, created=created):
+                cfg = load_config(path)
+            break
+        except NotSupportedError as exc:
+            print(f"error: {exc}")
+            return 2
+        except Cancelled:
+            # This block contains interactive prompts (list creation, selection),
+            # so a Ctrl-C arrives as an exception like any other and the broad
+            # handler below would dress it up as a transport failure - telling the
+            # user their backend is unreachable when they simply stopped. Re-raise
+            # to the one CLI handler.
+            raise
+        except Exception as exc:
+            # THE ADVICE MUST MATCH THE DIAGNOSIS. These two failures were
+            # collapsed into one message that always said "run icloud-login", and a
+            # live run hit the wrong half: a transient iCloud hiccup AFTER a
+            # successful login and a successful first pick was answered with
+            # "Request failed / Next: voice-bridge icloud-login". The credentials
+            # were fine. Re-logging in fixes nothing, and being sent to re-enter
+            # working credentials teaches you to distrust the next instruction too.
+            #
+            # Third appearance of this class (after "create the lists by hand" for
+            # a bad password, and provision's name-based guidance), so it is named
+            # plainly: a message that names a REMEDY is a claim about the CAUSE.
+            if is_transient(exc):
+                _report_transient(exc, cfg)
+                if _is_tty() and onboard._yes(_ask_line, "  Try again now?"):
+                    cfg = load_config(path)  # keep every choice already made
+                    continue
+                print("Re-run when you are ready:  voice-bridge setup")
+                return 0
+            if type(exc).__name__ in {"ICloudError", "CredsError"}:
+                print(f"config written. Could not authenticate: {exc}")
+                print("Next:  voice-bridge icloud-login    then re-run:  voice-bridge setup")
+                return 0
+            raise
 
     if as_json:
         return report(cfg, t, as_json=True)
+
+    # BOTH ROLES ARE A HARD REQUIREMENT from here on, ruled after a run that
+    # skipped one and was told "You are set up. Start the bridge with: voice-bridge
+    # run" - which `run` then correctly refused, one command later. Setup made a
+    # claim the very next command disproved.
+    #
+    # Everything below needs a list that is actually being polled: the round trip
+    # has nowhere to send, and the phone prompt would carry a name nobody chose.
+    # `s)` stays offered in the picker, because someone may genuinely need to go
+    # make a list on their phone - but skipping leaves the install INCOMPLETE, and
+    # the closing lines say so instead of congratulating them.
+    unsettled = missing_roles(cfg)
+    if unsettled:
+        print("")
+        print("Setup stopped here - it cannot go further without both lists.")
+        for line in missing_roles_message(unsettled):
+            print(f"  {line}")
+        print("  Then re-run:  voice-bridge setup")
+        if guided:
+            onboard.farewell(print, ready=False)
+        return 2
 
     if do_verify:
         result = verify(cfg, t)
@@ -487,7 +572,12 @@ def settle_selection(
     unresolved = [r for r in plan.resolutions if r.status != "selected"]
     if unresolved and tty and cfg.transport == "icloud" and not created:
         for line in _ICLOUD_GUIDE:
-            show(line.format(inbox=cfg.inbox_list, outbox=cfg.output_list))
+            show(
+                line.format(
+                    inbox=SUGGESTED_NAMES["inbox"],
+                    outbox=SUGGESTED_NAMES["outbox"],
+                )
+            )
         show("")
 
     for res in plan.resolutions:

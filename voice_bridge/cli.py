@@ -30,6 +30,7 @@ from .config import (
 )
 from .commands import connected_transport, list_command, peek_command, select_command
 from .errors import CommandError
+from .invocation import path_note
 from .prompting import Cancelled
 from .runner import run_command
 
@@ -321,6 +322,14 @@ def main(argv: list[str] | None = None) -> int:
     if not args.cmd:
         parser.print_help()
         return 2
+
+    # Said ONCE, before any output that will name the command, and only when it is
+    # actually untypeable here. Every "Next: voice-bridge ..." line below is right
+    # for an installed package and wrong in a project checkout, and a user who
+    # followed one got "not recognized" from the tool that had just suggested it.
+    note = path_note()
+    if note:
+        print(note, file=sys.stderr)
 
     try:
         return _dispatch(args)

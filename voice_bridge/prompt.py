@@ -23,6 +23,7 @@ from string import Template
 
 from .config import Config
 from .errors import CommandError
+from .selection import missing_roles, missing_roles_message
 
 _COMMENT_START = "<!--"
 _COMMENT_END = "-->"
@@ -58,6 +59,20 @@ def render_vox_prompt(cfg: Config) -> str:
     contains a token this version cannot fill - loudly, rather than shipping the
     token verbatim to the phone.
     """
+    # REFUSE while either role is unselected. This is not a config file; it is
+    # INSTRUCTIONS TO ANOTHER SYSTEM, and the one thing no local test can check is
+    # whether the phone obeys them (GAP-3). Shipping a list name nobody selected
+    # manufactures exactly the class of agent error we cannot catch: the model
+    # dutifully files dictations into a list that is not the one being polled, and
+    # every layer reports success.
+    #
+    # The evidence this is real: the last render that went out named ONE id in its
+    # AUTHORITATIVE section and a made-up name in the body. The renderer already
+    # knew a role was unsettled, and printed anyway.
+    missing = missing_roles(cfg)
+    if missing:
+        raise CommandError(2, "\n       ".join(missing_roles_message(missing)))
+
     try:
         raw = _load_template()
     except (FileNotFoundError, ModuleNotFoundError, OSError) as exc:
@@ -111,27 +126,23 @@ def render_peer_prompt(cfg: Config) -> str:
 
 
 def _selected_ids(cfg: Config) -> str:
-    """State the list identifiers when the config pins them, otherwise say nothing.
+    """State both list identifiers. Only reached once both roles are selected.
 
     Requested by the phone persona itself, which was having to guess which list it
     meant. A real account can hold dozens of lists including same-named ghosts, so
     matching by name is a coin flip that silently sends dictations to a list nobody
     reads - and the config already knows the answer.
 
-    Nothing is emitted when the pins are absent: an identifier line that is not
-    authoritative is worse than no line at all, because it invites the same
-    guessing while looking like fact.
+    This used to emit one line per SET id, which meant a half-configured install
+    produced a prompt whose authoritative section listed one list and whose body
+    named two. `render_vox_prompt` now refuses before reaching here, so the section
+    is unconditional - and the absence of a branch is the point: there is no longer
+    a shape of this text that can be partially true.
     """
-    if not (cfg.inbox_list_id or cfg.output_list_id):
-        return ""
-
-    lines = [
-        "",
-        "AUTHORITATIVE LIST IDENTIFIERS - use these exactly; do NOT match by name,",
-        "because several lists may share a title and only these ids are unambiguous.",
-    ]
-    if cfg.inbox_list_id:
-        lines.append(f'  "{cfg.inbox_list}" (you dictate here) = {cfg.inbox_list_id}')
-    if cfg.output_list_id:
-        lines.append(f'  "{cfg.output_list}" (answers arrive here) = {cfg.output_list_id}')
-    return "\n".join(lines) + "\n"
+    return (
+        "\n"
+        "AUTHORITATIVE LIST IDENTIFIERS - use these exactly; do NOT match by name,\n"
+        "because several lists may share a title and only these ids are unambiguous.\n"
+        f'  "{cfg.inbox_list}" (you dictate here) = {cfg.inbox_list_id}\n'
+        f'  "{cfg.output_list}" (answers arrive here) = {cfg.output_list_id}\n'
+    )

@@ -139,10 +139,10 @@ def test_both_roles_selected_is_green(sample_config, fake_transport, capsys):
     assert _rows(capsys)["lists"] == "GREEN"
 
 
-def test_an_unselected_role_is_not_green(sample_config, fake_transport, capsys):
+def test_an_unselected_role_is_not_green(unselected_config, fake_transport, capsys):
     """Nothing is polled for a role with no id, so silence here would be a lie."""
     inbox = fake_transport.resolve_list("Vox-Message-Outbox", "")
-    cfg = dataclasses.replace(sample_config, inbox_list_id=inbox.id)  # outbox unset
+    cfg = dataclasses.replace(unselected_config, inbox_list_id=inbox.id)  # outbox unset
     _healthy_creds(cfg)
     doctor_mod.run(cfg, fake_transport)
     assert _rows(capsys)["lists"] != "GREEN"
@@ -214,7 +214,7 @@ def test_exit_code_is_the_worst_row(sample_config, fake_transport, capsys):
 
 
 def test_fix_clears_a_dangling_pin_rather_than_re_resolving_it(
-    sample_config, ghost_transport, capsys
+    unselected_config, ghost_transport, capsys
 ):
     """A dead pin means the list you chose is gone.
 
@@ -226,7 +226,7 @@ def test_fix_clears_a_dangling_pin_rather_than_re_resolving_it(
     import json
     from pathlib import Path
 
-    cfg = dataclasses.replace(sample_config, inbox_list_id="GONE")
+    cfg = dataclasses.replace(unselected_config, inbox_list_id="GONE")
     doctor_mod.run(cfg, ghost_transport, fix=True)
 
     written = json.loads(Path(cfg.source).read_text(encoding="utf-8"))
@@ -235,13 +235,13 @@ def test_fix_clears_a_dangling_pin_rather_than_re_resolving_it(
     assert "cleared" in capsys.readouterr().out
 
 
-def test_the_survey_alone_never_clears_a_pin(sample_config, ghost_transport, capsys):
+def test_the_survey_alone_never_clears_a_pin(unselected_config, ghost_transport, capsys):
     """Read-only means read-only; --fix is the consent."""
     import dataclasses
     import json
     from pathlib import Path
 
-    cfg = dataclasses.replace(sample_config, inbox_list_id="GONE")
+    cfg = dataclasses.replace(unselected_config, inbox_list_id="GONE")
     doctor_mod.run(cfg, ghost_transport)
 
     written = json.loads(Path(cfg.source).read_text(encoding="utf-8"))

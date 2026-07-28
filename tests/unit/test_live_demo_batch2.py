@@ -310,6 +310,11 @@ def test_the_phone_prompt_uses_the_configured_spoke_name(tmp_path, tmp_mailbox):
                 "spoke_name": "Phone-Claude",
                 "mailbox_dir": str(tmp_mailbox),
                 "state_dir": str(tmp_path / "state"),
+                # Both roles selected: the prompt refuses to render without them.
+                "inbox_list_id": "i1",
+                "output_list_id": "o1",
+                "inbox_list": "In",
+                "output_list": "Out",
             }
         ),
         encoding="utf-8",

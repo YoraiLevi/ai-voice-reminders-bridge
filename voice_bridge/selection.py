@@ -99,6 +99,39 @@ class Choice:
     list_id: str = ""
 
 
+def missing_roles(cfg: Config) -> list[str]:
+    """Roles with no list selected. Empty means the bridge can actually run.
+
+    Answers the question from the CONFIG alone, with no backend call, because the
+    places that must ask it are places where reaching the account is either
+    impossible (`vox-prompt` prints offline) or not yet appropriate (`run`, before
+    it creates anything). A stale id is a different failure with a different
+    remedy, and `resolve_selection` is where that one is answered.
+
+    Both roles are hard requirements, ruled after a run that skipped one: "the
+    setup shouldn't have continued to round trip until we had set the two lists,
+    it's a hard requirement for the run and system to work."
+    """
+    return [role for role, (_, id_attr) in _ROLES.items() if not str(getattr(cfg, id_attr) or "")]
+
+
+def missing_roles_message(roles: list[str]) -> list[str]:
+    """Say which role is unselected, in the user's words, and how to fix it.
+
+    One line per missing role rather than a joined sentence: "no list is selected
+    for the list you dictate into and the list replies appear in" is grammatical
+    and unreadable, and the reader's next question is *which one*, so the answer is
+    the shape of the message rather than a clause inside it.
+    """
+    if not roles:
+        return []
+    return [
+        "No list is selected for:",
+        *(f"  - {ROLE_LABEL[r]}  ({ROLE_DIRECTION[r]})" for r in roles),
+        "Choose with:  voice-bridge lists --select",
+    ]
+
+
 def resolve_selection(
     cfg: Config, t: Transport, *, refs: list[ListRef] | None = None
 ) -> SelectionPlan:
@@ -353,6 +386,8 @@ __all__ = [
     "SelectionPlan",
     "Resolution",
     "confirm_selection",
+    "missing_roles",
+    "missing_roles_message",
     "pick",
     "resolve_selection",
 ]

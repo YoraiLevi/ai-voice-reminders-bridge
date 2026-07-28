@@ -42,17 +42,50 @@ def tmp_mailbox(tmp_path: Path) -> Path:
     return d
 
 
+#: The ids `FakeTransport.add_list` derives for the two default lists. Written out
+#: rather than computed so a change to the fake's id scheme fails loudly here
+#: instead of quietly unselecting every fixture that depends on it.
+FAKE_INBOX_ID = "list-vox-message-outbox"  # the user dictates here
+FAKE_OUTBOX_ID = "list-vox-message-inbox"  # replies land here
+
+
 @pytest.fixture
 def sample_config(tmp_path: Path, tmp_mailbox: Path):
-    """A resolved Config whose mailbox + state dirs live under tmp (no touching $HOME)."""
+    """A resolved Config for a WORKING install: tmp dirs, and both lists selected.
+
+    The ids are part of the fixture because both roles are now a hard requirement -
+    `run`, `setup`'s later steps and `vox-prompt` all refuse without them - so a
+    config with no selection no longer represents "a normal install", it represents
+    a specific broken state. Tests that want that state ask for `unselected_config`,
+    which makes which one they mean visible at the call site.
+    """
     cfg_file = tmp_path / "voice-bridge.json"
     cfg_file.write_text(
         json.dumps(
             {
                 "mailbox_dir": str(tmp_mailbox),
                 "state_dir": str(tmp_path / "state"),
+                "inbox_list_id": FAKE_INBOX_ID,
+                "output_list_id": FAKE_OUTBOX_ID,
+                "inbox_list": "Vox-Message-Outbox",
+                "output_list": "Vox-Message-Inbox",
             }
         ),
+        encoding="utf-8",
+    )
+    return load_config(cfg_file)
+
+
+@pytest.fixture
+def unselected_config(tmp_path: Path, tmp_mailbox: Path):
+    """A fresh install: nothing chosen yet, and no fabricated list names.
+
+    This is what a config looks like straight after `setup` writes it, and the
+    state in which every list-dependent command must refuse rather than guess.
+    """
+    cfg_file = tmp_path / "voice-bridge.json"
+    cfg_file.write_text(
+        json.dumps({"mailbox_dir": str(tmp_mailbox), "state_dir": str(tmp_path / "state")}),
         encoding="utf-8",
     )
     return load_config(cfg_file)

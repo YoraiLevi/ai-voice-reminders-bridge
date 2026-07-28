@@ -80,7 +80,7 @@ def _cfg_with(sample_config, **kw):
 
 def test_pinned_id_marks_only_the_pinned_ghost(sample_config, ghost_transport, capsys):
     """Two lists share the name; only the pinned id is the one in use."""
-    cfg = _cfg_with(sample_config, inbox_list_id="L9")
+    cfg = _cfg_with(sample_config, inbox_list_id="L9", output_list_id="")
     assert list_command(cfg, ghost_transport, as_json=False) == 0
     out = capsys.readouterr().out
     active = [ln for ln in out.splitlines() if "L9" in ln or "active" in ln]
@@ -103,7 +103,7 @@ def test_without_a_pin_name_matching_is_preserved(sample_config, fake_transport,
 
 
 def test_json_rows_carry_id_role_and_active(sample_config, ghost_transport, capsys):
-    cfg = _cfg_with(sample_config, inbox_list_id="L9")
+    cfg = _cfg_with(sample_config, inbox_list_id="L9", output_list_id="")
     list_command(cfg, ghost_transport, as_json=True)
     rows = json.loads(capsys.readouterr().out)
     assert {"name", "id", "role", "active"} <= set(rows[0])
@@ -176,7 +176,12 @@ def test_peek_empty_box_says_so(sample_config, fake_transport, capsys):
 
 
 def test_peek_missing_list_raises_command_error(sample_config, fake_transport):
-    cfg = _cfg_with(sample_config, inbox_list="Nope")
+    """A selection that no longer resolves is an error, not a fallback to a name.
+
+    It used to be driven by setting `inbox_list` to a name nothing had; now the ID
+    is what peek resolves by, so a dead id is the way this fails.
+    """
+    cfg = _cfg_with(sample_config, inbox_list_id="no-such-id")
     with pytest.raises(CommandError) as err:
         peek_command(cfg, fake_transport, box="inbox", completed=False, limit=None, as_json=False)
     assert err.value.code == 2

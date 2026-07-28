@@ -10,6 +10,7 @@ from . import server as server_mod
 from . import setup as setup_mod
 from .config import Config, load_config, resolve_config_path
 from .factory import make_transport
+from .selection import missing_roles, missing_roles_message
 
 #: Written into a mailbox we created, next to the two message files.
 PEER_PROMPT_FILE = "PEER-PROMPT.md"
@@ -91,6 +92,19 @@ def run_command(
         setup_mod.run_setup(config_path=path, transport=transport or "icloud", overrides=ov)
 
     cfg = load_config(path, overrides=ov)
+
+    # VALIDATE BEFORE ANY SIDE EFFECT. This check used to sit after the mailbox was
+    # created and the peer-join instructions printed, so a run that was never going
+    # to start first made a directory, made two files, and handed the user three
+    # paragraphs of things to do - then said it could not run. Reading top-down,
+    # every one of those was wasted, and two of them were actions.
+    #
+    # Cheap and offline, so there is no reason for it to be anywhere but first.
+    unsettled = missing_roles(cfg)
+    if unsettled:
+        for line in missing_roles_message(unsettled):
+            print(line)
+        return 2
 
     # ensure mailbox files
     if not (cfg.peer_inbox.exists() and cfg.our_inbox.exists()):

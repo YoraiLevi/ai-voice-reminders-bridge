@@ -14,7 +14,19 @@ from voice_bridge.cli import main
 def _cfg(tmp_path, tmp_mailbox) -> str:
     p = tmp_path / "voice-bridge.json"
     p.write_text(
-        json.dumps({"mailbox_dir": str(tmp_mailbox), "state_dir": str(tmp_path / "state")}),
+        json.dumps(
+            {
+                "mailbox_dir": str(tmp_mailbox),
+                "state_dir": str(tmp_path / "state"),
+                # Both roles selected: every list-dependent command now REFUSES
+                # without them, so an e2e config that omits them tests the refusal
+                # rather than the command.
+                "inbox_list_id": "list-vox-message-outbox",
+                "output_list_id": "list-vox-message-inbox",
+                "inbox_list": "Vox-Message-Outbox",
+                "output_list": "Vox-Message-Inbox",
+            }
+        ),
         encoding="utf-8",
     )
     return str(p)

@@ -383,7 +383,7 @@ def test_a_line_without_a_mailbox_stamp_is_untouched(sample_config, fake_transpo
 # --------------------------------------------------------------------------- #
 
 
-def test_run_refuses_to_start_with_nothing_selected(sample_config, fake_transport, capsys):
+def test_run_refuses_to_start_with_nothing_selected(unselected_config, fake_transport, capsys):
     """No selection is a hard stop, not a fallback.
 
     An unselected role used to resolve by matching a title at runtime — the exact
@@ -391,7 +391,7 @@ def test_run_refuses_to_start_with_nothing_selected(sample_config, fake_transpor
     because starting, announcing a join and then dying every cycle is worse than
     never starting: the peer sees a spoke that is present and silent.
     """
-    rc = poller.run(sample_config, fake_transport, once=True)
+    rc = poller.run(unselected_config, fake_transport, once=True)
     out = capsys.readouterr().out
 
     assert rc == 2
@@ -399,8 +399,8 @@ def test_run_refuses_to_start_with_nothing_selected(sample_config, fake_transpor
     assert "voice-bridge lists --select" in out, "it must name the way out"
     assert "voice-bridge setup" in out
     assert (
-        not sample_config.peer_inbox.exists()
-        or "joined" not in sample_config.peer_inbox.read_text(encoding="utf-8")
+        not unselected_config.peer_inbox.exists()
+        or "joined" not in unselected_config.peer_inbox.read_text(encoding="utf-8")
     ), "it must not announce a join it cannot honour"
 
 

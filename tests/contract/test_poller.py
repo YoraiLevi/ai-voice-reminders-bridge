@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from voice_bridge import poller
-from voice_bridge.config import DEFAULTS
+from voice_bridge.setup import SUGGESTED_NAMES
 from voice_bridge.transport import FakeTransport
 
 
@@ -16,13 +16,18 @@ class _Stop(BaseException):
 def _inbox(t):
     # The list the bridge READS. Named via the default rather than a literal, so
     # it follows the config instead of pinning one naming decision.
-    return t.resolve_list(DEFAULTS["inbox_list"])
+    return t.resolve_list("", SUGGESTED_INBOX_ID)
+
+
+#: The ids the fake derives for the two lists `sample_config` selects.
+SUGGESTED_INBOX_ID = "list-vox-message-outbox"
+SUGGESTED_OUTBOX_ID = "list-vox-message-inbox"
 
 
 def _seeded(cls=FakeTransport):
     t = cls()
-    t.add_list(DEFAULTS["inbox_list"])
-    t.add_list(DEFAULTS["output_list"])
+    t.add_list(SUGGESTED_NAMES["inbox"])
+    t.add_list(SUGGESTED_NAMES["outbox"])
     return t
 
 
@@ -51,7 +56,7 @@ def test_send_reply_frames_and_writes(sample_config, fake_transport, fixed_clock
     rid = poller.send_reply(
         cfg, fake_transport, "done, see https://x/y", notify=False, now=fixed_clock
     )
-    out = fake_transport.resolve_list(DEFAULTS["output_list"])  # where replies go
+    out = fake_transport.resolve_list("", SUGGESTED_OUTBOX_ID)  # where replies go
     items = fake_transport.read_incomplete(out)
     assert len(items) == 1 and items[0].id == rid
     # stamped [HH:MM][spoke], url front-loaded into the body
@@ -64,7 +69,7 @@ def test_drain_replies_sends_and_dedupes(sample_config, fake_transport, fixed_cl
     cfg.our_inbox.write_text("first reply\nsecond reply\n", encoding="utf-8")
     n = poller.drain_replies(cfg, fake_transport, now=fixed_clock)
     assert n == 2, "both replies were sent"
-    out = fake_transport.resolve_list(DEFAULTS["output_list"])  # where replies go
+    out = fake_transport.resolve_list("", SUGGESTED_OUTBOX_ID)  # where replies go
     # Two pending in ONE cycle is a burst, so they arrive as one digest (UX-2).
     # The count returned is still 2 - it reports replies delivered, not reminders.
     assert len(fake_transport.read_incomplete(out)) == 1

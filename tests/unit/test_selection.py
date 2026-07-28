@@ -22,6 +22,19 @@ from voice_bridge.selection import (
 from voice_bridge.transport import FakeTransport, ListRef
 
 
+@pytest.fixture
+def sample_config(unselected_config):
+    """This whole suite is about CHOOSING, so it starts from nothing chosen.
+
+    The shared `sample_config` now ships with both roles selected, because both are
+    a hard requirement everywhere else and an unselected config is a specific
+    broken state rather than a normal one. Overriding it once here says that this
+    module means the other thing, instead of repeating the swap in fourteen
+    signatures.
+    """
+    return unselected_config
+
+
 def _cfg(sample_config, **kw):
     return dataclasses.replace(sample_config, **kw)
 

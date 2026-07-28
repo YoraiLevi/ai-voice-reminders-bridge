@@ -39,6 +39,17 @@ testpaths = ["tests"]
 # makes that visible instead of invisible.
 addopts = "-q -ra"
 
+[tool.coverage.run]
+# WITHOUT this, a bare `pytest --cov` measures every file it imports - including
+# `tests/`, which is ~3,300 statements that are ~100% covered by definition. That
+# reported 93.01% where the CI gate (`--cov=voice_bridge`) reported 85.99% on the
+# identical tree: seven points of pure self-congratulation, from a number that
+# looked like coverage and was measuring the tests testing themselves.
+#
+# Naming the source here makes `--cov` and `--cov=voice_bridge` produce the SAME
+# figure, so the only way to quote a wrong one is to ask for it explicitly.
+source = ["voice_bridge"]
+
 [tool.ruff]
 line-length = 100
 extend-exclude = [".archive", "radicale"]

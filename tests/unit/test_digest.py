@@ -331,3 +331,63 @@ def test_a_digest_delays_ONE_banner_not_one_per_reply(sample_config, fake_transp
 
     assert poller.ntfy.pending_count() == 1, "three replies, ONE delayed banner"
     assert len(banners.settled) == 1
+
+
+def test_a_delayed_banner_that_fails_is_reported(sample_config, monkeypatch, caplog):
+    """The immediate path returns PushResult to a caller who reports it. A timer
+    thread has no caller, so a failed delayed banner would otherwise be
+    indistinguishable from one that rang."""
+    from voice_bridge import ntfy
+
+    fired: list = []
+
+    class _Timer:
+        def __init__(self, delay, fn):
+            fired.append(fn)
+            self.daemon = False
+
+        def start(self):
+            pass
+
+        def cancel(self):
+            pass
+
+    monkeypatch.setattr(ntfy, "_TIMER", _Timer)
+    monkeypatch.setattr(
+        ntfy, "push", lambda cfg, text, click=None: ntfy.PushResult("failed", "503")
+    )
+
+    ntfy.schedule(sample_config, "hello")
+    with caplog.at_level("WARNING"):
+        fired[0]()
+
+    assert any("delayed banner not sent" in r.message for r in caplog.records)
+    assert any("503" in str(r.args) or "503" in r.getMessage() for r in caplog.records)
+
+
+def test_stopping_the_bridge_rings_a_waiting_banner(sample_config, fake_transport, monkeypatch):
+    """A banner still inside its delay when you press Ctrl-C must fire, not vanish.
+
+    Waiting out the remaining delay would make stopping feel broken; dropping it
+    would lose a message the user was told to expect. The run loop flushes.
+    """
+    banners = _Banners(monkeypatch)
+
+    class _NeverFires:
+        def __init__(self, delay, fn):
+            self.fn, self.daemon = fn, False
+
+        def start(self):
+            pass
+
+        def cancel(self):
+            pass
+
+    monkeypatch.setattr(poller.ntfy, "_TIMER", _NeverFires)
+    _write(sample_config, "- [10:00] (manager) landed just before you stopped")
+    poller.drain_replies(sample_config, fake_transport)
+    assert banners.sent == [], "still waiting out its delay"
+
+    poller.ntfy.flush()  # what the run loop's finally block calls
+    assert len(banners.sent) == 1, "shutdown must ring it, not drop it"
+    assert poller.ntfy.pending_count() == 0

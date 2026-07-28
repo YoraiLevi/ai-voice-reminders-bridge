@@ -120,7 +120,15 @@ def schedule(cfg: Config, text: str, *, click: str | None = None) -> None:
     def _fire() -> None:
         with _pending_lock:
             _pending[:] = [p for p in _pending if p[0] is not entry[0]]
-        push(cfg, text, click=click)
+        result = push(cfg, text, click=click)
+        if result.status != "sent":
+            # The immediate path returns this to a caller who reports it. A timer
+            # thread has no caller, so without this line a delayed banner that
+            # failed would be indistinguishable from one that rang: the exact
+            # false success the 3-state PushResult exists to prevent.
+            from . import log as _log
+
+            _log.get().warning("delayed banner not sent (%s): %s", result.status, result.detail)
 
     timer = _TIMER(delay, _fire)
     entry[0] = timer

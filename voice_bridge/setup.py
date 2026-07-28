@@ -472,7 +472,15 @@ def settle_selection(
         """Persist the choice: the id decides, the name is what the phone shows."""
         nonlocal written
         set_value(config_path, res.field, ref.id)
-        set_value(config_path, "inbox_list" if res.role == "inbox" else "output_list", ref.name)
+        # internal=True: the cached display name is DERIVED state the program
+        # owns, not a knob. A person setting it would change a caption and
+        # nothing else, which is why it left the settable surface.
+        set_value(
+            config_path,
+            "inbox_list" if res.role == "inbox" else "output_list",
+            ref.name,
+            internal=True,
+        )
         confirm_selection(ref, role=res.role, show=show)
         written += 1
 

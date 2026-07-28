@@ -23,7 +23,14 @@ from .config import Config, set_value
 from .errors import CommandError, raise_command_error
 from .factory import make_transport
 from .prompting import ask as _ask_line
-from .selection import confirm_selection, pick, resolve_selection
+from .selection import (
+    ROLE_DIRECTION,
+    ROLE_LABEL,
+    ROLE_SELECTED_MARK,
+    confirm_selection,
+    pick,
+    resolve_selection,
+)
 from .transport import Transport
 
 
@@ -66,25 +73,27 @@ def list_command(cfg: Config, t: Transport, *, as_json: bool) -> int:
     quietly at the next poll.
     """
     selected = {"inbox": cfg.inbox_list_id, "outbox": cfg.output_list_id}
-    names = {"inbox": cfg.inbox_list, "outbox": cfg.output_list}
 
     rows = []
     for ref in t.list_todo_lists():
-        role = ""
-        active = False
-        for box, sel in selected.items():
-            if sel:
-                if ref.id == sel:
-                    role, active = box, True
-            elif ref.name == names[box]:
-                role, active = box, True
-        rows.append({"name": ref.name, "id": ref.id, "role": role, "active": active})
+        # ONLY an id marks a row. The name fallback that used to live here was
+        # residue from before selection existed, and it did not merely guess - it
+        # OVERWROTE a correct id match, because it ran second. A list explicitly
+        # selected as the inbox was relabelled "outbox" purely because its title
+        # happened to equal the other role's default name, which is precisely the
+        # inversion the user saw on their own screen.
+        role = next((box for box, sel in selected.items() if sel and ref.id == sel), "")
+        rows.append({"name": ref.name, "id": ref.id, "role": role, "active": bool(role)})
 
     if as_json:
+        # `role` stays "inbox"/"outbox" here: JSON is read by programs, and those
+        # are the field names in the config. Only the PROSE moves to the user's seat.
         print(json.dumps(rows))
     else:
         for row in rows:
-            mark = f"  <- active {row['role']}" if row["active"] else ""
+            mark = (
+                f"   <- SELECTED: {ROLE_SELECTED_MARK[str(row['role'])]}" if row["active"] else ""
+            )
             print(f"  {row['name']}{mark}\n      id: {row['id']}")
         if not rows:
             print("  (no lists)")
@@ -166,10 +175,6 @@ def _tty() -> bool:
     return sys.stdin.isatty()
 
 
-_ROLE_LABEL = {"inbox": "dictations arrive in", "outbox": "replies go out to"}
-
-#: What each unsettled state means, in the words a user would use. Shown on the
-#: menu so the row that needs attention is visible before anything is opened.
 _STATE_NOTE = {
     "stale": "the selected list no longer exists",
     "unselected": "nothing selected yet",
@@ -193,7 +198,11 @@ def _choose_role(plan: object, *, ask: Callable[[str], str], show: Callable[[str
         state = res.current if res.current else "nothing selected"
         note = _STATE_NOTE.get(res.status, "")
         suffix = f"   ({note})" if note else ""
-        show(f'  {i}) {_ROLE_LABEL[res.role]:22} "{res.name}"')
+        # The caption is `res.name`, which the resolver read from the ACCOUNT by
+        # id - never the config's cached copy. That is the whole of the "the name
+        # did not update" bug: the id changed and the caption did not.
+        caption = f'  "{res.name}"' if res.name else ""
+        show(f"  {i}) {ROLE_LABEL[res.role]}  ({ROLE_DIRECTION[res.role]}){caption}")
         show(f"       currently: {state}{suffix}")
     show("")
     show("  d) done - leave everything else unchanged")
@@ -267,7 +276,15 @@ def select_command(
             confirm_selection(ref, role=res.role, show=show)
             # The name travels with the id: the phone prompt shows both, and it
             # must show what the list is actually called rather than a default.
-            set_value(config_path, "inbox_list" if res.role == "inbox" else "output_list", ref.name)
+            # internal=True: the cached display name is DERIVED state the program
+            # owns, not a knob. A person setting it would change a caption and
+            # nothing else, which is why it left the settable surface.
+            set_value(
+                config_path,
+                "inbox_list" if res.role == "inbox" else "output_list",
+                ref.name,
+                internal=True,
+            )
         elif choice.action == "clear":
             value = ""
             show("  selection cleared - this list will be matched by name again.")
@@ -285,6 +302,14 @@ def select_command(
         # role->field mapping lives, and re-deriving it here is exactly the
         # duplication that mapping exists to prevent (UX-1 inverted it once).
         current = dataclasses.replace(current, **{res.field: value})  # type: ignore[arg-type]
+        # RE-READ the account, do not reuse the opening snapshot. `r) refresh`
+        # inside the picker exists precisely so a list created seconds ago can be
+        # chosen - and re-classifying that choice against the inventory from before
+        # it existed declared it STALE, so the menu announced "the selected list no
+        # longer exists" about a list the user had just picked from a refreshed
+        # screen. A false "no longer exists" is worse than saying nothing: it is the
+        # mis-advice class again, and here it points at a repair for a healthy row.
+        refs = t.list_todo_lists()
         plan = resolve_selection(current, t, refs=refs)
 
     if changed:

@@ -45,7 +45,17 @@ class Resolution:
     """What we know about ONE of the two selections, and what remains to be decided."""
 
     role: str  # "inbox" | "outbox"
-    name: str  # the configured list name
+    #: The list's REAL name, read from the account by id - not from the config.
+    #:
+    #: The config's copy is a cache, and a cache is exactly what went wrong: after
+    #: choosing "Test new List" the menu re-rendered captioned "Vox-Message-Outbox"
+    #: beside the NEW id, because the caption came from a config field while the
+    #: identity came from the id. Two sources for one fact, and the stale one was
+    #: the one on screen.
+    #:
+    #: "" when nothing is selected. For a STALE selection it falls back to the
+    #: cached name, which is then all anyone knows about the list that went missing.
+    name: str
     field: str  # the config field a decision writes to
     current: str  # the id selected today ("" if none)
     status: str  # selected | unselected | stale
@@ -120,18 +130,22 @@ def resolve_selection(
     resolutions: list[Resolution] = []
 
     for role, (name_attr, id_attr) in _ROLES.items():
-        name = str(getattr(cfg, name_attr))
+        cached = str(getattr(cfg, name_attr))
         current = str(getattr(cfg, id_attr) or "")
+        match = next((r for r in refs if r.id == current), None) if current else None
 
         if not current:
-            status, chosen = "unselected", ""
-        elif any(r.id == current for r in refs):
-            status, chosen = "selected", current
+            status, chosen, name = "unselected", "", ""
+        elif match is not None:
+            # The NAME comes from the account, by id. The config's copy is only a
+            # cache for when no transport is at hand, and a caption that disagrees
+            # with the list it captions is worse than no caption.
+            status, chosen, name = "selected", current, match.name
         else:
             # STALE, not "missing": the remedy is to clear or re-choose the id,
             # not to create a list. Reporting one as the other sends the user to
-            # the wrong place.
-            status, chosen = "stale", ""
+            # the wrong place. The cached name is all that is left to call it by.
+            status, chosen, name = "stale", "", cached
         resolutions.append(Resolution(role, name, id_attr, current, status, refs, chosen))
 
     return SelectionPlan(resolutions)
@@ -158,19 +172,45 @@ def _describe(ref: ListRef, *, current: str) -> str:
     return f"{row}   [{ref.id}]{marker}"
 
 
-#: What each role IS, said at the point of choice.
-#:
-#: A first-time user does not yet know what "inbox" and "outbox" mean here, and
-#: they cannot be told once at the top and expected to still hold it two prompts
-#: later. So the direction of travel is stated where the decision is made.
-#:
-#: The words are from the USER's seat, which is why they read crossed against the
-#: config fields: the list you DICTATE into is your outbox, and it is the bridge's
-#: `inbox_list`. That crossing already cost us once (UX-1). It is written out here,
-#: exactly once, so no caller has to re-derive it.
+# --------------------------------------------------------------------------- #
+# ONE vocabulary for both lists, program-wide
+# --------------------------------------------------------------------------- #
+#
+# `setup`, the picker, `lists`, and the role menu each grew their own words for
+# the same two lists, and the four sets did not agree. Worse, several were written
+# from the BRIDGE's seat - "dictations arrive in", "active outbox" - which is
+# backwards for the person holding the phone, for whom a dictation is what they
+# SEND. The list literally titled "Vox-Message-Inbox" was being tagged "active
+# outbox" on the user's own screen.
+#
+# So the words live HERE, once, next to the role mapping they belong to, and every
+# surface imports them. The config field names keep the bridge's seat; every
+# sentence a person reads keeps theirs. That crossing has now cost us twice
+# (UX-1, and this), which is why it is written down rather than remembered.
+
+#: Direction of travel, taught at the picker and echoed everywhere after.
+ROLE_DIRECTION: dict[str, str] = {
+    "inbox": "phone -> Reminders -> PC",
+    "outbox": "PC -> Reminders -> phone",
+}
+
+#: How to name each list in a menu or a marker.
+ROLE_LABEL: dict[str, str] = {
+    "inbox": "the list you dictate into",
+    "outbox": "the list replies appear in",
+}
+
+#: The `lists` row marker: what SELECTING this one means.
+ROLE_SELECTED_MARK: dict[str, str] = {
+    "inbox": f"you dictate into this one ({ROLE_DIRECTION['inbox']})",
+    "outbox": f"replies appear here ({ROLE_DIRECTION['outbox']})",
+    "": "",
+}
+
+#: The picker header: the question, and which of the user's two boxes this is.
 _ROLE_TEACH: dict[str, tuple[str, str]] = {
-    "inbox": ("receive your dictations", "This is your OUTBOX: phone -> Reminders -> PC."),
-    "outbox": ("carry replies back to you", "This is your INBOX: PC -> Reminders -> phone."),
+    "inbox": ("receive your dictations", f"This is your OUTBOX: {ROLE_DIRECTION['inbox']}."),
+    "outbox": ("carry replies back to you", f"This is your INBOX: {ROLE_DIRECTION['outbox']}."),
 }
 
 
@@ -303,10 +343,9 @@ def confirm_selection(ref: ListRef, *, role: str, show: Callable[[str], None]) -
     you to check it, or is about to reject it. The marker is the program saying
     *this is now true*, and it is the same marker everywhere an answer is taken.
     """
-    where = "dictations arrive in" if role == "inbox" else "replies go out to"
-    show(
-        f"  ACCEPTED - {where}: {_describe(ref, current=ref.id).replace('   <- current selection', '')}"
-    )
+    body = _describe(ref, current=ref.id).replace("   <- current selection", "")
+    show(f"  ACCEPTED - {ROLE_LABEL[role]} ({ROLE_DIRECTION[role]}):")
+    show(f"    {body}")
 
 
 __all__ = [

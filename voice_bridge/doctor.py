@@ -164,9 +164,37 @@ def _list_rows(cfg: Config, t: Transport, *, fix: bool = False) -> tuple[Row, Ro
                 f"{res.field} is not set - choose a list via `voice-bridge lists --select`"
             )
 
+    _refresh_cached_names(cfg, plan)
+
     if problems:
         return (("transport auth", "GREEN", ""), ("lists", "WARN", "; ".join(problems)))
     return (("transport auth", "GREEN", ""), ("lists", "GREEN", ""))
+
+
+def _refresh_cached_names(cfg: Config, plan) -> None:
+    """Write back a display name the account has since changed.
+
+    The config's list name is a CACHE. The id is the identity, so a rename on the
+    phone breaks nothing - but the phone prompt prints the name, and a prompt that
+    names a list the user has renamed reads as a bug in the tool rather than a
+    stale copy of a label.
+
+    `doctor` is the natural place: it is the only read-only command that already
+    holds a connected transport and the full inventory, so refreshing costs no
+    extra call. Silent by design - correcting a cache to match the account is not
+    a finding, and reporting it as one would add noise to the survey people run
+    when something is actually wrong.
+    """
+    config_file = Path(cfg.source) if cfg.source.endswith(".json") else None
+    if config_file is None or not config_file.exists():
+        return
+    for res in plan.resolutions:
+        if res.status != "selected":
+            continue
+        cached = cfg.inbox_list if res.role == "inbox" else cfg.output_list
+        if res.name and res.name != cached:
+            field = "inbox_list" if res.role == "inbox" else "output_list"
+            set_value(config_file, field, res.name, internal=True)
 
 
 def _topic_row(cfg: Config) -> Row:

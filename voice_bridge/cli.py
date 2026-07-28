@@ -19,6 +19,7 @@ from . import setup as setup_mod
 from . import status as status_mod
 from . import tailer
 from .config import (
+    SETTABLE_KEYS,
     ConfigError,
     default_config_path,
     field_help,
@@ -192,13 +193,24 @@ def _build_parser() -> argparse.ArgumentParser:
     n.add_argument("text")
     n.add_argument("--click", metavar="URL")
 
-    c = sub.add_parser("config", help="show/get/set settings")
+    c = sub.add_parser(
+        "config",
+        help="show/get/set settings",
+        formatter_class=_RAW,
+        epilog=_epilog(
+            "Which list each role uses is NOT set here - it is chosen by id with\n"
+            "`voice-bridge lists --select`, and list names are read from your account.\n"
+            "`config show` prints those under 'derived', apart from the settable keys."
+        ),
+    )
     csub = c.add_subparsers(dest="op")
-    csub.add_parser("show")
+    # Every subcommand carries its own help. Three of these four printed bare in
+    # `config --help`, so the listing told you the verbs existed and nothing else.
+    csub.add_parser("show", help="print the fully-resolved settings, including derived ones")
     csub.add_parser("fields", help="list every settable field and its default")
-    cg = csub.add_parser("get")
+    cg = csub.add_parser("get", help="print one setting's resolved value")
     cg.add_argument("key")
-    cs = csub.add_parser("set")
+    cs = csub.add_parser("set", help="write one setting to the config file")
     cs.add_argument("key")
     cs.add_argument("value")
 
@@ -566,10 +578,25 @@ def _config_cmd(args, cfg_path) -> int:
     # default / show
     data = load_config(cfg_path).as_dict()
     if getattr(args, "json", False):
+        # Unchanged and unsplit: a machine reading this wants the state, and a
+        # grouping that exists to teach a human would just be a schema change.
         print(json.dumps(data))
-    else:
-        for k, v in data.items():
-            print(f"  {k:<22} : {v}")
+        return 0
+
+    # SETTABLE and DERIVED are printed apart, because printed together they read
+    # as one list of knobs. `from_name` and `spoke_name` sat side by side with
+    # identical values and no hint which one did anything - so setting `from_name`
+    # looked reasonable, changed nothing visible, and cost a user real time.
+    derived = {k: v for k, v in data.items() if k not in SETTABLE_KEYS and k != "source"}
+    for k, v in data.items():
+        if k in derived:
+            continue
+        print(f"  {k:<22} : {v}")
+    if derived:
+        print("")
+        print("  derived - read-only, changed by the commands that own them:")
+        for k, v in derived.items():
+            print(f"    {k:<20} : {v}")
     return 0
 
 

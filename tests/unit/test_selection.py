@@ -563,7 +563,7 @@ def test_the_confirmation_echoes_name_and_id():
     )
     line = "\n".join(shown)
     assert "Vox-Message-Outbox" in line and "List/4694" in line
-    assert "dictations" in line
+    assert "dictate into" in line
 
 
 def test_keep_is_not_offered_for_a_selection_that_no_longer_exists():

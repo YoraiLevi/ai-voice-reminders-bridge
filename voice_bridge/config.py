@@ -88,6 +88,38 @@ DEFAULTS: dict[str, Any] = {
     "poll_interval": 10,
 }
 
+#: Stored, but NOT knobs. Read from old files, written by the program, and absent
+#: from every surface that invites a user to change them.
+#:
+#: All three were settings that could not do what a setting appears to promise.
+#:
+#: * `from_name` and `spoke_name` printed identical values in `config show` and
+#:   neither said what it drove, so they read as one knob shown twice. Setting
+#:   `from_name` then changed nothing the user could see - the phone prompt renders
+#:   `spoke_name` - and that is not a bug in the prompt, it is two names for one
+#:   identity. Folded: `from_name` is always `spoke_name`.
+#: * `inbox_list` / `output_list` stopped being identity when selection moved to
+#:   ids. Editing a name now changes a caption and nothing else, while the id keeps
+#:   pointing where it pointed - a setting whose visible effect is a label is a trap.
+#:   They survive as a CACHED DISPLAY NAME, written by the picker and refreshed from
+#:   the account whenever a transport is at hand.
+#:
+#: Kept in `DEFAULTS` on purpose: an existing config that names them must still
+#: load, in silence. Deprecating a setting is not a reason to break a file.
+_DERIVED_ONLY = {"from_name", "inbox_list", "output_list"}
+
+#: Why each is no longer settable, and where the user should go instead. A refusal
+#: that does not name the replacement verb is how the mis-advice class starts.
+_DERIVED_GUIDANCE = {
+    "from_name": "from_name is derived from spoke_name - set spoke_name instead",
+    "inbox_list": "list names are read from your account - choose the list with `lists --select`",
+    "output_list": "list names are read from your account - choose the list with `lists --select`",
+}
+
+#: The keys a PERSON may set. `_ALLOWED_KEYS` remains the storage vocabulary, so
+#: the program can still write a cached name that the user may not type.
+SETTABLE_KEYS = set(DEFAULTS) - _DERIVED_ONLY
+
 _INT_FIELDS = {"ntfy_body_limit", "reply_summary_limit", "poll_interval", "radicale_port"}
 #: Coerced (and therefore VALIDATED) at set time. Without this, `config set
 #: notify_delay abc` would store a string that only fails at the next load, far
@@ -165,22 +197,33 @@ class Config:
         return out
 
 
-def parse_overrides(pairs: list[str] | None) -> dict[str, Any]:
+def parse_overrides(pairs: list[str] | None, *, internal: bool = False) -> dict[str, Any]:
     """Turn repeated `--set KEY=VALUE` into a validated dict. Unknown key -> error;
-    int fields coerced so they land as JSON numbers."""
+    int fields coerced so they land as JSON numbers.
+
+    `internal=True` is the PROGRAM writing derived state - the picker caching a
+    chosen list's real name. It widens the vocabulary to `_ALLOWED_KEYS` and is
+    never reachable from a command line, because the point of the deprecation is
+    that a person is not offered a knob that cannot keep its promise.
+    """
+    vocabulary = _ALLOWED_KEYS if internal else SETTABLE_KEYS | set(_STATE_DERIVED) | {"creds_env"}
     out: dict[str, Any] = {}
     for p in pairs or []:
         if "=" not in p:
             raise ValueError(f"--set expects KEY=VALUE, got: {p!r}")
         key, _, value = p.partition("=")
         key = key.strip()
-        if key not in _ALLOWED_KEYS:
+        if key not in vocabulary:
+            # A deprecated key is NOT an unknown key. Saying "unknown setting" for
+            # a name the user just read in their own config file, or in yesterday's
+            # docs, sends them looking for a typo that is not there - so it is named
+            # as deprecated and pointed at the verb that replaced it.
+            if key in _DERIVED_ONLY:
+                raise ValueError(_DERIVED_GUIDANCE[key])
             # Names the KEY and the allowed set, but not the flag: this same
             # parser backs `--set` and `config set`, and naming one sends half the
             # callers looking at the wrong thing.
-            raise ValueError(
-                f"unknown setting {key!r}; allowed: {', '.join(sorted(_ALLOWED_KEYS))}"
-            )
+            raise ValueError(f"unknown setting {key!r}; allowed: {', '.join(sorted(vocabulary))}")
         # A bare `float()` failure reads "could not convert string to float: 'abc'",
         # which names neither the setting nor what it wanted. The unknown-key message
         # right above sets the standard: say what was wrong AND what is acceptable.
@@ -216,18 +259,27 @@ def write_raw(path: Path, data: dict[str, Any]) -> None:
     atomic_write(path, json.dumps(data, indent=2) + "\n")
 
 
-def set_value(path: Path, key: str, value: str) -> None:
+def set_value(path: Path, key: str, value: str, *, internal: bool = False) -> None:
     """Validate + coerce one KEY=VALUE (via parse_overrides) and persist it into the
-    config file, preserving the rest. Unknown key raises ValueError."""
-    coerced = parse_overrides([f"{key}={value}"])
+    config file, preserving the rest. Unknown key raises ValueError.
+
+    `internal=True` for derived state the program owns - see `parse_overrides`.
+    """
+    coerced = parse_overrides([f"{key}={value}"], internal=internal)
     data = read_raw(path)
     data.update(coerced)
     write_raw(path, data)
 
 
 def field_help() -> list[tuple[str, str]]:
-    """(field, default) pairs for `config --help` - every settable key."""
-    rows = [(k, repr(v)) for k, v in DEFAULTS.items()]
+    """(field, default) pairs for `config --help` - every SETTABLE key.
+
+    The derived-only fields are absent by construction rather than by a second
+    hand-maintained list: a surface that has to remember to hide something will
+    eventually forget, and the whole point of the deprecation is that nobody is
+    invited to set them.
+    """
+    rows = [(k, repr(v)) for k, v in DEFAULTS.items() if k in SETTABLE_KEYS]
     rows.append(("creds_env", "{state_dir}/{transport}.env"))
     for k, v in _STATE_DERIVED.items():
         rows.append((k, "{state_dir}/" + v))
@@ -292,7 +344,12 @@ def load_config(
 
     spoke = str(merged["spoke_name"])
     route = str(merged["route_to"])
-    from_name = str(merged["from_name"]) or spoke
+    # ALWAYS the spoke name, even when an old file names something else. One
+    # identity, one place to change it: a stored `from_name` used to override this
+    # silently, so the mailbox tag and the phone persona could disagree with no
+    # surface saying which one you were looking at. Old files still load - the key
+    # is simply no longer consulted.
+    from_name = spoke
     mailbox_dir = _expand(merged["mailbox_dir"])
     state_dir = _expand(merged["state_dir"]) if merged["state_dir"] else _default_state_dir()
 

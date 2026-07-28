@@ -64,8 +64,8 @@ def test_overrides_win_over_file(tmp_path, tmp_mailbox):
 
 
 def test_parse_overrides_coerces_ints_and_validates():
-    out = parse_overrides(["poll_interval=30", "inbox_list=To X", "ntfy_body_limit=150"])
-    assert out == {"poll_interval": 30, "inbox_list": "To X", "ntfy_body_limit": 150}
+    out = parse_overrides(["poll_interval=30", "spoke_name=vox2", "ntfy_body_limit=150"])
+    assert out == {"poll_interval": 30, "spoke_name": "vox2", "ntfy_body_limit": 150}
 
 
 def test_parse_overrides_rejects_unknown_key():

@@ -288,8 +288,8 @@ def select_command(
 
     if changed:
         show("")
-        show("config updated. Re-run `voice-bridge vox-prompt | clip` — the prompt carries")
-        show("these ids, so the phone must be given the new ones.")
+        show("config updated. Re-run `voice-bridge vox-prompt` — the prompt carries these")
+        show("ids, so the phone must be given the new ones.")
     return 0
 
 

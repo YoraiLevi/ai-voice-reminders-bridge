@@ -139,13 +139,20 @@ def test_a_caller_can_reclassify_against_refs_it_already_has(sample_config, ghos
 # --------------------------------------------------------------------------- #
 
 
-def _resolution(status="ambiguous", current="", candidates=None) -> Resolution:
+def _resolution(status=None, current="", candidates=None) -> Resolution:
+    """A resolution for driving the picker.
+
+    The status DEFAULTS from `current`, because the two are not independent: an
+    id that is set and valid is "selected", and no id is "unselected". Letting
+    them drift apart in a fixture would let a test assert behaviour the real
+    resolver can never produce.
+    """
     return Resolution(
         role="inbox",
         name="Vox-Message-Outbox",
         field="inbox_list_id",
         current=current,
-        status=status,
+        status=status or ("selected" if current else "unselected"),
         candidates=candidates
         or [
             ListRef(name="Vox-Message-Outbox", id="L1", count=0, color="blue"),
@@ -557,3 +564,39 @@ def test_the_confirmation_echoes_name_and_id():
     line = "\n".join(shown)
     assert "Vox-Message-Outbox" in line and "List/4694" in line
     assert "dictations" in line
+
+
+def test_keep_is_not_offered_for_a_selection_that_no_longer_exists():
+    """Found by reading the picker's own output on a stale role.
+
+    "Keep this selection as it is" for a list that has been deleted offers to
+    keep something broken. Clearing it still makes sense — that is the repair —
+    so `c` stays and only `k` goes.
+    """
+    stale = Resolution(
+        role="inbox",
+        name="Vox-Message-Outbox",
+        field="inbox_list_id",
+        current="List/GONE",
+        status="stale",
+        candidates=[ListRef(name="Something", id="L1")],
+        chosen="",
+    )
+    _, shown = _run(stale, ["s"])
+
+    assert "keep this selection" not in shown
+    assert "c) clear this selection" in shown, "clearing a dead id is the repair"
+
+
+def test_keep_is_offered_for_a_live_selection():
+    live = Resolution(
+        role="inbox",
+        name="Vox-Message-Outbox",
+        field="inbox_list_id",
+        current="L1",
+        status="selected",
+        candidates=[ListRef(name="Something", id="L1")],
+        chosen="L1",
+    )
+    _, shown = _run(live, ["s"])
+    assert "k) keep this selection as it is" in shown

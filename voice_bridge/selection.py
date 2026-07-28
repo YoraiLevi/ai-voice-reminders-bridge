@@ -216,15 +216,20 @@ def pick(
         # not and a user had to discover the difference by trying them (both ruled
         # from live use): "quit" did not quit — it moved on — and a bare "keep"
         # gave no hint whether it meant keep-and-stop or keep-and-carry-on.
-        extra = (
-            ["k) keep this selection as it is", "c) clear this selection"]
-            if resolution.current
-            else []
-        )
+        # `keep` only when there is something valid to keep. Offering to keep a
+        # selection that no longer exists is offering to keep something broken —
+        # found by reading the picker's own output on a stale role. `clear` still
+        # applies, because clearing a dead id IS the repair.
+        extra = []
+        if resolution.status == "selected":
+            extra.append("k) keep this selection as it is")
+        if resolution.current:
+            extra.append("c) clear this selection")
         show("  or:  " + "      ".join([*extra, "r) refresh the list", "s) skip, change nothing"]))
 
         top = len(candidates)
-        letters = "/".join([*(["k", "c"] if resolution.current else []), "r", "s"])
+        keys = [label[0] for label in extra]
+        letters = "/".join([*keys, "r", "s"])
         prompt = f"Choose 1-{top}, or {letters}: " if top else f"Choose {letters}: "
 
         while True:
@@ -246,7 +251,7 @@ def pick(
                 candidates = list(refresh())
                 show("")
                 break  # redraw the whole screen with the new listing
-            if resolution.current and answer in ("k", "c"):
+            if answer in keys:
                 return Choice("keep" if answer == "k" else "clear")
             if answer.isdigit() and 1 <= int(answer) <= top:
                 return Choice("select", candidates[int(answer) - 1].id)

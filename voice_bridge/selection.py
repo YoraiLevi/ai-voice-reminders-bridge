@@ -158,18 +158,35 @@ def _describe(ref: ListRef, *, current: str) -> str:
     return f"{row}   [{ref.id}]{marker}"
 
 
-def _header(resolution: Resolution, *, count: int | None = None) -> str:
-    """Ask the question, and state how many rows follow so the prose can never
-    disagree with the list underneath it.
+#: What each role IS, said at the point of choice.
+#:
+#: A first-time user does not yet know what "inbox" and "outbox" mean here, and
+#: they cannot be told once at the top and expected to still hold it two prompts
+#: later. So the direction of travel is stated where the decision is made.
+#:
+#: The words are from the USER's seat, which is why they read crossed against the
+#: config fields: the list you DICTATE into is your outbox, and it is the bridge's
+#: `inbox_list`. That crossing already cost us once (UX-1). It is written out here,
+#: exactly once, so no caller has to re-derive it.
+_ROLE_TEACH: dict[str, tuple[str, str]] = {
+    "inbox": ("receive your dictations", "This is your OUTBOX: phone -> Reminders -> PC."),
+    "outbox": ("carry replies back to you", "This is your INBOX: PC -> Reminders -> phone."),
+}
+
+
+def _header(resolution: Resolution, *, count: int | None = None) -> list[str]:
+    """Ask the question, teach what the answer means, and state how many rows follow.
 
     It no longer says how many lists "match", because nothing is matched any more:
-    every list on the account is offered and the choice is made by id. The
-    configured name is shown only as a hint about which role this is.
+    every list on the account is offered and the choice is made by id.
     """
     n = len(resolution.candidates) if count is None else count
-    where = "receive your dictations" if resolution.role == "inbox" else "carry replies back"
+    where, teach = _ROLE_TEACH[resolution.role]
     plural = "list" if n == 1 else "lists"
-    return f"Which list should {where}?  ({n} {plural} on this account)"
+    return [
+        f"Which list should {where}?  ({n} {plural} on this account)",
+        f"  {teach}",
+    ]
 
 
 def pick(
@@ -198,7 +215,8 @@ def pick(
     candidates = list(resolution.candidates)
 
     while True:
-        show(_header(resolution, count=len(candidates)))
+        for line in _header(resolution, count=len(candidates)):
+            show(line)
         for i, ref in enumerate(candidates, start=1):
             show(f"  {i}) {_describe(ref, current=resolution.current)}")
         if not candidates:
@@ -225,7 +243,18 @@ def pick(
             extra.append("k) keep this selection as it is")
         if resolution.current:
             extra.append("c) clear this selection")
-        show("  or:  " + "      ".join([*extra, "r) refresh the list", "s) skip, change nothing"]))
+
+        # "skip, change nothing" is true only when there is something to change.
+        # On a FROM-ZERO setup there is not, so the same label promised safety
+        # while leaving the install unusable - the user skipped, setup ended, and
+        # nothing said the bridge could not run. Ruled from live use: state the
+        # consequence, do not hide the exit.
+        skip = (
+            "s) skip, change nothing"
+            if resolution.current
+            else "s) skip - the bridge cannot run until a list is selected"
+        )
+        show("  or:  " + "      ".join([*extra, "r) refresh the list", skip]))
 
         top = len(candidates)
         keys = [label[0] for label in extra]
@@ -268,9 +297,16 @@ def confirm_selection(ref: ListRef, *, role: str, show: Callable[[str], None]) -
     picked, not which list you now own. Echoing the name, the id and the metadata
     closes that gap while the user can still act on it - and the id is what the
     phone prompt will carry, so seeing it here is the same fact they will see there.
+
+    It opens with ACCEPTED because an echo alone is ambiguous: a line that merely
+    restates what you typed reads the same whether the program took it, is asking
+    you to check it, or is about to reject it. The marker is the program saying
+    *this is now true*, and it is the same marker everywhere an answer is taken.
     """
     where = "dictations arrive in" if role == "inbox" else "replies go out to"
-    show(f"  {where}: {_describe(ref, current=ref.id).replace('   <- current selection', '')}")
+    show(
+        f"  ACCEPTED - {where}: {_describe(ref, current=ref.id).replace('   <- current selection', '')}"
+    )
 
 
 __all__ = [

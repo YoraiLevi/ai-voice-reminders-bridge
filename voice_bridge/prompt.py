@@ -28,9 +28,9 @@ _COMMENT_START = "<!--"
 _COMMENT_END = "-->"
 
 
-def _load_template() -> str:
+def _load_template(name: str = "vox.md") -> str:
     """The packaged template text. Separate function so tests can replace it."""
-    return files("voice_bridge").joinpath("prompts/vox.md").read_text(encoding="utf-8")
+    return files("voice_bridge").joinpath(f"prompts/{name}").read_text(encoding="utf-8")
 
 
 def _strip_comments(text: str) -> str:
@@ -70,8 +70,44 @@ def render_vox_prompt(cfg: Config) -> str:
     rendered = Template(_strip_comments(raw)).substitute(
         inbox_list=cfg.inbox_list,
         output_list=cfg.output_list,
+        # DEFECT from live use: someone set `spoke_name` to "Phone-Claude" and the
+        # prompt still opened "You are VOX". A configured identity that the one
+        # artifact carrying it ignores is worse than no setting at all - the user
+        # believes they renamed the thing, and every other surface (the mailbox
+        # line tag, the banner title) agrees with them while the phone does not.
+        spoke_name=cfg.spoke_name,
     )
     return rendered + _selected_ids(cfg)
+
+
+def render_peer_prompt(cfg: Config) -> str:
+    """The prompt that turns a coding agent into the peer for THIS mailbox.
+
+    `run` creates the mailbox files on a fresh machine and used to announce that
+    "a peer must join to process messages" - a sentence that names a requirement
+    without naming a single action, to a reader who has not met the protocol. This
+    is the missing half: the actual files, the actual line format, and a block that
+    can be pasted at an agent verbatim.
+
+    It renders the same way the phone prompt does, from the same config, so the
+    paths in it are the paths this install really uses.
+    """
+    try:
+        raw = _load_template("peer.md")
+    except (FileNotFoundError, ModuleNotFoundError, OSError) as exc:
+        raise CommandError(
+            2,
+            "could not read the peer prompt template (prompts/peer.md) - "
+            f"the installation looks incomplete: {exc}",
+        ) from exc
+
+    return Template(_strip_comments(raw)).substitute(
+        mailbox_dir=cfg.mailbox_dir,
+        peer_inbox=cfg.peer_inbox,
+        our_inbox=cfg.our_inbox,
+        peer_name=cfg.route_to,
+        spoke_name=cfg.spoke_name,
+    )
 
 
 def _selected_ids(cfg: Config) -> str:

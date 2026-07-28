@@ -40,7 +40,7 @@ def test_the_clipboard_is_never_written_without_asking(sample_config, monkeypatc
 
     assert copied == [], "declining must leave the clipboard untouched"
     joined = "\n".join(out)
-    assert "You are VOX" in joined, "declining must still hand over the prompt"
+    assert "the VOICE of my agent system" in joined, "declining must still hand over the prompt"
     assert "paste the text above" in joined
 
 
@@ -53,7 +53,7 @@ def test_the_clipboard_default_is_no(sample_config, monkeypatch):
     onboard.step_phone_prompt(sample_config, ask=ask, show=show)
 
     assert copied == []
-    assert "You are VOX" in "\n".join(out)
+    assert "the VOICE of my agent system" in "\n".join(out)
 
 
 def test_accepting_copies_and_says_what_to_do_next(sample_config, monkeypatch):
@@ -63,12 +63,12 @@ def test_accepting_copies_and_says_what_to_do_next(sample_config, monkeypatch):
     ask, show, out = _io(["y"])
     onboard.step_phone_prompt(sample_config, ask=ask, show=show)
 
-    assert copied and "You are VOX" in copied[0]
+    assert copied and "the VOICE of my agent system" in copied[0]
     joined = "\n".join(out)
     assert "copied." in joined
     # Ruled: the prompt is ALWAYS printed. Showing it only when the copy is
     # declined would leave someone who said yes with nothing on screen to check.
-    assert "You are VOX" in joined
+    assert "the VOICE of my agent system" in joined
 
 
 def test_a_failed_copy_says_so_and_the_prompt_is_still_there(sample_config, monkeypatch):
@@ -80,7 +80,7 @@ def test_a_failed_copy_says_so_and_the_prompt_is_still_there(sample_config, monk
     onboard.step_phone_prompt(sample_config, ask=ask, show=show)
     joined = "\n".join(out)
 
-    assert "You are VOX" in joined
+    assert "the VOICE of my agent system" in joined
     assert "no clipboard tool" in joined, "it must not silently do nothing"
 
 
@@ -295,7 +295,7 @@ def test_the_prompt_is_printed_before_the_clipboard_question(sample_config, monk
 
     onboard.step_phone_prompt(sample_config, ask=ask, show=out.append)
 
-    prompt_line = next(i for i, line in enumerate(out) if "You are VOX" in line)
+    prompt_line = next(i for i, line in enumerate(out) if "the VOICE of my agent system" in line)
     assert prompt_line < asked_at[0], "the prompt must be on screen before the question"
 
 

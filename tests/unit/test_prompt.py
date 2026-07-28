@@ -65,9 +65,9 @@ def test_missing_template_raises_command_error_not_traceback(sample_config, monk
 def test_rendered_prompt_keeps_the_instructions(sample_config):
     """Guard against over-eager stripping removing real content."""
     out = prompt.render_vox_prompt(sample_config)
-    assert "VOX" in out
+    assert "the VOICE of my agent system" in out
     assert len(out.splitlines()) > 20
-    assert out.strip().startswith("You are VOX")
+    assert out.strip().startswith(f"You are {sample_config.spoke_name}")
 
 
 # --------------------------------------------------------------------------- #

@@ -224,6 +224,16 @@ def _build_parser() -> argparse.ArgumentParser:
     li.add_argument("--code-stdin", action="store_true")
 
     sub.add_parser("vox-prompt", help="print the phone prompt with your list names")
+    sub.add_parser(
+        "peer-prompt",
+        help="print the prompt that makes a coding agent your peer",
+        formatter_class=_RAW,
+        epilog=_epilog(
+            "Paste it at an agent on this machine. It names your two mailbox files and\n"
+            "the line format, so the agent can join without knowing this tool exists.\n"
+            "`run` writes the same text to PEER-PROMPT.md when it creates a mailbox."
+        ),
+    )
 
     sub.add_parser("status", help="glance at the spoke's health")
 
@@ -364,6 +374,18 @@ def _dispatch(args) -> int:  # noqa: C901 - a flat command table
         # something usable; the human-facing hint goes to stderr.
         print(text)
         print("\n(paste the text above into the Claude app on your phone)", file=sys.stderr)
+        return 0
+
+    if cmd == "peer-prompt":
+        cfg = load_config(cfg_path)
+        try:
+            text = prompt_mod.render_peer_prompt(cfg)
+        except CommandError as exc:
+            print(f"error: {exc.msg}", file=sys.stderr)
+            return exc.code
+        # Same split as vox-prompt: the pasteable text alone on stdout.
+        print(text)
+        print("\n(paste the text above at a coding agent on this machine)", file=sys.stderr)
         return 0
 
     # commands that need a transport

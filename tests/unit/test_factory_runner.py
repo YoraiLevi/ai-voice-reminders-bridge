@@ -59,17 +59,24 @@ def test_icloud_login_missing_creds_returns_2(sample_config):
     assert icloud_login(sample_config) == 2
 
 
-def test_provision_reports_manual_step_when_lists_are_missing(sample_config, fake_transport):
-    """Authenticated, but the two lists do not exist yet — iCloud cannot create them."""
+def test_provision_says_nothing_about_icloud_lists_by_name(sample_config, fake_transport):
+    """iCloud provisioning is a REACHABILITY check now, and nothing else.
+
+    It used to probe both roles by name and then print either "create TWO lists
+    named EXACTLY <defaults>" or "both lists visible (<names>)". Selection moved to
+    ids, which made the first advice wrong for anyone whose lists are called
+    something else, and made the second an assertion by name - the exact thing the
+    feature exists to stop doing. The account inventory and the guidance now come
+    from ONE place, the picker in `settle_selection`.
+    """
     from voice_bridge import setup as setup_mod
 
     empty = type(fake_transport)()  # connects fine, has no lists
     lines = setup_mod.provision(sample_config, empty)
     text = " ".join(lines)
-    assert "create TWO lists" in text
-    # The SETUP_DONE marker is gone (SETUP-6): a machine token printed amid human
-    # prose served neither reader. Structured output lives behind --json now.
-    assert "SETUP_DONE" not in text
+    assert lines == [], f"iCloud provision should report nothing, got: {text}"
+    assert "create TWO lists" not in text
+    assert sample_config.inbox_list not in text
 
 
 def test_provision_does_not_disguise_an_auth_failure_as_missing_lists(sample_config):

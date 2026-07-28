@@ -92,6 +92,7 @@ The names read from **your** seat, not the tool's:
 | `config show \| get \| set \| fields` | inspect and edit settings |
 | `icloud-login` | establish the iCloud session, including two-factor |
 | `vox-prompt` | print the phone-side prompt, rendered with your list names |
+| `peer-prompt` | print the prompt that makes a coding agent your peer, rendered with your mailbox paths |
 | `radicale-server init \| start \| stop \| status \| url` | manage the self-hosted backend |
 
 **Exit codes are uniform**, so you can script against them: **0** success · **1** nothing to

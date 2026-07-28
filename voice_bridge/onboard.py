@@ -47,7 +47,7 @@ def _step(show: Show, n: int, title: str, *, then: str = "") -> None:
         show(f"        next: {then}")
 
 
-def _yes(ask: Ask, prompt: str, *, default: bool = True) -> bool:
+def _yes(ask: Ask, prompt: str, *, default: bool = True, show: Show = print) -> bool:
     """A yes/no question whose DEFAULT is shown and honoured on a bare Enter.
 
     **EOF is not the default - it is NO.** A bare Enter is a real keystroke from a
@@ -72,16 +72,26 @@ def _yes(ask: Ask, prompt: str, *, default: bool = True) -> bool:
             return True
         if answer in ("n", "no"):
             return False
+        # SAY why the question is coming round again. Re-asking in silence looks
+        # identical to the program ignoring an answer it did in fact receive - a
+        # transcript from live use shows the same question twice with nothing
+        # between them, and neither the user nor we could tell from the output
+        # whether input had been rejected or dropped.
+        show(f"  not an answer - type y or n, or press Enter for {'yes' if default else 'no'}.")
+
+
+#: 16 bytes = 128 bits. Widened from 8 on the ruling that a topic is a BEARER
+#: CREDENTIAL, not a name: it is a URL on a public server, and anyone who knows it
+#: reads every reply you ever receive. There is no account, no password and no
+#: revocation - knowing the string IS the authorisation - so the only defence is
+#: that it cannot be enumerated. 64 bits was already a large number and still the
+#: wrong tier for a secret that never rotates and protects everything.
+_TOPIC_BYTES = 16
 
 
 def suggest_topic() -> str:
-    """An unguessable ntfy topic.
-
-    A banner topic is a public URL on a public server: anyone who knows the name
-    can read every reply. So the suggestion is random rather than something
-    memorable like "vox-alice" - memorable is exactly what makes it guessable.
-    """
-    return f"vox-{secrets.token_hex(8)}"
+    """An unguessable ntfy topic: `vox-` plus 128 random bits, hex-encoded."""
+    return f"vox-{secrets.token_hex(_TOPIC_BYTES)}"
 
 
 # --------------------------------------------------------------------------- #
@@ -96,9 +106,8 @@ def step_credentials(cfg: Config, *, ask: Ask, show: Show, login: Callable[[], i
         show(f"  already configured: {cfg.creds_env}")
         return True
 
-    show("  No credentials yet - they are what lets this reach your Reminders.")
-    show(f"  They are stored in {cfg.creds_env}, on this machine only.")
-    if not _yes(ask, "  Set them up now?"):
+    show(f"  No credentials yet. Stored in {cfg.creds_env}, this machine only.")
+    if not _yes(ask, "  Set them up now?", show=show):
         show("  skipped - nothing will connect until you run:  voice-bridge icloud-login")
         return False
 
@@ -123,16 +132,25 @@ def step_notifications(cfg: Config, *, config_path: Path, ask: Ask, show: Show) 
         show(f"  already configured: {cfg.ntfy_topic_file}")
         return True
 
-    show("  A banner on your phone the moment a reply arrives. Without one, replies")
-    show("  still arrive in your list - you just have to look.")
+    # "A banner the moment a reply arrives" described a thing the user has not seen
+    # yet, in a word they may not use for it. PUSH NOTIFICATION is what it is called
+    # on the device, and the cost of declining is stated as an action they will have
+    # to take rather than as a mild inconvenience.
+    show("  PUSH NOTIFICATIONS on your phone, via the ntfy app, when a reply lands.")
+    show("  Without them replies still arrive in your list, but you have to look")
+    show("  MANUALLY - nothing tells you.")
     show("")
     suggested = suggest_topic()
-    show(f"    1) use a private topic I generate for you   ({suggested})")
+    show(f"    1) generate a private topic for me   (128-bit random: {suggested})")
     show("    2) enter a topic you already use")
     show("    3) use your own ntfy server (its URL, and a topic)")
     show("    4) skip for now")
 
     while True:
+        # Only option 3 changes the server, and subscribing on the WRONG server is
+        # a silent failure - the app shows a topic that simply never fires. So the
+        # server is named alongside the topic exactly when it is not the default.
+        server_note = ""
         try:
             choice = ask("  Choose 1-4: ").strip()
         except EOFError:
@@ -155,7 +173,9 @@ def step_notifications(cfg: Config, *, config_path: Path, ask: Ask, show: Show) 
                 return False
             if not topic:
                 continue
-            set_value(config_path, "ntfy_server", server.rstrip("/"))
+            server = server.rstrip("/")
+            set_value(config_path, "ntfy_server", server)
+            server_note = server
         elif choice == "4":
             show("  skipped - no banners. Set one later by writing a topic to:")
             show(f"    {cfg.ntfy_topic_file}")
@@ -166,9 +186,108 @@ def step_notifications(cfg: Config, *, config_path: Path, ask: Ask, show: Show) 
 
         cfg.ntfy_topic_file.parent.mkdir(parents=True, exist_ok=True)
         cfg.ntfy_topic_file.write_text(topic + "\n", encoding="utf-8")
-        show(f"  saved to {cfg.ntfy_topic_file}")
-        show("  Subscribe to that topic in the ntfy app on your phone to receive banners.")
+        # NAME THE TOPIC in the instruction, for a generated one and a typed one
+        # alike. "Subscribe to that topic" points at a string the user must scroll
+        # back to find, or - for option 1 - never typed at all and cannot be
+        # expected to have memorised. The step is not done until the phone is
+        # subscribed, so the thing they must type on the phone belongs in the
+        # sentence telling them to type it.
+        show(f"  ACCEPTED - topic saved to {cfg.ntfy_topic_file}")
+        show(f"  Ensure you are subscribed to  {topic}  in the ntfy app on your phone.")
+        if server_note:
+            show(f"  Server: {server_note}")
         return True
+
+
+# --------------------------------------------------------------------------- #
+# step 4 - the test message
+# --------------------------------------------------------------------------- #
+
+
+def step_test_message(
+    cfg: Config,
+    *,
+    ask: Ask,
+    show: Show,
+    run_verify: Callable[[], dict],
+    probe: str,
+) -> bool:
+    """Run the round trip, say what should have appeared, and ASK.
+
+    The old version printed `[ok  ] a message makes the round trip` and moved on.
+    That line is true and insufficient: it reports what the two machines agreed
+    about between themselves, and the user is standing there holding the device
+    that the whole product is for. A green tick they cannot corroborate is exactly
+    the false-confidence shape this project keeps removing - and if their phone
+    showed nothing, the flow ended anyway, with no next step and no way to say so.
+
+    So the machine result is stated as the machine result, what they should be able
+    to SEE is listed explicitly, and then they are asked. A "no" is not a failure
+    to report - it is the beginning of the part we can actually help with.
+    """
+    _step(show, 4, "A test message", then="your phone prompt")
+
+    show("  This tests the MACHINE round trip: a message out to your list and back.")
+    show("  It cannot see your phone's screen - only you can confirm that half.")
+    if not _yes(ask, "  Send a real message round-trip now?", show=show):
+        show("  skipped - check it later with:  voice-bridge setup --verify")
+        return False
+
+    # A LOOP, not recursion: a retry must not re-ask permission to send. Someone
+    # who just answered "send it again" has already given it, and asking twice for
+    # the same consent is how a retry starts to feel like a loop you cannot leave.
+    while True:
+        result = run_verify()
+        machine_ok = bool(result["dictation_delivered"] and result["reply_delivered"])
+        show(f"  [{'ok  ' if machine_ok else 'FAIL'}] machine round trip")
+        if not machine_ok:
+            show("       the message did not complete the trip - `voice-bridge doctor` says what.")
+            return False
+
+        topic = _topic_of(cfg)
+        show("")
+        show("  On your phone you should now see:")
+        show(f"    - a reminder titled  {probe}")
+        show(f"      in the list  {cfg.output_list}")
+        show("      It is marked DONE immediately, so look under Completed if you missed it.")
+        if topic:
+            show(f"    - a push notification with the same text (topic {topic})")
+        else:
+            show("    - no push notification: you skipped that step.")
+
+        if _yes(ask, "  Did you see them?", show=show):
+            show("  ACCEPTED - the bridge works end to end.")
+            return True
+
+        # Never a dead end. Each line is a thing they can do NOW, ordered by how
+        # often it is the actual cause.
+        show("")
+        show("  Most likely, in order:")
+        show("    1. Sync lag. iCloud is not instant - wait a moment and look again.")
+        # The id is the unambiguous half, so it is shown when there is one - and
+        # simply omitted when there is not, rather than printed as an empty [].
+        chosen = (
+            f"{cfg.output_list}  [{cfg.output_list_id}]" if cfg.output_list_id else cfg.output_list
+        )
+        show(f"    2. Wrong list. You chose  {chosen} -")
+        show("       check that is the list you are looking at on the phone.")
+        if topic:
+            show(f"    3. Not subscribed. Open the ntfy app and subscribe to  {topic}")
+            show(f"       on  {cfg.ntfy_server}")
+        else:
+            show("    3. No notifications configured - re-run setup to add them.")
+        show("")
+        if not _yes(ask, "  Send it again?", show=show):
+            show("  Moving on. Re-test any time with:  voice-bridge setup --verify")
+            return False
+
+
+def _topic_of(cfg: Config) -> str:
+    """The configured banner topic, or "" - read the same way ntfy reads it."""
+    try:
+        return cfg.ntfy_topic_file.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
 
 
 # --------------------------------------------------------------------------- #
@@ -257,8 +376,8 @@ def step_phone_prompt(cfg: Config, *, ask: Ask, show: Show) -> None:
     _step(show, 5, "Your phone prompt", then="starting the bridge")
     text = render_vox_prompt(cfg)
 
-    show("  This is the instruction set your phone runs. It carries the lists you")
-    show("  chose - their names and their ids - so the phone never has to guess.")
+    show("  The instruction set your phone runs. It carries the lists you chose -")
+    show("  names and ids - so the phone never has to guess which list you meant.")
 
     # PRINTED UNCONDITIONALLY, and before the question. Showing it only when the
     # copy is declined would make the prompt feel like a consolation prize for
@@ -271,7 +390,7 @@ def step_phone_prompt(cfg: Config, *, ask: Ask, show: Show) -> None:
     show("  ^ paste the text above into the Claude app on your phone.")
     show("  You can print it again any time with:  voice-bridge vox-prompt")
 
-    if _yes(ask, "  Also copy it to your clipboard?", default=False):
+    if _yes(ask, "  Also copy it to your clipboard?", default=False, show=show):
         if copy_to_clipboard(text):
             show("  copied.")
         else:
@@ -284,11 +403,14 @@ def step_phone_prompt(cfg: Config, *, ask: Ask, show: Show) -> None:
 
 
 def welcome(show: Show) -> None:
+    # Ruled: "in general don't baby the user." The reassurance about asking first
+    # is kept because it is a factual constraint on the program's behaviour, not
+    # encouragement - but it is stated once, flatly, and not repeated per step.
     show("Setting up your voice bridge - talk to your agents from your phone.")
     show("")
     show(f"  {TOTAL_STEPS} steps: credentials, lists, notifications, a test, the phone prompt.")
-    show("  Nothing on your machine or your accounts changes without asking first,")
-    show("  and every step can be skipped - each one tells you how to do it later.")
+    show("  Nothing changes on your machine or your accounts without asking first.")
+    show("  Every step can be skipped; each names the command to do it later.")
 
 
 def farewell(show: Show, *, ready: bool) -> None:

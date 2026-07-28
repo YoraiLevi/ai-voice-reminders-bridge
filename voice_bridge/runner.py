@@ -8,8 +8,53 @@ from pathlib import Path
 from . import poller
 from . import server as server_mod
 from . import setup as setup_mod
-from .config import load_config, resolve_config_path
+from .config import Config, load_config, resolve_config_path
 from .factory import make_transport
+
+#: Written into a mailbox we created, next to the two message files.
+PEER_PROMPT_FILE = "PEER-PROMPT.md"
+
+
+def announce_new_mailbox(cfg: Config) -> list[str]:
+    """Explain the mailbox we just made, and write the peer prompt into it.
+
+    The old line was `mailbox ready at <dir> - a peer must join to process
+    messages`. Every word of that is true and none of it is actionable: it names a
+    requirement, not a step, in vocabulary the reader has not met yet. A user who
+    had just uninstalled and re-run landed here with a working phone, an empty
+    mailbox, and no idea what a peer was or how one joins.
+
+    So we say what the two files are, and drop a paste-ready prompt beside them.
+    Writing the file rather than only printing it matters: this output scrolls past
+    while the bridge starts, and the thing you must paste at an agent should still
+    be there tomorrow.
+
+    NEVER OVERWRITTEN. An existing `PEER-PROMPT.md` may have been edited, or put
+    there by another spoke; we only fill a gap.
+    """
+    from .prompt import render_peer_prompt
+
+    width = max(len(cfg.peer_inbox.name), len(cfg.our_inbox.name))
+    out = [f"mailbox created at {cfg.mailbox_dir}"]
+    out.append(f"  {cfg.peer_inbox.name:<{width}}  your dictations land here - your peer READS it")
+    out.append(
+        f"  {cfg.our_inbox.name:<{width}}  your peer WRITES replies here - they reach your phone"
+    )
+
+    target = cfg.mailbox_dir / PEER_PROMPT_FILE
+    if not target.exists():
+        try:
+            target.write_text(render_peer_prompt(cfg), encoding="utf-8")
+        except OSError as exc:  # pragma: no cover - unwritable mailbox dir
+            out.append(f"  (could not write {target}: {exc})")
+            out.append("  Print it instead with:  voice-bridge peer-prompt")
+            return out
+    out.append("")
+    out.append("NOTHING IS PROCESSED UNTIL A PEER JOINS. To make one, paste this at a")
+    out.append("coding agent on this machine:")
+    out.append(f"  {target}")
+    out.append("Or print it again with:  voice-bridge peer-prompt")
+    return out
 
 
 def run_command(
@@ -55,7 +100,8 @@ def run_command(
         cfg.mailbox_dir.mkdir(parents=True, exist_ok=True)
         cfg.peer_inbox.touch()
         cfg.our_inbox.touch()
-        print(f"mailbox ready at {cfg.mailbox_dir} - a peer must join to process messages")
+        for line in announce_new_mailbox(cfg):
+            print(line)
 
     # ensure the Radicale server (child lifecycle owned here) + lists
     child = None

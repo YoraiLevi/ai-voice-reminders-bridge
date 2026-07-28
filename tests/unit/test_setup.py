@@ -37,11 +37,11 @@ def test_prompt_fields_offers_defaults_and_accepts_enter(sample_config, monkeypa
 
 def test_prompt_fields_records_what_the_user_typed(sample_config, monkeypatch):
     monkeypatch.setattr(setup_mod, "_is_tty", lambda: True)
-    answers = {"inbox_list": "My Inbox", "spoke_name": ""}
+    answers = {"spoke_name": "Phone-Claude", "mailbox_dir": ""}
     monkeypatch.setattr(setup_mod, "_ask", lambda field, label, default: answers.get(field, ""))
     got = setup_mod.prompt_fields(sample_config, preset={})
-    assert got["inbox_list"] == "My Inbox"
-    assert "spoke_name" not in got
+    assert got["spoke_name"] == "Phone-Claude"
+    assert "mailbox_dir" not in got
 
 
 def test_preset_fields_are_not_prompted(sample_config, monkeypatch):

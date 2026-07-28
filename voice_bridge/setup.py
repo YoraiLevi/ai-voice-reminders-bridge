@@ -30,10 +30,13 @@ from .transport import ListRef, NotSupportedError, Transport
 
 #: Fields worth asking about on a guided run - the ones people actually change.
 #: Everything else has a sensible default and can be set later with `config set`.
+#: The list-NAME questions were removed here. They were asked before selection
+#: existed, when a name was how a list got found; now the picker chooses by id and
+#: writes the chosen list's REAL name back to the config. So the answers were
+#: overwritten minutes later by the same run - the user typed something, watched it
+#: be ignored, and had no way to know that was correct behaviour rather than a bug.
 _PROMPTABLE = (
     ("transport", "transport (icloud/radicale)"),
-    ("inbox_list", "phone list you dictate into"),
-    ("output_list", "phone list replies appear in"),
     ("spoke_name", "this spoke's name"),
     ("mailbox_dir", "shared mailbox directory"),
 )
@@ -71,6 +74,9 @@ def prompt_fields(cfg: Config, *, preset: dict[str, Any]) -> dict[str, Any]:
             return answers
         if given:
             answers[field] = given
+            # Explicit acceptance, program-wide: an answer that vanishes into the
+            # next prompt leaves the user unsure whether it registered at all.
+            print(f"  ACCEPTED - {field} = {given}")
     return answers
 
 
@@ -111,22 +117,20 @@ def provision(
             f"Radicale: created / verified {cfg.inbox_list!r} and {cfg.output_list!r}.",
             "They sync to the phone via the shared CalDAV account - no phone step.",
         ]
-    # Connect and look up separately, because they fail for different reasons and
-    # the old blanket catch reported both as "create the lists by hand" - telling
-    # someone with a wrong password to go make lists they may already have.
-    t.connect()  # auth/network failures propagate as typed CommandErrors
-    try:
-        t.resolve_list(cfg.inbox_list, cfg.inbox_list_id)
-        t.resolve_list(cfg.output_list, cfg.output_list_id)
-    except LookupError:
-        # No SETUP_DONE marker: a machine token printed in the middle of human
-        # prose serves neither reader. Structured output belongs behind --json.
-        return [
-            "iCloud can't create lists over the API. On the phone Reminders app,",
-            f"create TWO lists named EXACTLY:  {cfg.inbox_list}   {cfg.output_list}",
-            "then re-run `voice-bridge setup` to confirm they are visible.",
-        ]
-    return [f"iCloud: both lists visible ({cfg.inbox_list!r} / {cfg.output_list!r})."]
+    # iCloud has nothing to provision - it cannot create lists over the API - so
+    # this call only proves the account is reachable. Auth and network failures
+    # propagate as typed CommandErrors and the caller classifies them.
+    #
+    # It used to probe `resolve_list(name, id)` for both roles and then print either
+    # "create TWO lists named EXACTLY <defaults>" or "iCloud: both lists visible
+    # (<names>)". Both are pre-selection-era residue, and both became WRONG the day
+    # selection moved to ids: the first tells a user with two perfectly good lists
+    # to go make differently-named ones, and the second asserts BY NAME the exact
+    # thing this feature exists to stop asserting by name. What really happens next
+    # is the picker over the full inventory, with `_ICLOUD_GUIDE` above it when the
+    # account has no lists yet. One place decides, not two.
+    t.connect()
+    return []
 
 
 _PROBE = "voice-bridge setup --verify probe"
@@ -294,8 +298,12 @@ def run_setup(
             )
             return 0
 
-    t = make_transport(cfg)
     try:
+        # Constructed INSIDE the try. An adapter's constructor can fail for the
+        # same reasons its calls can - unreadable credentials, a missing optional
+        # dependency - and a failure one line above the handler that exists to
+        # classify it escapes as a traceback instead.
+        t = make_transport(cfg)
         created: dict[str, str] = {}
         # Radicale CAN create the lists, but doing so silently would make the two
         # transports behave differently for no reason the user picked. Asking
@@ -323,13 +331,35 @@ def run_setup(
         # is unreachable when they simply stopped. Re-raise to the one CLI handler.
         raise
     except Exception as exc:
-        # Can't reach the backend yet - almost always "no credentials on a fresh
-        # machine". The config IS written, so say what remains, mirroring the
-        # Radicale branch above. Previously this was swallowed into "create the
-        # lists by hand", which sent someone with a bad password to make lists
-        # they may already have had.
-        if is_transient(exc) or type(exc).__name__ in {"ICloudError", "CredsError"}:
-            print(f"config written. Cannot reach the transport yet: {exc}")
+        # THE ADVICE MUST MATCH THE DIAGNOSIS. These two failures were collapsed
+        # into one message that always said "run icloud-login", and a live run hit
+        # the wrong half: a transient iCloud hiccup AFTER a successful login and a
+        # successful first pick was answered with "Request failed / Next:
+        # voice-bridge icloud-login". The credentials were fine. Re-logging in
+        # fixes nothing, and being sent to re-enter working credentials teaches you
+        # to distrust the tool's next instruction too.
+        #
+        # Third appearance of this class (after "create the lists by hand" for a
+        # bad password, and provision's name-based guidance), so it is named
+        # plainly: a message that names a REMEDY is a claim about the CAUSE.
+        if is_transient(exc):
+            print(f"config written, credentials fine. The transport did not answer: {exc}")
+            print("That is a temporary failure, not a setup problem.")
+            if _is_tty() and onboard._yes(_ask_line, "  Try again now?"):
+                # Retry IN PLACE. The alternative is telling someone who just
+                # picked their first list to start the whole flow over, which is
+                # how a transient blip costs a working setup.
+                return run_setup(
+                    config_path=path,
+                    transport=transport,
+                    overrides=overrides,
+                    do_verify=do_verify,
+                    as_json=as_json,
+                )
+            print("Re-run when you are ready:  voice-bridge setup")
+            return 0
+        if type(exc).__name__ in {"ICloudError", "CredsError"}:
+            print(f"config written. Could not authenticate: {exc}")
             print("Next:  voice-bridge icloud-login    then re-run:  voice-bridge setup")
             return 0
         raise
@@ -366,25 +396,27 @@ def run_setup(
     onboard.step_notifications(cfg, config_path=path, ask=_ask_line, show=print)
     cfg = onboard.reload_config(path)
 
-    print("")
-    print("[4/5] A test message")
-    print("        next: your phone prompt")
-    if not do_verify:
-        if onboard._yes(_ask_line, "  Send a real message round-trip now?"):
-            result = verify(cfg, t)
-            ok = result["dictation_delivered"] and result["reply_delivered"]
-            print(f"  [{'ok  ' if ok else 'FAIL'}] a message makes the round trip")
-            if not ok:
-                print("       something is not connected yet - `voice-bridge doctor` says what.")
-        else:
-            print("  skipped - check it later with:  voice-bridge setup --verify")
-    else:
+    if do_verify:
+        print("")
+        print("[4/5] A test message")
+        print("        next: your phone prompt")
         print("  already verified above.")
+    else:
+        onboard.step_test_message(
+            cfg,
+            ask=_ask_line,
+            show=print,
+            run_verify=lambda: verify(cfg, t),
+            probe=_PROBE,
+        )
 
     onboard.step_phone_prompt(cfg, ask=_ask_line, show=print)
 
     print("")
-    if onboard._yes(_ask_line, "Start the bridge now?"):
+    # The default is stated in words as well as in [Y/n]. Starting the bridge is
+    # the one answer here with a consequence you cannot see from the prompt - it
+    # takes over the terminal - so what Enter does gets said out loud.
+    if onboard._yes(_ask_line, "Start the bridge now? (Enter = yes, start it)"):
         print("  starting - press Ctrl-C to stop.")
         from .runner import run_command
 
@@ -395,8 +427,7 @@ def run_setup(
 
 _ICLOUD_GUIDE = (
     "iCloud does not allow creating lists over the API, so make them on your phone:",
-    "  Reminders -> new list, twice. Any names you like - you will choose them here",
-    "  by id, so the names are yours, not ours.",
+    "  Reminders -> new list, twice. Any names you like; you choose them here by id.",
     "  Suggested: {inbox} (you dictate into) and {outbox} (replies appear in).",
     "",
     "iCloud sync is not instant. When a list does not appear below yet, press r to",

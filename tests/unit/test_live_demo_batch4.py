@@ -382,3 +382,36 @@ def test_a_config_that_still_names_the_old_defaults_is_untouched(tmp_path, tmp_m
         encoding="utf-8",
     )
     assert load_config(cfg_file).inbox_list == "Vox-Message-Outbox"
+
+
+def test_the_path_note_is_printed_to_stderr_before_anything_else(monkeypatch, capsys):
+    """Coverage of this line must not depend on whose shell ran the tests.
+
+    Found by an instrument delta: the manager's run missed exactly one statement
+    that mine covered - `cli.main`'s `print(note, ...)`. The cause was real and
+    benign: `uv run` puts the console script on PATH, so `path_note()` returns ""
+    there and the branch never executes, while in a bare shell it fires. Two honest
+    runs, one line apart, and the number moved.
+
+    The finding is not the 0.04%: it is that a branch shipped in the same commit
+    was covered BY ACCIDENT OF ENVIRONMENT. This pins it.
+
+    stderr specifically, because `vox-prompt | clip` must pipe the prompt alone.
+    """
+    from voice_bridge import cli
+
+    monkeypatch.setattr(cli, "path_note", lambda: "note: use `uv run voice-bridge`")
+    cli.main(["config", "fields"])
+    captured = capsys.readouterr()
+
+    assert "uv run voice-bridge" in captured.err
+    assert "uv run voice-bridge" not in captured.out, "advice must never pollute a pipe"
+
+
+def test_no_path_note_is_printed_when_there_is_nothing_to_say(monkeypatch, capsys):
+    from voice_bridge import cli
+
+    monkeypatch.setattr(cli, "path_note", lambda: "")
+    cli.main(["config", "fields"])
+
+    assert capsys.readouterr().err == ""

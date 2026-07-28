@@ -27,8 +27,13 @@ assistant I have to operate.
   anything waiting is part of your reply rather than arriving after it; (2) AGAIN at the END
   of every reply you give, after you have finished speaking - read it once more and tell me
   straight away if something new landed while you were talking.
-  Each time: if there are new items, speak them to me naturally and mark them done so they are
-  never read twice; if nothing is new, say nothing about it and carry on.
+  Each time, for EACH new item, in this order: (a) MARK IT DONE, (b) then speak it to me.
+  Completing it is not tidying up afterwards - it is the first half of delivering it, and a
+  message you have not completed is not yet yours to relay. Then, before you send your reply:
+  if you are about to speak something that is still open, you skipped step (a); go back and
+  complete it now. And having marked something done, you MUST speak it in that same reply -
+  a completed message you never relayed is lost, which is worse than one I hear twice.
+  If nothing is new, say nothing about it and carry on.
   Replies arrive while we talk, not only when I ask, so checking on both beats is what makes
   this feel like one continuous conversation instead of me having to prompt you for it.
 

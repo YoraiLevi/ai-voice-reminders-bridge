@@ -312,6 +312,16 @@ def run_teardown(
         show("reset complete. This machine is as if freshly installed.")
         show("Next:  voice-bridge setup")
     else:
-        show("uninstall complete. Nothing of this system remains on this machine.")
+        # The claim has to match what was actually done. With --keep-mailbox this
+        # said "nothing remains" two lines after the preview promised to keep the
+        # mailbox - a success message contradicting the command's own behaviour, in
+        # the one place a user reads for reassurance.
+        kept_paths = [a for a in plan.keep if a.path.exists()]
+        if kept_paths:
+            show("uninstall complete. Everything is removed except what you asked to keep:")
+            for art in kept_paths:
+                show(f"  {art.path}")
+        else:
+            show("uninstall complete. Nothing of this system remains on this machine.")
         show("Re-install by running: voice-bridge setup")
     return 0

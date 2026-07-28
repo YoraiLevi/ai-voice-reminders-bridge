@@ -345,3 +345,22 @@ def test_neither_command_touches_the_transport(installed, monkeypatch):
     cfg, cfg_file = installed
 
     assert _run(cfg, cfg_file, "uninstall", ["UNINSTALL"])[0] == 0
+
+
+def test_the_closing_claim_matches_what_was_actually_kept(installed):
+    """Found in the QA rehearsal: with --keep-mailbox it still announced that
+    "nothing of this system remains", two lines after its own preview promised to
+    keep the mailbox. A success message that contradicts the command is the
+    false-claim class, in the place a user reads for reassurance."""
+    cfg, cfg_file = installed
+    _, out = _run(cfg, cfg_file, "uninstall", ["UNINSTALL"], keep_mailbox=True)
+
+    assert "Nothing of this system remains" not in out
+    assert "except what you asked to keep" in out
+    assert str(cfg.mailbox_dir) in out
+
+
+def test_a_total_uninstall_may_claim_nothing_remains(installed):
+    cfg, cfg_file = installed
+    _, out = _run(cfg, cfg_file, "uninstall", ["UNINSTALL"])
+    assert "Nothing of this system remains" in out

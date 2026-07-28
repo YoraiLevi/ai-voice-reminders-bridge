@@ -69,7 +69,7 @@ def test_parse_overrides_coerces_ints_and_validates():
 
 
 def test_parse_overrides_rejects_unknown_key():
-    with pytest.raises(ValueError, match="unknown key"):
+    with pytest.raises(ValueError, match="unknown setting"):
         parse_overrides(["bogus=1"])
 
 

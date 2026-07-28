@@ -175,13 +175,25 @@ def parse_overrides(pairs: list[str] | None) -> dict[str, Any]:
         key, _, value = p.partition("=")
         key = key.strip()
         if key not in _ALLOWED_KEYS:
+            # Names the KEY and the allowed set, but not the flag: this same
+            # parser backs `--set` and `config set`, and naming one sends half the
+            # callers looking at the wrong thing.
             raise ValueError(
-                f"--set unknown key {key!r}; allowed: {', '.join(sorted(_ALLOWED_KEYS))}"
+                f"unknown setting {key!r}; allowed: {', '.join(sorted(_ALLOWED_KEYS))}"
             )
+        # A bare `float()` failure reads "could not convert string to float: 'abc'",
+        # which names neither the setting nor what it wanted. The unknown-key message
+        # right above sets the standard: say what was wrong AND what is acceptable.
         if key in _INT_FIELDS:
-            out[key] = int(value)
+            try:
+                out[key] = int(value)
+            except ValueError:
+                raise ValueError(f"{key} must be a whole number, got {value!r}") from None
         elif key in _FLOAT_FIELDS:
-            out[key] = float(value)
+            try:
+                out[key] = float(value)
+            except ValueError:
+                raise ValueError(f"{key} must be a number of seconds, got {value!r}") from None
         else:
             out[key] = value
     return out

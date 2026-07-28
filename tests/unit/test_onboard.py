@@ -64,17 +64,24 @@ def test_accepting_copies_and_says_what_to_do_next(sample_config, monkeypatch):
     onboard.step_phone_prompt(sample_config, ask=ask, show=show)
 
     assert copied and "You are VOX" in copied[0]
-    assert "Paste it into the Claude app" in "\n".join(out)
+    joined = "\n".join(out)
+    assert "copied." in joined
+    # Ruled: the prompt is ALWAYS printed. Showing it only when the copy is
+    # declined would leave someone who said yes with nothing on screen to check.
+    assert "You are VOX" in joined
 
 
-def test_a_failed_copy_falls_back_to_printing(sample_config, monkeypatch):
-    """No clipboard tool is not a dead end — the prompt is the deliverable."""
+def test_a_failed_copy_says_so_and_the_prompt_is_still_there(sample_config, monkeypatch):
+    """No clipboard tool is not a dead end — the prompt is the deliverable, and it
+    was already on screen before the question was asked."""
     monkeypatch.setattr(onboard, "copy_to_clipboard", lambda text: False)
 
     ask, show, out = _io(["y"])
     onboard.step_phone_prompt(sample_config, ask=ask, show=show)
+    joined = "\n".join(out)
 
-    assert "You are VOX" in "\n".join(out)
+    assert "You are VOX" in joined
+    assert "no clipboard tool" in joined, "it must not silently do nothing"
 
 
 # --------------------------------------------------------------------------- #
@@ -264,3 +271,24 @@ def test_the_farewell_distinguishes_finished_from_incomplete():
     joined = "\n".join(partial)
     assert "incomplete" in joined
     assert "doctor" in joined, "it must name the command that reports what is missing"
+
+
+def test_the_prompt_is_printed_before_the_clipboard_question(sample_config, monkeypatch):
+    """Ruled at 07:40: "The prompt should always be printed. But copying to
+    clipboard should be conditional."
+
+    Order matters as much as the fact: the prompt appears BEFORE the question, so
+    the user is never answering about something they have not seen.
+    """
+    monkeypatch.setattr(onboard, "copy_to_clipboard", lambda text: True)
+    asked_at: list[int] = []
+    out: list[str] = []
+
+    def ask(_prompt):
+        asked_at.append(len(out))
+        return "n"
+
+    onboard.step_phone_prompt(sample_config, ask=ask, show=out.append)
+
+    prompt_line = next(i for i, line in enumerate(out) if "You are VOX" in line)
+    assert prompt_line < asked_at[0], "the prompt must be on screen before the question"

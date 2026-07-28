@@ -196,15 +196,22 @@ def step_phone_prompt(cfg: Config, *, ask: Ask, show: Show) -> None:
     show("  This is the instruction set your phone runs. It carries the lists you")
     show("  chose — their names and their ids — so the phone never has to guess.")
 
-    if _yes(ask, "  Copy it to your clipboard?", default=False) and copy_to_clipboard(text):
-        show("  copied. Paste it into the Claude app on your phone.")
-        return
-
+    # PRINTED UNCONDITIONALLY, and before the question. Showing it only when the
+    # copy is declined would make the prompt feel like a consolation prize for
+    # saying no, and it leaves someone who said yes with nothing on screen to
+    # check against — while the clipboard is the one thing here that belongs to
+    # the user, so taking it stays a question with a NO default.
     show("")
     show(text)
     show("")
     show("  ^ paste the text above into the Claude app on your phone.")
     show("  You can print it again any time with:  voice-bridge vox-prompt")
+
+    if _yes(ask, "  Also copy it to your clipboard?", default=False):
+        if copy_to_clipboard(text):
+            show("  copied.")
+        else:
+            show("  no clipboard tool available here — copy the text above by hand.")
 
 
 # --------------------------------------------------------------------------- #

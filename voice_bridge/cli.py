@@ -494,3 +494,9 @@ def _config_cmd(args, cfg_path) -> int:
         for k, v in data.items():
             print(f"  {k:<22} : {v}")
     return 0
+
+
+if __name__ == "__main__":  # pragma: no cover - exercised via subprocess in tests
+    # Without this, `python -m voice_bridge.cli` imports the module, defines
+    # main(), never calls it, and exits 0 — a command that succeeds at nothing.
+    raise SystemExit(main())

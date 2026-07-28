@@ -137,6 +137,42 @@ def _build_parser() -> argparse.ArgumentParser:
         help="choose which list each role uses (needs a terminal)",
     )
 
+    rs = sub.add_parser(
+        "reset",
+        help="delete settings so you can start over",
+        formatter_class=_RAW,
+        epilog=_epilog(
+            "Puts this machine back to just installed, never configured, so setup and\n"
+            "login can be run again from zero. Credentials go too: that is the point of\n"
+            "the command, not an extra tier. Your mailbox, its messages, and any\n"
+            "self-hosted lists are NEVER removed by reset.\n"
+            "\n"
+            "Every path is listed before anything is asked, and confirmation is typing\n"
+            "RESET in full rather than y. Use `uninstall` to remove everything."
+        ),
+    )
+    rs.add_argument("--yes", action="store_true", help="skip the confirmation (scripts, non-TTY)")
+
+    un = sub.add_parser(
+        "uninstall",
+        help="remove everything this put on this machine",
+        formatter_class=_RAW,
+        epilog=_epilog(
+            "Puts this machine back to as if never installed. Complete by default:\n"
+            "config, credentials, session, topic, dedupe state, self-hosted server files\n"
+            "and their lists, AND your mailbox with its messages. --keep-mailbox is the\n"
+            "one opt-out; for anything more partial you wanted `reset`.\n"
+            "\n"
+            "Nothing on your Apple or GitHub account is touched: reminder lists and\n"
+            "published gists are not on this machine and are not this command's to\n"
+            "remove.\n"
+            "\n"
+            "Confirmation is typing UNINSTALL in full."
+        ),
+    )
+    un.add_argument("--keep-mailbox", action="store_true", help="keep the mailbox and its messages")
+    un.add_argument("--yes", action="store_true", help="skip the confirmation (scripts, non-TTY)")
+
     pk = sub.add_parser("peek", help="show messages in a box")
     pk.add_argument("--box", choices=("inbox", "outbox"), default="inbox")
     pk.add_argument("--completed", action="store_true")
@@ -358,6 +394,18 @@ def _dispatch(args) -> int:  # noqa: C901 - a flat command table
         poller_mod.send_reply(cfg, t, args.text, notify=not args.no_notify)
         print("sent.")
         return 0
+
+    if cmd in ("reset", "uninstall"):
+        from . import teardown
+
+        path, _ = resolve_config_path(args.config, must_exist=False)
+        return teardown.run_teardown(
+            cfg,
+            path or default_config_path(),
+            verb=cmd,
+            keep_mailbox=getattr(args, "keep_mailbox", False),
+            assume_yes=args.yes,
+        )
 
     if cmd == "lists":
         if args.select:

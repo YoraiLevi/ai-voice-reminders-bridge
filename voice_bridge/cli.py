@@ -27,7 +27,7 @@ from .config import (
     resolve_config_path,
     set_value,
 )
-from .commands import connected_transport, list_command, peek_command, pin_command
+from .commands import connected_transport, list_command, peek_command, select_command
 from .errors import CommandError
 from .runner import run_command
 
@@ -121,19 +121,20 @@ def _build_parser() -> argparse.ArgumentParser:
         help="enumerate transport lists with their ids",
         formatter_class=_RAW,
         epilog=_epilog(
-            "--pin manages which list each role points at: keep, change or clear the pin,\n"
-            "choosing from the lists sharing the configured name. It runs even when the\n"
-            "name is unambiguous, because 'change' means change. It needs a terminal.\n"
+            "--select chooses which list each role uses. It opens with the roles and\n"
+            "their current selections, so you pick what to change and leave — it does\n"
+            "not walk you through every list. It runs even when a name is unambiguous,\n"
+            "because 'change' means change. It needs a terminal.\n"
             "\n"
-            "The rest of the pin toolkit, so the verbs are discoverable together:\n"
-            "  voice-bridge config set inbox_list_id <id>  set a pin directly\n"
-            "  voice-bridge doctor                         report a pin pointing at nothing\n"
+            "The rest of the toolkit, so the verbs are discoverable together:\n"
+            "  voice-bridge config set inbox_list_id <id>  set the id directly\n"
+            "  voice-bridge doctor                         report a selection gone stale\n"
         ),
     )
     ls.add_argument(
-        "--pin",
+        "--select",
         action="store_true",
-        help="interactively keep/change/clear the list pins (needs a terminal)",
+        help="choose which list each role uses (needs a terminal)",
     )
 
     pk = sub.add_parser("peek", help="show messages in a box")
@@ -359,9 +360,9 @@ def _dispatch(args) -> int:  # noqa: C901 - a flat command table
         return 0
 
     if cmd == "lists":
-        if args.pin:
+        if args.select:
             path, _ = resolve_config_path(args.config, must_exist=False)
-            return pin_command(
+            return select_command(
                 cfg,
                 connected_transport(cfg),
                 config_path=path or default_config_path(),

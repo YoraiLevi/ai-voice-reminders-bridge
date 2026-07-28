@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from voice_bridge import doctor as doctor_mod
 from voice_bridge import setup as setup_mod
 from voice_bridge.caldav import CalDAVTransport
@@ -23,6 +25,23 @@ def test_provision_then_doctor_green(radicale_config):
     radicale_config.mailbox_dir.mkdir(parents=True, exist_ok=True)
     radicale_config.peer_inbox.touch()
     radicale_config.our_inbox.touch()
+
+    # Both roles must be SELECTED for the lists row to be green — an unset id is
+    # no longer quietly resolved by name, so it is a reportable state.
+    import dataclasses
+
+    from voice_bridge.config import set_value
+
+    for field, name in (
+        ("inbox_list_id", radicale_config.inbox_list),
+        ("output_list_id", radicale_config.output_list),
+    ):
+        set_value(Path(radicale_config.source), field, t.resolve_list(name, "").id)
+    radicale_config = dataclasses.replace(
+        radicale_config,
+        inbox_list_id=t.resolve_list(radicale_config.inbox_list, "").id,
+        output_list_id=t.resolve_list(radicale_config.output_list, "").id,
+    )
 
     rc = doctor_mod.run(radicale_config, t)
     assert rc == 0  # config + creds + auth + lists + ntfy + mailbox all GREEN

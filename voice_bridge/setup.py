@@ -23,8 +23,8 @@ from .config import Config, load_config, read_raw, resolve_config_path, set_valu
 from .errors import is_transient
 from .factory import make_transport
 from .mailbox import format_mailbox_line
-from .pins import pick, resolve_pins
-from .transport import NotSupportedError, Transport
+from .selection import confirm_selection, pick, resolve_selection
+from .transport import ListRef, NotSupportedError, Transport
 
 #: Fields worth asking about on a guided run — the ones people actually change.
 #: Everything else has a sensible default and can be set later with `config set`.
@@ -80,13 +80,31 @@ def write_config(path: Path, *, transport: str, overrides: dict[str, Any] | None
     write_raw(path, data)
 
 
-def provision(cfg: Config, t: Transport) -> list[str]:
+def provision(
+    cfg: Config,
+    t: Transport,
+    *,
+    created: dict[str, str] | None = None,
+    create: bool = True,
+) -> list[str]:
     """Ensure the two lists exist. Radicale creates them; iCloud reports the manual
-    step. Returns human-readable status lines."""
+    step. Returns human-readable status lines.
+
+    Pass `created` to receive {config field: id} for lists this call created, so the
+    caller can select them without inferring anything from their titles."""
     if cfg.transport == "radicale":
         t.connect()
-        for name in (cfg.inbox_list, cfg.output_list):
-            t.create_list(name)
+        if not create:
+            return [
+                "Radicale: create the two lists yourself in your CalDAV client,",
+                "then choose them here (press r to refresh until they appear).",
+            ]
+        # Keep the ids the backend returns: choosing by them is knowledge, where
+        # matching their titles later would only be a guess.
+        for field, name in (("inbox_list_id", cfg.inbox_list), ("output_list_id", cfg.output_list)):
+            ref = t.create_list(name)
+            if created is not None:
+                created[field] = ref.id
         return [
             f"Radicale: created / verified {cfg.inbox_list!r} and {cfg.output_list!r}.",
             "They sync to the phone via the shared CalDAV account — no phone step.",
@@ -254,11 +272,18 @@ def run_setup(
 
     t = make_transport(cfg)
     try:
-        for line in provision(cfg, t):
+        created: dict[str, str] = {}
+        # Radicale CAN create the lists, but doing so silently would make the two
+        # transports behave differently for no reason the user picked. Asking
+        # unifies them: answer no and the flow is exactly iCloud's.
+        auto = True
+        if cfg.transport == "radicale" and _is_tty():
+            auto = ask_radicale_creation(ask=input, show=print)
+        for line in provision(cfg, t, created=created if auto else None, create=auto):
             print(line)
-        # Pin the ids NOW, while the answer is still unambiguous (UX-6). A ghost
-        # that appears later is indistinguishable from the real list by name.
-        if settle_pins(cfg, t, config_path=path):
+        # Choose the lists NOW. Nothing is inferred from a title: either we just
+        # created it and know its id, or the user is asked.
+        if settle_selection(cfg, t, config_path=path, created=created):
             cfg = load_config(path)
     except NotSupportedError as exc:
         print(f"error: {exc}")
@@ -301,65 +326,121 @@ def run_setup(
     return 0
 
 
-def settle_pins(
+_ICLOUD_GUIDE = (
+    "iCloud does not allow creating lists over the API, so make them on your phone:",
+    "  Reminders -> new list, twice. Any names you like — you will choose them here",
+    "  by id, so the names are yours, not ours.",
+    "  Suggested: {inbox} (you dictate into) and {outbox} (replies appear in).",
+    "",
+    "iCloud sync is not instant. When a list does not appear below yet, press r to",
+    "refresh until it does.",
+)
+
+
+def settle_selection(
     cfg: Config,
     t: Transport,
     *,
     config_path: Path,
+    created: dict[str, str] | None = None,
     ask: Callable[[str], str] = input,
     show: Callable[[str], None] = print,
     is_tty: Callable[[], bool] | None = None,
 ) -> int:
-    """Pin both list ids at setup time, asking only when a name is ambiguous.
+    """Choose a list for each role, and record BOTH its id and its real name.
 
-    Pinning here — at the very beginning — is what stops the system ever guessing.
-    A name resolves to whichever same-named list the backend happens to return
-    first, so an unpinned setup on a cluttered account is a coin flip whose result
-    is invisible: dictations land in a real list that nobody reads.
+    Nothing is ever inferred from a title. A list is used because someone chose it,
+    which is why this asks rather than matching — the point of the whole feature is
+    that setting up the lists correctly replaces relying on hardcoded names.
 
-    Three behaviours, and the third is the one that matters:
+    The name is written alongside the id because the phone prompt shows both, and
+    it must show what the list is *actually called*. A name in the config that came
+    from a default rather than from the chosen list would be a caption that does
+    not match its picture.
 
-    * **unambiguous** — pin silently. There is nothing to ask.
-    * **ambiguous on a terminal** — ask, using the same picker `lists --pin` uses.
-    * **ambiguous with no terminal** — do NOT ask. A prompt written to a pipe
-      blocks for ever, or reads EOF and takes an answer nobody gave. Warn loudly
-      and name `lists --pin` instead.
+    `created` maps a config field to an id the transport just returned from
+    `create_list`. Recording that is knowledge, not inference — we made the list a
+    moment ago. Only Radicale can create lists.
 
-    Returns the number of pins written.
+    Without a terminal nothing is asked: a prompt written to a pipe blocks for
+    ever, or reads EOF and takes an answer nobody gave. It warns and returns.
     """
-    plan = resolve_pins(cfg, t)
+    tty = (is_tty or _is_tty)()
+    created = created or {}
+    plan = resolve_selection(cfg, t)
     written = 0
 
+    def _record(res, ref: ListRef) -> None:
+        """Persist the choice: the id decides, the name is what the phone shows."""
+        nonlocal written
+        set_value(config_path, res.field, ref.id)
+        set_value(config_path, "inbox_list" if res.role == "inbox" else "output_list", ref.name)
+        confirm_selection(ref, role=res.role, show=show)
+        written += 1
+
+    unresolved = [r for r in plan.resolutions if r.status != "selected"]
+    if unresolved and tty and cfg.transport == "icloud" and not created:
+        for line in _ICLOUD_GUIDE:
+            show(line.format(inbox=cfg.inbox_list, outbox=cfg.output_list))
+        show("")
+
     for res in plan.resolutions:
-        if res.status == "chosen" and not res.current:
-            # One list matches and nothing is pinned yet: record the id now, while
-            # the answer is unambiguous. Later, a ghost with the same name may
-            # appear — and by then there is no way to tell which one was meant.
-            set_value(config_path, res.field, res.chosen)
-            written += 1
+        if res.status == "selected":
             continue
 
-        if res.status != "ambiguous":
-            continue
+        if res.field in created:
+            ref = next((r for r in t.list_todo_lists() if r.id == created[res.field]), None)
+            if ref is not None:
+                # Say why nothing was asked: we created this list moments ago and
+                # hold the id it returned, so there is nothing to guess at.
+                show("  just created this list, so it is chosen for you:")
+                _record(res, ref)
+                continue
 
-        if not (is_tty or _is_tty)():
-            show(
-                f'warning: {len(res.candidates)} lists are named "{res.name}" and none is '
-                f"pinned.\n"
-                f"         Dictations may go to the wrong one. Pin it with:\n"
-                f"           voice-bridge lists --pin"
+        if not tty:
+            what = (
+                "the selected list no longer exists"
+                if res.status == "stale"
+                else "no list is selected"
             )
+            show(f"warning: {what} for {res.field}.")
+            show("         Nothing can be delivered for this role until you choose one:")
+            show("           voice-bridge lists --select")
             continue
 
-        choice = pick(res, ask=ask, show=show)
-        if choice.action == "pin":
-            set_value(config_path, res.field, choice.list_id)
-            show(f"  pinned {choice.list_id}")
-            written += 1
+        if res.status == "stale":
+            show(f"  the selected list no longer exists ({res.current}) — choose a replacement.")
+
+        choice = pick(res, ask=ask, show=show, refresh=t.list_todo_lists)
+        if choice.action == "select":
+            ref = next(r for r in t.list_todo_lists() if r.id == choice.list_id)
+            _record(res, ref)
         else:
             show(
-                f'  left unpinned — "{res.name}" is still ambiguous. '
-                f"Run `voice-bridge lists --pin` when you know which one you want."
+                "  left unselected — nothing will be delivered for this role until you"
+                " run `voice-bridge lists --select`."
             )
 
     return written
+
+
+def ask_radicale_creation(*, ask: Callable[[str], str], show: Callable[[str], None]) -> bool:
+    """Should setup create the Radicale lists, or will the user make them?
+
+    Radicale *can* create lists, but doing it silently would make the two
+    transports behave differently for no reason the user chose. Asking unifies
+    them: answer "no" and the flow is exactly iCloud's — create the lists
+    yourself, refresh, select.
+    """
+    show("Radicale can create the two lists for you, or you can make them yourself")
+    show("in whatever client you use (the same way the iCloud path works).")
+    while True:
+        try:
+            answer = ask("Create them for you? [Y/n]: ").strip().lower()
+        except EOFError:
+            return True  # the non-interactive default is the helpful one
+        if answer in ("", "y", "yes"):
+            return True
+        if answer in ("n", "no"):
+            return False
+        show("  please answer y or n.")

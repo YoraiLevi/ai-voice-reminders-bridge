@@ -75,7 +75,7 @@ def test_rendered_prompt_keeps_the_instructions(sample_config):
 # --------------------------------------------------------------------------- #
 
 
-def test_pinned_ids_are_carried_into_the_prompt(sample_config):
+def test_selected_ids_are_carried_into_the_prompt(sample_config):
     """Filed by the phone persona itself: it was guessing which list to use.
 
     A real account here holds 21 lists including same-named ghosts, so matching

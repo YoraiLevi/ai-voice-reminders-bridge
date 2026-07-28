@@ -21,6 +21,7 @@ import pytest
 
 from voice_bridge import poller
 from voice_bridge.mailbox import load_cursor
+from voice_bridge.transport import FakeTransport
 from voice_bridge.icloud import ICloudError
 
 
@@ -186,32 +187,32 @@ class _Boom:
         raise self.exc
 
 
-def test_auth_failure_stops_immediately_with_guidance(sample_config, capsys):
+def test_auth_failure_stops_immediately_with_guidance(wired_config, capsys):
     """No retry can type a 2FA code, so retrying is just a quieter way to fail."""
-    _mailbox(sample_config)
+    _mailbox(wired_config)
     t = _Boom(ICloudError("session needs 2FA"))
-    rc = poller.run(sample_config, t, interval=0)
+    rc = poller.run(wired_config, t, interval=0)
     assert rc == 2
     assert t.attempts == 1, "an auth failure must not be retried at all"
     assert "icloud-login" in capsys.readouterr().out.lower()
 
 
-def test_transient_failure_is_bounded_not_infinite(sample_config, capsys):
+def test_transient_failure_is_bounded_not_infinite(wired_config, capsys):
     """A 503 that never clears used to back off for ever — silent death dressed
     as patience. It now gives up and says why."""
-    _mailbox(sample_config)
+    _mailbox(wired_config)
     t = _Boom(OSError("503 Service Unavailable"))
-    rc = poller.run(sample_config, t, interval=0, max_attempts=3, backoff_base=0)
+    rc = poller.run(wired_config, t, interval=0, max_attempts=3, backoff_base=0)
     assert rc == 2
     assert t.attempts == 3
     out = capsys.readouterr().out.lower()
     assert "giving up" in out or "gave up" in out
 
 
-def test_unexpected_error_is_bounded_and_keeps_its_cause(sample_config, capsys):
-    _mailbox(sample_config)
+def test_unexpected_error_is_bounded_and_keeps_its_cause(wired_config, capsys):
+    _mailbox(wired_config)
     t = _Boom(RuntimeError("a genuine bug"))
-    rc = poller.run(sample_config, t, interval=0, max_attempts=2, backoff_base=0)
+    rc = poller.run(wired_config, t, interval=0, max_attempts=2, backoff_base=0)
     assert rc == 2
     assert "a genuine bug" in capsys.readouterr().out
 
@@ -220,7 +221,7 @@ class _Stop(BaseException):
     """Breaks the loop without being caught as a failure (run catches Exception)."""
 
 
-def test_transient_counter_resets_after_a_good_cycle(sample_config, fake_transport, monkeypatch):
+def test_transient_counter_resets_after_a_good_cycle(wired_config, fake_transport, monkeypatch):
     """Otherwise a long-lived poller accumulates unrelated blips until it quits.
 
     Two separate transient failures, each followed by a good cycle, with a budget
@@ -240,7 +241,7 @@ def test_transient_counter_resets_after_a_good_cycle(sample_config, fake_transpo
 
     monkeypatch.setattr(fake_transport, "connect", flaky)
     with pytest.raises(_Stop):
-        poller.run(sample_config, fake_transport, interval=0, max_attempts=2, backoff_base=0)
+        poller.run(wired_config, fake_transport, interval=0, max_attempts=2, backoff_base=0)
     assert calls["n"] > 4, "the loop must survive both blips rather than giving up"
 
 
@@ -260,24 +261,24 @@ def test_second_poller_is_refused(sample_config, fake_transport, monkeypatch):
     assert rc == 2
 
 
-def test_force_overrides_the_guard(sample_config, fake_transport):
-    _mailbox(sample_config)
-    pidfile = sample_config.state_dir / "poller.pid"
+def test_force_overrides_the_guard(wired_config, fake_transport):
+    _mailbox(wired_config)
+    pidfile = wired_config.state_dir / "poller.pid"
     pidfile.parent.mkdir(parents=True, exist_ok=True)
     pidfile.write_text(str(os.getpid()), encoding="utf-8")
 
-    rc = poller.run(sample_config, fake_transport, once=True, interval=0, force=True)
+    rc = poller.run(wired_config, fake_transport, once=True, interval=0, force=True)
     assert rc in (0, 1)
 
 
-def test_stale_pidfile_does_not_block(sample_config, fake_transport):
+def test_stale_pidfile_does_not_block(wired_config, fake_transport):
     """A crashed poller leaves its pidfile behind; that must not lock the user out."""
-    _mailbox(sample_config)
-    pidfile = sample_config.state_dir / "poller.pid"
+    _mailbox(wired_config)
+    pidfile = wired_config.state_dir / "poller.pid"
     pidfile.parent.mkdir(parents=True, exist_ok=True)
     pidfile.write_text("0", encoding="utf-8")  # never a live pid
 
-    rc = poller.run(sample_config, fake_transport, once=True, interval=0)
+    rc = poller.run(wired_config, fake_transport, once=True, interval=0)
     assert rc in (0, 1)
 
 
@@ -311,7 +312,7 @@ def test_dry_run_creates_no_config(tmp_path, tmp_mailbox, capsys):
 # --------------------------------------------------------------------------- #
 
 
-def test_ctrl_c_stops_cleanly_and_still_ejects(sample_config, fake_transport, monkeypatch, capsys):
+def test_ctrl_c_stops_cleanly_and_still_ejects(wired_config, fake_transport, monkeypatch, capsys):
     """Stopping the bridge is a normal action, not an error.
 
     `run` caught Exception, and KeyboardInterrupt is a BaseException, so Ctrl-C
@@ -319,21 +320,21 @@ def test_ctrl_c_stops_cleanly_and_still_ejects(sample_config, fake_transport, mo
     stop. The eject was never at risk (a `finally` runs during unwinding), but a
     traceback tells the user something broke when nothing did.
     """
-    _mailbox(sample_config)
+    _mailbox(wired_config)
 
     def interrupt(_seconds):
         raise KeyboardInterrupt
 
     monkeypatch.setattr(poller.time, "sleep", interrupt)
 
-    rc = poller.run(sample_config, fake_transport, interval=1)
+    rc = poller.run(wired_config, fake_transport, interval=1)
 
     assert rc == 0, "a deliberate stop is success, not failure"
     assert "stopped" in capsys.readouterr().out.lower()
-    assert "stopping" in sample_config.peer_inbox.read_text(encoding="utf-8"), (
+    assert "stopping" in wired_config.peer_inbox.read_text(encoding="utf-8"), (
         "the peer must still see us leave"
     )
-    assert not (sample_config.state_dir / "poller.pid").exists(), "pidfile must be cleaned up"
+    assert not (wired_config.state_dir / "poller.pid").exists(), "pidfile must be cleaned up"
 
 
 # --------------------------------------------------------------------------- #
@@ -375,3 +376,69 @@ def test_a_line_without_a_mailbox_stamp_is_untouched(sample_config, fake_transpo
     outbox = fake_transport.resolve_list(sample_config.output_list, "")
     item = fake_transport.read_incomplete(outbox)[0]
     assert "[this] bracketed thing" in item.title
+
+
+# --------------------------------------------------------------------------- #
+# The two edge cases: a list that is not selected, and one that stopped existing
+# --------------------------------------------------------------------------- #
+
+
+def test_run_refuses_to_start_with_nothing_selected(sample_config, fake_transport, capsys):
+    """No selection is a hard stop, not a fallback.
+
+    An unselected role used to resolve by matching a title at runtime — the exact
+    silent guess this feature removed. It now fails BEFORE the mailbox is claimed,
+    because starting, announcing a join and then dying every cycle is worse than
+    never starting: the peer sees a spoke that is present and silent.
+    """
+    rc = poller.run(sample_config, fake_transport, once=True)
+    out = capsys.readouterr().out
+
+    assert rc == 2
+    assert "no list is selected" in out
+    assert "voice-bridge lists --select" in out, "it must name the way out"
+    assert "voice-bridge setup" in out
+    assert (
+        not sample_config.peer_inbox.exists()
+        or "joined" not in sample_config.peer_inbox.read_text(encoding="utf-8")
+    ), "it must not announce a join it cannot honour"
+
+
+def test_a_deleted_list_stops_immediately_instead_of_retrying(wired_config, capsys):
+    """Deleted mid-run — retrying cannot bring it back.
+
+    The generic give-up message blames connectivity, which would send the user to
+    inspect a network that is working fine, looking for a list they deleted.
+    """
+    t = FakeTransport()  # the selected ids exist in the config but not here
+
+    rc = poller.run(wired_config, t, once=False, max_attempts=5, backoff_base=0)
+    out = capsys.readouterr().out
+
+    assert rc == 2
+    assert "a selected list is gone" in out
+    assert "voice-bridge lists --select" in out
+    assert "connectivity" not in out, "a deleted list is not a network problem"
+
+
+def test_a_non_transient_failure_does_not_blame_connectivity(wired_config, capsys):
+    """An unwritable list raises a permissions error, not a network one. The advice
+    has to match the fault, or it sends the user to the wrong place."""
+
+    class ReadOnly(FakeTransport):
+        def add_todo(self, lst, summary, notes="", *, needs_input=False):
+            raise PermissionError("403 Forbidden: list is read-only")
+
+    t = ReadOnly()
+    t.add_list("Vox-Message-Outbox", "list-vox-message-outbox")
+    t.add_list("Vox-Message-Inbox", "list-vox-message-inbox")
+    wired_config.our_inbox.parent.mkdir(parents=True, exist_ok=True)
+    wired_config.our_inbox.write_text("- [10:00] (manager) hi\n", encoding="utf-8")
+
+    rc = poller.run(wired_config, t, once=False, max_attempts=2, backoff_base=0)
+    out = capsys.readouterr().out
+
+    assert rc == 2
+    assert "403 Forbidden" in out, "the real cause must survive to the surface"
+    assert "check connectivity" not in out, "it must not send them to inspect the network"
+    assert "not a connectivity problem" in out

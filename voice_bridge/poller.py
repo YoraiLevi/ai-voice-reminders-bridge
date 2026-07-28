@@ -238,6 +238,43 @@ def _another_poller_is_running(cfg: Config) -> int | None:
     return pid if _alive(pid) else None
 
 
+def preflight_lists(cfg: Config, *, show=print) -> int:
+    """0 if both roles have a list selected; 2 with instructions otherwise.
+
+    Deliberately config-only: it contacts no backend, so it costs nothing and
+    cannot itself fail. "Nothing selected" is knowable without asking anyone, and
+    it is checked BEFORE the mailbox is claimed — starting, announcing a join and
+    then dying every cycle is worse than never starting, because the peer sees a
+    spoke that is present and silent.
+
+    This is where the last of the name-matching behaviour dies: an unselected role
+    used to fall back to matching a title at runtime, which is exactly the silent
+    guess the whole feature removed.
+
+    A selection that points at a DELETED list is not detectable here — that needs
+    the backend — so the run loop catches it as a LookupError and stops with the
+    same advice.
+    """
+    missing = [
+        (where, field)
+        for where, field, value in (
+            ("dictations", "inbox_list_id", cfg.inbox_list_id),
+            ("replies", "output_list_id", cfg.output_list_id),
+        )
+        if not value
+    ]
+    if not missing:
+        return 0
+
+    for where, field in missing:
+        show(f"error: no list is selected for {where} ({field} is empty).")
+    show("")
+    show("Nothing can be delivered until each role points at a real list. Fix it with:")
+    show("  voice-bridge setup           (guided: create the lists, then choose them)")
+    show("  voice-bridge lists --select  (choose from the lists you already have)")
+    return 2
+
+
 def run(
     cfg: Config,
     t: Transport,
@@ -276,6 +313,10 @@ def run(
         )
         return 2
 
+    # Cheap, backend-free, and BEFORE the mailbox is claimed.
+    if preflight_lists(cfg) != 0:
+        return 2
+
     pidfile = cfg.state_dir / "poller.pid"
     pidfile.parent.mkdir(parents=True, exist_ok=True)
     pidfile.write_text(str(os.getpid()), encoding="utf-8")
@@ -310,6 +351,16 @@ def run(
                         print("The session needs attention — run `voice-bridge icloud-login`.")
                         return 2
 
+                    if isinstance(exc, LookupError):
+                        # A selected list stopped existing — deleted on the phone,
+                        # most likely, mid-run. Retrying cannot bring it back, and
+                        # the generic give-up message blames connectivity, sending
+                        # the user to look at their network for a list they deleted.
+                        print(f"error: a selected list is gone — {exc}")
+                        print("       Nothing can be delivered until you choose another:")
+                        print("         voice-bridge lists --select")
+                        return 2
+
                     attempts += 1
                     kind = "transient" if is_transient(exc) else "unexpected"
                     if attempts >= max_attempts or once:
@@ -317,10 +368,15 @@ def run(
                             log.error("run --once failed: %s", exc)
                             print(f"error: {exc}")
                             return 2
-                        print(
-                            f"error: giving up after {attempts} {kind} failures — {exc}\n"
+                        # Only a TRANSIENT failure earns the connectivity advice.
+                        # Saying it after a permissions error or a bug sends the
+                        # user to inspect a network that was never the problem.
+                        hint = (
                             "       check connectivity, or whether a second poller is running."
+                            if kind == "transient"
+                            else "       this is not a connectivity problem — read the error above."
                         )
+                        print(f"error: giving up after {attempts} {kind} failures — {exc}\n{hint}")
                         return 2
 
                     log.warning("%s error: %s — retrying in %ss", kind, exc, backoff)

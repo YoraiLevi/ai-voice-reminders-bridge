@@ -25,7 +25,7 @@ from pathlib import Path
 
 from .config import Config, set_value
 from .factory import make_transport
-from .pins import resolve_pins
+from .selection import resolve_selection
 from .transport import ListRef, Transport
 from .util import read_env
 
@@ -86,14 +86,14 @@ def _duplicates_holding_items(t: Transport, refs: list[ListRef]) -> int:
 def _list_rows(cfg: Config, t: Transport, *, fix: bool = False) -> tuple[Row, Row]:
     """(auth row, lists row). If auth fails the lists row is UNKNOWN, never GREEN.
 
-    The verdicts come from `resolve_pins` — the same engine `setup` and
-    `lists --pin` use. This module used to decide for itself whether a pin was
+    The verdicts come from `resolve_selection` — the same engine `setup` and
+    `lists --select` use. This module used to decide for itself whether a pin was
     settled, which made three implementations of one question; they agreed only
     by luck, and the name comparison here was the one that missed case-twins.
     """
     try:
         t.connect()
-        plan = resolve_pins(cfg, t)
+        plan = resolve_selection(cfg, t)
     except Exception as exc:
         return (
             ("transport auth", "RED", f"{type(exc).__name__}: {exc}"),
@@ -102,8 +102,8 @@ def _list_rows(cfg: Config, t: Transport, *, fix: bool = False) -> tuple[Row, Ro
 
     problems: list[str] = []
     for res in plan.resolutions:
-        if res.status == "dangling":
-            # The pin is what polling resolves by, so the pin is what must exist.
+        if res.status == "stale":
+            # The selection is what polling resolves by, so it is what must exist.
             config_file = Path(cfg.source) if cfg.source.endswith(".json") else None
             if fix and config_file is not None and config_file.exists():
                 # CLEAR, never re-resolve. Re-resolving by name would hand back a
@@ -121,19 +121,16 @@ def _list_rows(cfg: Config, t: Transport, *, fix: bool = False) -> tuple[Row, Ro
                 )
             else:
                 problems.append(
-                    f"{res.field} {res.current!r} matches no list — "
-                    f"run `voice-bridge lists --pin`, or `doctor --fix` to clear it"
+                    f"the selected list no longer exists ({res.field}={res.current!r}) — "
+                    f"run `voice-bridge lists --select`, or `doctor --fix` to clear it"
                 )
-        elif res.status == "missing":
-            problems.append(f"no list named {res.name!r} — run `voice-bridge setup`")
-        elif res.status == "ambiguous":
-            # Resolve-by-name picks one of them arbitrarily. If a losing
-            # duplicate holds items, those dictations are invisible forever.
-            holding = _duplicates_holding_items(t, res.candidates)
-            detail = f"{len(res.candidates)} lists named {res.name!r}"
-            if holding:
-                detail += f", {holding} holding items"
-            problems.append(f"{detail} — pin it via `voice-bridge lists --pin`")
+        elif res.status == "unselected":
+            # No id means nothing to poll. Name matching used to paper over this by
+            # guessing, which is exactly what was removed: an unselected role is a
+            # real, reportable state rather than something to resolve silently.
+            problems.append(
+                f"{res.field} is not set — choose a list via `voice-bridge lists --select`"
+            )
 
     if problems:
         return (("transport auth", "GREEN", ""), ("lists", "WARN", "; ".join(problems)))

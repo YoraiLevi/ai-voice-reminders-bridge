@@ -125,12 +125,27 @@ def test_dangling_pin_is_not_green(sample_config, fake_transport, capsys):
     assert _rows(capsys)["lists"] != "GREEN"
 
 
-def test_valid_pin_is_green(sample_config, fake_transport, capsys):
-    ref = fake_transport.resolve_list("Vox-Message-Inbox", "")
-    cfg = dataclasses.replace(sample_config, inbox_list_id=ref.id)
+def test_both_roles_selected_is_green(sample_config, fake_transport, capsys):
+    """GREEN now requires BOTH roles to be selected by id.
+
+    It used to pass with neither, because an unset id fell back to matching the
+    name — so the row reported healthy about a list nobody had chosen.
+    """
+    inbox = fake_transport.resolve_list("Vox-Message-Outbox", "")
+    outbox = fake_transport.resolve_list("Vox-Message-Inbox", "")
+    cfg = dataclasses.replace(sample_config, inbox_list_id=inbox.id, output_list_id=outbox.id)
     _healthy_creds(cfg)
     doctor_mod.run(cfg, fake_transport)
     assert _rows(capsys)["lists"] == "GREEN"
+
+
+def test_an_unselected_role_is_not_green(sample_config, fake_transport, capsys):
+    """Nothing is polled for a role with no id, so silence here would be a lie."""
+    inbox = fake_transport.resolve_list("Vox-Message-Outbox", "")
+    cfg = dataclasses.replace(sample_config, inbox_list_id=inbox.id)  # outbox unset
+    _healthy_creds(cfg)
+    doctor_mod.run(cfg, fake_transport)
+    assert _rows(capsys)["lists"] != "GREEN"
 
 
 def test_unpinned_ghost_holding_items_warns(sample_config, ghost_transport, capsys):
@@ -181,6 +196,11 @@ def test_config_row_names_its_source(sample_config, fake_transport, capsys):
 
 
 def test_exit_code_is_the_worst_row(sample_config, fake_transport, capsys):
+    inbox = fake_transport.resolve_list("Vox-Message-Outbox", "")
+    outbox = fake_transport.resolve_list("Vox-Message-Inbox", "")
+    sample_config = dataclasses.replace(
+        sample_config, inbox_list_id=inbox.id, output_list_id=outbox.id
+    )
     _healthy_creds(sample_config)
     sample_config.mailbox_dir.mkdir(parents=True, exist_ok=True)
     sample_config.peer_inbox.touch()
@@ -226,7 +246,7 @@ def test_the_survey_alone_never_clears_a_pin(sample_config, ghost_transport, cap
 
     written = json.loads(Path(cfg.source).read_text(encoding="utf-8"))
     assert "inbox_list_id" not in written
-    assert "lists --pin" in capsys.readouterr().out, "it must name the way to re-pin"
+    assert "lists --select" in capsys.readouterr().out, "it must name the way to re-pin"
 
 
 def test_case_twin_lists_are_reported_as_a_conflict(sample_config, capsys):

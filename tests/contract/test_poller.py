@@ -112,17 +112,17 @@ def test_dry_run_touches_no_transport(sample_config, capsys):
     assert "spoke_name" in out and "example request" in out
 
 
-def test_run_once_error_returns_2_and_ejects(sample_config):
+def test_run_once_error_returns_2_and_ejects(wired_config):
     class Boom(FakeTransport):
         def read_incomplete(self, lst):
             raise RuntimeError("boom")
 
     t = _seeded(Boom)
-    assert poller.run(sample_config, t, once=True) == 2
-    assert "(vox) stopping" in sample_config.peer_inbox.read_text(encoding="utf-8")  # eject ran
+    assert poller.run(wired_config, t, once=True) == 2
+    assert "(vox) stopping" in wired_config.peer_inbox.read_text(encoding="utf-8")  # eject ran
 
 
-def test_run_loop_retries_then_recovers(sample_config, monkeypatch):
+def test_run_loop_retries_then_recovers(wired_config, monkeypatch):
     calls = {"n": 0}
 
     class Flaky(FakeTransport):
@@ -139,5 +139,5 @@ def test_run_loop_retries_then_recovers(sample_config, monkeypatch):
 
     monkeypatch.setattr(poller.time, "sleep", fake_sleep)
     with pytest.raises(_Stop):
-        poller.run(sample_config, _seeded(Flaky), once=False, interval=1)
+        poller.run(wired_config, _seeded(Flaky), once=False, interval=1)
     assert calls["n"] >= 3  # retried past both failures and recovered

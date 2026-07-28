@@ -71,10 +71,10 @@ def render_vox_prompt(cfg: Config) -> str:
         inbox_list=cfg.inbox_list,
         output_list=cfg.output_list,
     )
-    return rendered + _pinned_ids(cfg)
+    return rendered + _selected_ids(cfg)
 
 
-def _pinned_ids(cfg: Config) -> str:
+def _selected_ids(cfg: Config) -> str:
     """State the list identifiers when the config pins them, otherwise say nothing.
 
     Requested by the phone persona itself, which was having to guess which list it

@@ -304,3 +304,20 @@ def fake_ntfy(monkeypatch):
     monkeypatch.setattr(urllib.request, "urlopen", capture)
     yield captured
     urllib.request.urlopen = real
+
+
+@pytest.fixture
+def wired_config(sample_config):
+    """A config with both roles SELECTED, matching `fake_transport`'s ids.
+
+    Running now requires a selection for each role — an unselected role no longer
+    falls back to matching a list by name — so every test that actually starts the
+    loop needs one. Tests about the unselected state use `sample_config` instead.
+    """
+    import dataclasses
+
+    return dataclasses.replace(
+        sample_config,
+        inbox_list_id="list-vox-message-outbox",
+        output_list_id="list-vox-message-inbox",
+    )

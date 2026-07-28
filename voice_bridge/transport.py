@@ -103,6 +103,11 @@ class FakeTransport(Transport):
     so read_incomplete hides them. Deterministic ids."""
 
     _lists: list[ListRef] = field(default_factory=list)
+    #: Lists that exist but are not visible yet — the create-lag knob. iCloud sync
+    #: is not instant, so a list the user just made on their phone is absent from
+    #: the next read. `reveal()` is the test's stand-in for sync catching up, which
+    #: is what makes the picker's refresh loop drivable without a real account.
+    _unsynced: list[ListRef] = field(default_factory=list)
     _items: dict[str, list[Item]] = field(default_factory=dict)
     _completed: set[str] = field(default_factory=set)
     _seq: int = 0
@@ -117,6 +122,19 @@ class FakeTransport(Transport):
         self._lists.append(ref)
         self._items.setdefault(ref.id, [])
         return ref
+
+    def add_unsynced_list(self, name: str, list_id: str | None = None, **meta: object) -> ListRef:
+        """A list that exists on the device but has not synced yet."""
+        ref = ListRef(name=name, id=list_id or f"list-{name}", **meta)  # type: ignore[arg-type]
+        self._unsynced.append(ref)
+        return ref
+
+    def reveal(self) -> None:
+        """Sync catches up: everything created on-device is now visible."""
+        self._lists.extend(self._unsynced)
+        for ref in self._unsynced:
+            self._items.setdefault(ref.id, [])
+        self._unsynced.clear()
 
     def _next_id(self) -> str:
         self._seq += 1

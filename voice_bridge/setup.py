@@ -22,7 +22,7 @@ from . import ntfy
 from .config import Config, load_config, read_raw, resolve_config_path, set_value, write_raw
 from .errors import is_transient
 from .factory import make_transport
-from .mailbox import format_mailbox_line
+from .mailbox import append_line, format_mailbox_line
 from .selection import confirm_selection, pick, resolve_selection
 from .transport import ListRef, NotSupportedError, Transport
 
@@ -174,9 +174,11 @@ def verify(cfg: Config, t: Transport) -> dict[str, Any]:
     probe_id = t.add_todo(inbox, _PROBE, notes="safe to ignore; removed automatically")
     try:
         before = cfg.peer_inbox.read_text(encoding="utf-8") if cfg.peer_inbox.exists() else ""
-        line = format_mailbox_line(_PROBE, from_name=cfg.from_name)
-        with cfg.peer_inbox.open("a", encoding="utf-8") as fh:
-            fh.write(line + "\n")
+        # Through `append_line`, not a raw open: it creates the parent directory,
+        # and on a genuinely fresh machine - which is exactly when someone runs
+        # setup --verify - the mailbox does not exist yet. A raw open crashed the
+        # guided flow at its last step, after everything else had succeeded.
+        append_line(cfg.peer_inbox, format_mailbox_line(_PROBE, from_name=cfg.from_name))
         after = cfg.peer_inbox.read_text(encoding="utf-8")
         report_out["dictation_delivered"] = len(after) > len(before) and _PROBE in after
     finally:

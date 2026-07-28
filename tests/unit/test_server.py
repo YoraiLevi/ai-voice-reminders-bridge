@@ -178,3 +178,37 @@ def test_missing_bcrypt_explains_the_extra(tmp_path, tmp_mailbox, monkeypatch):
     with pytest.raises(server.ServerExtraMissing) as err:
         server.init(cfg, user="tester", password="secret")
     assert "server" in str(err.value)
+
+
+def test_server_liveness_uses_the_one_probe(sample_config):
+    """Found in a QA dress rehearsal, and it had teeth.
+
+    This module carried its OWN `_alive` using `os.kill(pid, 0)` - the exact bug
+    FMA-17 fixed in `status._alive`, missed because there were two copies. On
+    Windows that call is not a query, so a RUNNING server was reported dead:
+    `status` showed `pid: None`, `stop` would have said "not running" and deleted
+    the pidfile, and - worst - `teardown` asks `server.status()` whether it is safe
+    to delete the store, so `uninstall` would have removed `collections/` out from
+    under a live server.
+
+    Pinning the identity, not just the behaviour: a second copy is a second chance
+    to be wrong, and this is the copy that was.
+    """
+    from voice_bridge import server, status
+
+    assert server._alive is status._alive
+
+
+def test_a_running_process_is_reported_as_running(sample_config, tmp_path):
+    """The behaviour the identity above buys: our own pid is alive by definition."""
+    import dataclasses
+    import os
+
+    from voice_bridge import server
+
+    cfg = dataclasses.replace(sample_config, state_dir=tmp_path)
+    paths = server.paths(cfg)
+    paths.base.mkdir(parents=True, exist_ok=True)
+    paths.pidfile.write_text(str(os.getpid()), encoding="utf-8")
+
+    assert server.status(cfg)["pid"] == os.getpid(), "a live pid must be reported live"

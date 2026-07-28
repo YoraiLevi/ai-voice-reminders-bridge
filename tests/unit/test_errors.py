@@ -204,3 +204,28 @@ def test_caldav_errors_map_to_exit_1_with_the_right_guidance():
         raise_command_error(down)
     assert err.value.code == 1
     assert "transport unavailable" in err.value.msg
+
+
+def test_both_http_client_families_are_recognised_as_transient():
+    """We do not choose our HTTP libraries: pyicloud speaks `requests`, caldav 3.x
+    speaks `niquests`. Knowing only one made every CalDAV network error
+    non-transient, which produced a raw traceback out of `setup` and told the run
+    loop that a refused connection "is not a connectivity problem".
+
+    Found in a QA rehearsal rather than by a test, because the tests constructed
+    exceptions from the library we ASSUMED rather than the one the dependency
+    actually uses. This test pins both families by name.
+    """
+    import niquests.exceptions as niquests_exc
+    import requests.exceptions as requests_exc
+
+    for family in (requests_exc, niquests_exc):
+        assert is_transient(family.ConnectionError("refused")), family.__name__
+        assert is_transient(family.Timeout("slow")), family.__name__
+
+
+def test_a_plain_oserror_is_still_not_transient():
+    """The guard on the above: matching OSError broadly would swallow
+    FileNotFoundError and friends, which are not worth retrying."""
+    assert is_transient(OSError("disk gone")) is False
+    assert is_transient(FileNotFoundError("nope")) is False

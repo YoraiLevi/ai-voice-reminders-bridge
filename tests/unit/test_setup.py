@@ -135,3 +135,22 @@ def test_auth_failure_is_not_reported_as_missing_lists(sample_config, boom_trans
     t = boom_transport(ICloudError("session needs 2FA"))
     with pytest.raises(ICloudError):
         setup_mod.provision(sample_config, t)
+
+
+def test_verify_works_on_a_machine_with_no_mailbox_yet(sample_config, fake_transport):
+    """Found in a QA rehearsal: this is the CLEAN-INSTALL path.
+
+    `verify` opened the peer inbox directly, so on a fresh machine - exactly when
+    someone runs the guided setup - it raised FileNotFoundError at the last step,
+    after credentials, lists and selection had all succeeded. It now writes through
+    `append_line`, the one writer that creates the parent directory.
+    """
+    import shutil
+
+    shutil.rmtree(sample_config.mailbox_dir, ignore_errors=True)
+    assert not sample_config.mailbox_dir.exists(), "simulating a genuinely fresh machine"
+
+    result = setup_mod.verify(sample_config, fake_transport)
+
+    assert result["dictation_delivered"] is True
+    assert sample_config.peer_inbox.exists()

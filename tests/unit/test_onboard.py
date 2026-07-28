@@ -213,14 +213,19 @@ def test_the_welcome_promises_nothing_happens_unasked(sample_config):
 # --------------------------------------------------------------------------- #
 
 
-def test_a_closed_stream_takes_the_safe_default():
-    """isatty lies under MSYS/Git Bash, so EOF must be handled everywhere a
-    question is asked. The default is what the prompt already showed."""
+def test_a_closed_stream_is_handled_everywhere_a_question_is_asked():
+    """isatty lies under MSYS/Git Bash, so EOF must never reach the user as a hang.
+
+    This test used to assert that EOF took the DISPLAYED default - which encoded a
+    real bug: on "Start the bridge now? [Y/n]" that meant a scripted run launched a
+    poller nobody asked for. EOF is now always No; see
+    test_a_closed_stream_never_authorises_an_action.
+    """
 
     def _eof(_prompt):
         raise EOFError
 
-    assert onboard._yes(_eof, "carry on?", default=True) is True
+    assert onboard._yes(_eof, "carry on?", default=True) is False
     assert onboard._yes(_eof, "overwrite?", default=False) is False
 
 
@@ -292,3 +297,27 @@ def test_the_prompt_is_printed_before_the_clipboard_question(sample_config, monk
 
     prompt_line = next(i for i, line in enumerate(out) if "You are VOX" in line)
     assert prompt_line < asked_at[0], "the prompt must be on screen before the question"
+
+
+def test_a_closed_stream_never_authorises_an_action(sample_config):
+    """Found by running the guided flow, not by a test.
+
+    A scripted setup hit EOF on "Start the bridge now? [Y/n]", took the DISPLAYED
+    default of Yes, and launched a poller that never returned. On iCloud that would
+    have started polling a live account unattended.
+
+    A bare Enter is a real keystroke and honours the shown default; a closed stream
+    is not an answer and must never say yes.
+    """
+
+    def _eof(_prompt):
+        raise EOFError
+
+    assert onboard._yes(_eof, "start something?", default=True) is False
+    assert onboard._yes(_eof, "overwrite something?", default=False) is False
+
+
+def test_a_bare_enter_still_honours_the_shown_default(sample_config):
+    """The other half: a real person pressing Enter meant the default."""
+    assert onboard._yes(lambda _p: "", "carry on?", default=True) is True
+    assert onboard._yes(lambda _p: "", "overwrite?", default=False) is False

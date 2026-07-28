@@ -261,3 +261,46 @@ def test_case_twin_lists_are_reported_as_a_conflict(sample_config, capsys):
 
     doctor_mod.run(sample_config, t)
     assert _rows(capsys)["lists"] != "GREEN"
+
+
+def test_environment_credentials_are_reported_because_they_win(
+    sample_config, fake_transport, capsys, monkeypatch
+):
+    """Found in a QA rehearsal, and it cost an hour of confusion.
+
+    `radicale-server init` writes credentials and prints where it put them, so the
+    user reasonably believes those are in use. An inherited ICLOUD_APPLE_ID
+    silently authenticated as someone else and the only symptom was a bare 401.
+
+    The precedence is deliberate and stays - scripted runs depend on env vars. What
+    was wrong was that nothing said so, which is the false-belief class: the tool
+    named a file and then used something else.
+    """
+    _healthy_creds(sample_config)
+    monkeypatch.setenv("ICLOUD_APPLE_ID", "someone-else")
+
+    doctor_mod.run(sample_config, fake_transport)
+    out = capsys.readouterr().out
+
+    assert _rows(capsys) or True  # rows already consumed above; assert on text
+    assert "ICLOUD_APPLE_ID" in out
+    assert "environment" in out
+    assert "WIN over" in out
+
+
+def test_no_environment_credentials_means_no_such_warning(
+    sample_config, fake_transport, capsys, monkeypatch
+):
+    """It must not cry wolf on a clean shell."""
+    for key in (
+        "ICLOUD_APPLE_ID",
+        "ICLOUD_USERNAME",
+        "ICLOUD_APP_PASSWORD",
+        "ICLOUD_PASSWORD",
+        "ICLOUD_CALDAV_URL",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    _healthy_creds(sample_config)
+
+    doctor_mod.run(sample_config, fake_transport)
+    assert "WIN over" not in capsys.readouterr().out

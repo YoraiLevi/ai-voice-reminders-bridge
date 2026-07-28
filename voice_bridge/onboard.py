@@ -48,13 +48,24 @@ def _step(show: Show, n: int, title: str, *, then: str = "") -> None:
 
 
 def _yes(ask: Ask, prompt: str, *, default: bool = True) -> bool:
-    """A yes/no question whose DEFAULT is shown and honoured on a bare Enter."""
+    """A yes/no question whose DEFAULT is shown and honoured on a bare Enter.
+
+    **EOF is not the default - it is NO.** A bare Enter is a real keystroke from a
+    real person, so honouring the shown default is right. A closed stream is not an
+    answer at all, and this codebase's rule everywhere else is that no answer means
+    change nothing.
+
+    Collapsing the two was a real bug, found by running the flow: a scripted setup
+    hit EOF on "Start the bridge now? [Y/n]", took the displayed Yes, and launched a
+    poller that never returned. On iCloud that would have started polling a live
+    account unattended, from a run nobody was watching.
+    """
     suffix = "[Y/n]" if default else "[y/N]"
     while True:
         try:
             answer = ask(f"{prompt} {suffix}: ").strip().lower()
         except EOFError:
-            return default
+            return False
         if not answer:
             return default
         if answer in ("y", "yes"):

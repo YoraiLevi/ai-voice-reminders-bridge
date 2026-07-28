@@ -25,6 +25,11 @@ try:  # optional extra - present with [icloud] or [caldav]
 except ImportError:  # pragma: no cover - exercised by the dependency-free install
     _requests_exc = None  # type: ignore[assignment]
 
+try:  # caldav 3.x speaks HTTP through niquests, NOT requests
+    from niquests import exceptions as _niquests_exc
+except ImportError:  # pragma: no cover - exercised by the dependency-free install
+    _niquests_exc = None  # type: ignore[assignment]
+
 try:  # optional extra - present with [caldav] or [server]
     from caldav.lib import error as _dav
 except ImportError:  # pragma: no cover - exercised by the dependency-free install
@@ -60,16 +65,23 @@ def _is_throttle(exc: BaseException) -> bool:
 
 
 def _is_requests_network(exc: BaseException) -> bool:
-    """A connection/timeout error from `requests`.
+    """A connection/timeout error from an HTTP client library.
 
     Named explicitly, because `requests.exceptions.ConnectionError` is *not*
     `builtins.ConnectionError` - its MRO runs `RequestException -> OSError`.
     Matching the builtin misses the commonest mid-poll transient; matching
     `OSError` broadly would swallow `FileNotFoundError` and friends.
+
+    BOTH libraries are checked, because we do not choose them: pyicloud speaks
+    `requests` and caldav 3.x speaks `niquests`. Knowing only one made every
+    CalDAV network error non-transient, which surfaced as a raw traceback out of
+    `setup` and - worse - told the run loop that a connection refusal "is not a
+    connectivity problem". Found in a QA rehearsal, not by a test, because the
+    tests constructed the exceptions of the library we assumed rather than the one
+    the dependency actually uses.
     """
-    if _requests_exc is None:
-        return False
-    return isinstance(exc, (_requests_exc.ConnectionError, _requests_exc.Timeout))
+    families = [m for m in (_requests_exc, _niquests_exc) if m is not None]
+    return any(isinstance(exc, (m.ConnectionError, m.Timeout)) for m in families)
 
 
 def _dav_status(exc: BaseException) -> int | None:

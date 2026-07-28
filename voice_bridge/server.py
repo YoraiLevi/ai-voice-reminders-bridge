@@ -17,6 +17,14 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .config import Config
+
+# ONE liveness probe for the whole package. This module had its own copy using
+# os.kill(pid, 0), which on Windows is not a query at all: it maps to
+# GenerateConsoleCtrlEvent, so it reported a RUNNING server as dead. FMA-17 fixed
+# that in status._alive and this second copy was missed - which is the argument
+# against second copies, because it silently defeated the teardown guard that asks
+# server.status() whether it is safe to delete the store.
+from .status import _alive
 from .util import write_env
 
 
@@ -228,14 +236,6 @@ def _pid(cfg: Config) -> int | None:
         return int(p.pidfile.read_text(encoding="utf-8").strip())
     except ValueError:
         return None
-
-
-def _alive(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-        return True
-    except OSError:
-        return False
 
 
 def stop(cfg: Config) -> int:

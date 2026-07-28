@@ -44,6 +44,30 @@ _QUOTES = ("'", '"')
 Row = tuple[str, str, str]
 
 
+#: Credential fields an environment variable can supply. Reported, never blocked:
+#: env-over-file is a legitimate convention, and scripted runs depend on it.
+_ENV_CRED_KEYS = (
+    "ICLOUD_APPLE_ID",
+    "ICLOUD_USERNAME",
+    "ICLOUD_APP_PASSWORD",
+    "ICLOUD_PASSWORD",
+    "ICLOUD_CALDAV_URL",
+)
+
+
+def _env_overrides() -> list[str]:
+    """Credential names set in the environment, which WIN over the creds file.
+
+    Found in a QA rehearsal: `radicale-server init` writes credentials and prints
+    where it put them, so the user reasonably believes those are in use - but an
+    inherited `ICLOUD_APPLE_ID` silently authenticated as someone else, and the
+    only symptom was a bare 401. The precedence is fine; the silence was not.
+    """
+    import os
+
+    return [k for k in _ENV_CRED_KEYS if os.environ.get(k)]
+
+
 def _creds_row(cfg: Config) -> Row:
     if not cfg.creds_env.exists():
         return ("creds file", "RED", f"create {cfg.creds_env}")
@@ -62,6 +86,14 @@ def _creds_row(cfg: Config) -> Row:
         for k in required
         if len(values.get(k, "")) >= 2 and values[k][0] == values[k][-1] and values[k][0] in _QUOTES
     ]
+    if overrides := _env_overrides():
+        return (
+            "creds file",
+            "WARN",
+            f"{', '.join(overrides)} set in the environment - those WIN over "
+            f"{cfg.creds_env}, so the file may not be what is actually used",
+        )
+
     if wrapped:
         return (
             "creds file",

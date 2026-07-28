@@ -246,8 +246,14 @@ def run_setup(
     Returns 0, or 2 on a guard error / a failed verification — a `--verify` that
     exits 0 when a leg failed would defeat its own purpose.
     """
+    from . import onboard
+
     path, _ = resolve_config_path(config_path, must_exist=False)
     assert path is not None  # must_exist=False always names a target
+
+    guided = not as_json and _is_tty()
+    if guided:
+        onboard.welcome(print)
 
     # Guided prompts BEFORE the config is written, so answers actually land in it.
     # `--set` values pre-answer their fields and are not asked about again.
@@ -258,6 +264,20 @@ def run_setup(
 
     write_config(path, transport=transport, overrides=preset)
     cfg = load_config(path)
+
+    if guided and transport == "icloud":
+        # Offered INLINE rather than named in a footnote: knowing the command
+        # exists is not the same as being walked to it, and the gap between those
+        # is where a first run stalls.
+        def _login() -> int:
+            from .login import icloud_login
+
+            return icloud_login(cfg)
+
+        if not onboard.step_credentials(cfg, ask=input, show=print, login=_login):
+            onboard.farewell(print, ready=False)
+            return 0
+        cfg = onboard.reload_config(path)
 
     if transport == "radicale":
         from . import server as server_mod
@@ -276,6 +296,10 @@ def run_setup(
         # Radicale CAN create the lists, but doing so silently would make the two
         # transports behave differently for no reason the user picked. Asking
         # unifies them: answer no and the flow is exactly iCloud's.
+        if guided:
+            print("")
+            print("[2/5] Your lists")
+            print("        next: notifications")
         auto = True
         if cfg.transport == "radicale" and _is_tty():
             auto = ask_radicale_creation(ask=input, show=print)
@@ -323,6 +347,39 @@ def run_setup(
             print("verification FAILED — a message did not complete the round trip.")
             return 2
         print("verified: a message makes the round trip.")
+
+    if not guided:
+        return 0
+
+    # Steps 3-5 run only on the guided path. `--verify` on its own stays exactly
+    # what it was, so a scripted check does not suddenly start asking questions.
+    onboard.step_notifications(cfg, config_path=path, ask=input, show=print)
+    cfg = onboard.reload_config(path)
+
+    print("")
+    print("[4/5] A test message")
+    print("        next: your phone prompt")
+    if not do_verify:
+        if onboard._yes(input, "  Send a real message round-trip now?"):
+            result = verify(cfg, t)
+            ok = result["dictation_delivered"] and result["reply_delivered"]
+            print(f"  [{'ok  ' if ok else 'FAIL'}] a message makes the round trip")
+            if not ok:
+                print("       something is not connected yet — `voice-bridge doctor` says what.")
+        else:
+            print("  skipped — check it later with:  voice-bridge setup --verify")
+    else:
+        print("  already verified above.")
+
+    onboard.step_phone_prompt(cfg, ask=input, show=print)
+
+    print("")
+    if onboard._yes(input, "Start the bridge now?"):
+        print("  starting — press Ctrl-C to stop.")
+        from .runner import run_command
+
+        return run_command(config_path=str(path))
+    onboard.farewell(print, ready=True)
     return 0
 
 

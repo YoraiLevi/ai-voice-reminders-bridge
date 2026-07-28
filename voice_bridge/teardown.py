@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Callable
 
 from .config import Config
+from .prompting import ask as _ask_line
 
 Ask = Callable[[str], str]
 Show = Callable[[str], None]
@@ -195,23 +196,40 @@ def blocking_process(cfg: Config) -> str:
     return ""
 
 
+def _table(rows: list[tuple[str, str, str]]) -> list[str]:
+    """Lay out `(description, note, path)` as aligned columns.
+
+    Description first because it is what the user is deciding about - "credentials"
+    is the thing they either want gone or do not; the path is the evidence, and
+    goes last where it can run long without pushing anything out of line.
+
+    Padded with spaces rather than emitted as literal tabs: a tab's width is a
+    terminal setting, so real tabs align only by luck once the descriptions differ
+    in length. Computing the width here makes the columns line up everywhere.
+    """
+    if not rows:
+        return []
+    w0 = max(len(r[0]) for r in rows)
+    w1 = max(len(r[1]) for r in rows)
+    return [f"  {desc:<{w0}}  {note:<{w1}}  {path}".rstrip() for desc, note, path in rows]
+
+
 def preview(plan: Plan, *, show: Show) -> int:
     """Print the whole account: what goes, what stays, why. Returns removal count."""
     going = [a for a in plan.remove if a.exists]
 
     show("")
     show(f"{plan.verb} will DELETE:")
-    for art in plan.remove:
-        mark = "" if art.exists else "   (not present)"
-        show(f"  {art.path}{mark}")
-        show(f"      {art.label}")
+    for line in _table(
+        [(a.label, "" if a.exists else "(not present)", str(a.path)) for a in plan.remove]
+    ):
+        show(line)
 
     if plan.keep:
         show("")
         show("It will NOT touch:")
-        for art in plan.keep:
-            show(f"  {art.path}")
-            show(f"      {art.label} - kept: {art.kept}")
+        for line in _table([(a.label, f"kept: {a.kept}", str(a.path)) for a in plan.keep]):
+            show(line)
 
     show("")
     show("Nothing on your Apple or GitHub account is touched: reminder lists and")
@@ -221,10 +239,19 @@ def preview(plan: Plan, *, show: Show) -> int:
 
 
 def confirm(plan: Plan, *, ask: Ask, show: Show) -> bool:
-    """Require the verb typed in full. Anything else means no."""
+    """Require the verb typed in full. Anything else means no.
+
+    The prompt spells out *all caps, exactly* because the comparison is exact and
+    the failure is silent otherwise: someone types `uninstall`, is told "not
+    confirmed", and has no way to tell a rejected answer from a mistyped one. The
+    strictness stays - the point of this gate is the extra second - but a rule the
+    user cannot see is a trap rather than a safeguard.
+    """
     word = plan.confirm_word
     try:
-        answer = ask(f"Type {word} to confirm: ").strip()
+        answer = ask(
+            f"Type {word} (all caps, exactly) to confirm - anything else cancels: "
+        ).strip()
     except EOFError:
         # A stream that ends is not consent, and this is the command where
         # taking an answer nobody gave cannot be undone.
@@ -264,7 +291,7 @@ def run_teardown(
     keep_mailbox: bool = False,
     assume_yes: bool = False,
     is_tty: Callable[[], bool] | None = None,
-    ask: Ask = input,
+    ask: Ask = _ask_line,
     show: Show = print,
 ) -> int:
     """Preview, confirm, remove. 0 done or nothing to do; 2 refused or failed."""

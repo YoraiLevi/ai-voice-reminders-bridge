@@ -29,6 +29,7 @@ from .config import (
 )
 from .commands import connected_transport, list_command, peek_command, select_command
 from .errors import CommandError
+from .prompting import Cancelled
 from .runner import run_command
 
 _TRANSPORTS = ("icloud", "radicale")
@@ -301,6 +302,12 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         return _dispatch(args)
+    except Cancelled:
+        # Ctrl-C at a prompt is a decision, not a fault. ONE handler, because the
+        # prompts are many and a traceback at the moment someone is being careful
+        # suggests the tool broke when it simply stopped.
+        print("cancelled - nothing was done.")
+        return 1
     except CommandError as exc:
         # A failure we understand: report it plainly with its own exit code.
         print(f"error: {exc.msg}")

@@ -24,6 +24,7 @@ from pathlib import Path
 
 from . import ntfy
 from .config import Config
+from .prompting import ask
 
 
 def _is_tty() -> bool:
@@ -31,7 +32,7 @@ def _is_tty() -> bool:
 
 
 def _ask_consent(prompt: str) -> bool:  # pragma: no cover - interactive
-    return input(prompt).strip().lower().startswith("y")
+    return ask(prompt).strip().lower().startswith("y")
 
 
 def _consent_prompt(file: str, *, public: bool) -> str:

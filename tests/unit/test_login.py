@@ -13,6 +13,7 @@ import io
 import pytest
 
 from voice_bridge import login as login_mod
+from voice_bridge import prompting
 from voice_bridge.login import resolve_code
 from voice_bridge.util import read_secret, write_env
 
@@ -174,7 +175,7 @@ def test_password_stdin_does_not_call_getpass(sample_config, fake_icloud, monkey
     def no_getpass(*a, **k):
         raise AssertionError("getpass must not be used when the password is piped")
 
-    monkeypatch.setattr(login_mod.getpass, "getpass", no_getpass)
+    monkeypatch.setattr(prompting._getpass, "getpass", no_getpass)
     monkeypatch.setattr(login_mod.sys, "stdin", io.StringIO(GOOD + "\n"))
     assert login_mod.icloud_login(sample_config, password_stdin=True, code="123456") == 0
 
@@ -189,7 +190,7 @@ def test_interactive_password_goes_through_getpass(sample_config, fake_icloud, m
 
     monkeypatch.setattr(login_mod, "_prompt_apple_id", lambda: "me@icloud.com")
     monkeypatch.setattr(login_mod, "_is_tty", lambda: True)
-    monkeypatch.setattr(login_mod.getpass, "getpass", fake_getpass)
+    monkeypatch.setattr(prompting._getpass, "getpass", fake_getpass)
     assert login_mod.icloud_login(sample_config, code="123456") == 0
     assert seen.get("called") is True
 

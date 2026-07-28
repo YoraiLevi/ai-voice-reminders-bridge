@@ -23,6 +23,8 @@ from .config import Config, load_config, read_raw, resolve_config_path, set_valu
 from .errors import is_transient
 from .factory import make_transport
 from .mailbox import append_line, format_mailbox_line
+from .prompting import Cancelled
+from .prompting import ask as _ask_line
 from .selection import confirm_selection, pick, resolve_selection
 from .transport import ListRef, NotSupportedError, Transport
 
@@ -43,7 +45,7 @@ def _is_tty() -> bool:
 
 def _ask(field: str, label: str, default: str) -> str:  # pragma: no cover - interactive
     """The field name is passed too so callers and tests can key on it, not on prose."""
-    return input(f"  {label} [{default}]: ").strip()
+    return _ask_line(f"  {label} [{default}]: ").strip()
 
 
 def prompt_fields(cfg: Config, *, preset: dict[str, Any]) -> dict[str, Any]:
@@ -276,7 +278,7 @@ def run_setup(
 
             return icloud_login(cfg)
 
-        if not onboard.step_credentials(cfg, ask=input, show=print, login=_login):
+        if not onboard.step_credentials(cfg, ask=_ask_line, show=print, login=_login):
             onboard.farewell(print, ready=False)
             return 0
         cfg = onboard.reload_config(path)
@@ -304,7 +306,7 @@ def run_setup(
             print("        next: notifications")
         auto = True
         if cfg.transport == "radicale" and _is_tty():
-            auto = ask_radicale_creation(ask=input, show=print)
+            auto = ask_radicale_creation(ask=_ask_line, show=print)
         for line in provision(cfg, t, created=created if auto else None, create=auto):
             print(line)
         # Choose the lists NOW. Nothing is inferred from a title: either we just
@@ -314,6 +316,12 @@ def run_setup(
     except NotSupportedError as exc:
         print(f"error: {exc}")
         return 2
+    except Cancelled:
+        # This block contains interactive prompts (list creation, selection), so a
+        # Ctrl-C arrives as an exception like any other and the broad handler below
+        # would dress it up as a transport failure - telling the user their backend
+        # is unreachable when they simply stopped. Re-raise to the one CLI handler.
+        raise
     except Exception as exc:
         # Can't reach the backend yet - almost always "no credentials on a fresh
         # machine". The config IS written, so say what remains, mirroring the
@@ -355,14 +363,14 @@ def run_setup(
 
     # Steps 3-5 run only on the guided path. `--verify` on its own stays exactly
     # what it was, so a scripted check does not suddenly start asking questions.
-    onboard.step_notifications(cfg, config_path=path, ask=input, show=print)
+    onboard.step_notifications(cfg, config_path=path, ask=_ask_line, show=print)
     cfg = onboard.reload_config(path)
 
     print("")
     print("[4/5] A test message")
     print("        next: your phone prompt")
     if not do_verify:
-        if onboard._yes(input, "  Send a real message round-trip now?"):
+        if onboard._yes(_ask_line, "  Send a real message round-trip now?"):
             result = verify(cfg, t)
             ok = result["dictation_delivered"] and result["reply_delivered"]
             print(f"  [{'ok  ' if ok else 'FAIL'}] a message makes the round trip")
@@ -373,10 +381,10 @@ def run_setup(
     else:
         print("  already verified above.")
 
-    onboard.step_phone_prompt(cfg, ask=input, show=print)
+    onboard.step_phone_prompt(cfg, ask=_ask_line, show=print)
 
     print("")
-    if onboard._yes(input, "Start the bridge now?"):
+    if onboard._yes(_ask_line, "Start the bridge now?"):
         print("  starting - press Ctrl-C to stop.")
         from .runner import run_command
 
@@ -402,7 +410,7 @@ def settle_selection(
     *,
     config_path: Path,
     created: dict[str, str] | None = None,
-    ask: Callable[[str], str] = input,
+    ask: Callable[[str], str] = _ask_line,
     show: Callable[[str], None] = print,
     is_tty: Callable[[], bool] | None = None,
 ) -> int:

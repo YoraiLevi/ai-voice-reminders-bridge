@@ -27,12 +27,12 @@ terminal, which is why its branches are covered at all.
 
 from __future__ import annotations
 
-import getpass
 import sys
 from pathlib import Path
 from typing import Any, TextIO
 
 from .config import Config
+from .prompting import ask, ask_secret
 from .util import read_secret, write_env
 
 _QUOTES = ("'", '"')
@@ -49,7 +49,7 @@ def resolve_code(
         return Path(code_file).read_text(encoding="utf-8").strip()
     if code_stdin:
         return (stdin or sys.stdin).readline().strip()
-    return input("Enter the 6-digit 2FA code: ").strip()
+    return ask("Enter the 6-digit 2FA code: ").strip()
 
 
 # --------------------------------------------------------------------------- #
@@ -70,18 +70,18 @@ def _is_tty() -> bool:
 
 
 def _prompt_apple_id() -> str:
-    return input("Apple ID (email): ").strip()
+    return ask("Apple ID (email): ").strip()
 
 
 def _read_password(*, from_stdin: bool = False) -> str:
     """Never from argv. Piped input is taken verbatim apart from its line ending."""
     if from_stdin:
         return sys.stdin.readline().rstrip("\n").rstrip("\r")
-    return getpass.getpass("Apple ID password (hidden): ")
+    return ask_secret("Apple ID password (hidden): ")
 
 
 def _confirm_use_existing() -> bool:
-    return (input("use existing credentials? [Y/n] ").strip().lower() or "y").startswith("y")
+    return (ask("use existing credentials? [Y/n] ").strip().lower() or "y").startswith("y")
 
 
 # --------------------------------------------------------------------------- #
@@ -178,9 +178,10 @@ def icloud_login(  # noqa: C901 - a flat state machine; clearer read end to end
             # rather than a bare "cancelled".
             print(no_terminal_guidance)
             return 2
-        except KeyboardInterrupt:
-            print("error: cancelled before credentials were entered.")
-            return 2
+        # Ctrl-C is NOT caught here. `ask`/`ask_secret` turn it into `Cancelled`,
+        # which the CLI's one handler reports - so this path does not grow a second
+        # wording for the same keystroke. Nothing has been written at this point,
+        # so unwinding loses nothing.
         persist_after = True
     else:
         use_id, use_pw = str(stored_id), str(stored_pw)

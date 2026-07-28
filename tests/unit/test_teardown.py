@@ -364,3 +364,98 @@ def test_a_total_uninstall_may_claim_nothing_remains(installed):
     cfg, cfg_file = installed
     _, out = _run(cfg, cfg_file, "uninstall", ["UNINSTALL"])
     assert "Nothing of this system remains" in out
+
+
+# --------------------------------------------------------------------------- #
+# The preview as a table, and the confirm gate as a stated rule
+# --------------------------------------------------------------------------- #
+
+
+def test_the_preview_puts_the_description_first_and_the_path_last(installed):
+    """One row per artifact, in the order the reader decides in.
+
+    The old layout spent two lines per path, with the path on top - so a preview of
+    a dozen artifacts scrolled, and the thing being decided about ("credentials")
+    sat underneath the evidence for it. Description first, path last, one line each.
+    """
+    cfg, cfg_file = installed
+    _, out = _run(cfg, cfg_file, "uninstall", [""])
+
+    rows = [ln for ln in out.splitlines() if "credentials" in ln]
+    assert rows, "the credentials artifact was not previewed"
+    row = rows[0]
+    assert row.index("credentials") < row.index(str(cfg.creds_env)), (
+        "the description must come before the path"
+    )
+    assert row.rstrip().endswith(str(cfg.creds_env)), "the path is the last column"
+
+
+def test_the_preview_columns_line_up(installed):
+    """Alignment is the whole reason this is a table rather than a list."""
+    cfg, cfg_file = installed
+    _, out = _run(cfg, cfg_file, "uninstall", [""])
+
+    starts = {
+        ln.index(str(cfg_file.parent))
+        for ln in out.splitlines()
+        if ln.startswith("  ") and str(cfg_file.parent) in ln and "kept:" not in ln
+    }
+    assert len(starts) == 1, f"path column starts at differing offsets: {sorted(starts)}"
+
+
+def test_the_not_present_marker_is_its_own_column(sample_config, tmp_path):
+    cfg_file = tmp_path / "voice-bridge.json"
+    ask, show, out = _io([""])
+    teardown.run_teardown(
+        sample_config, cfg_file, verb="uninstall", ask=ask, show=show, is_tty=lambda: True
+    )
+    rows = [ln for ln in out if "(not present)" in ln]
+    assert rows
+    for row in rows:
+        body = row.strip()
+        assert not body.startswith("(not present)"), "the description comes first"
+        assert body.index("(not present)") < body.rindex(str(tmp_path)), (
+            "the marker sits between the description and the path"
+        )
+
+
+def test_the_kept_section_is_the_same_table(installed):
+    """Both halves of the account read the same way, or the reader re-learns it."""
+    cfg, cfg_file = installed
+    _, out = _run(cfg, cfg_file, "uninstall", [""], keep_mailbox=True)
+
+    rows = [ln for ln in out.splitlines() if "kept: --keep-mailbox" in ln]
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.index("your mailbox") < row.index("kept:") < row.index(str(cfg.mailbox_dir))
+
+
+def test_the_confirm_prompt_states_the_all_caps_rule(installed):
+    """The comparison is exact, so the rule must be visible.
+
+    Someone who types `uninstall` and is told "not confirmed" cannot tell a rejected
+    answer from a mistyped one. The strictness stays; the secrecy does not.
+    """
+    cfg, cfg_file = installed
+    asked: list[str] = []
+
+    def ask(prompt: str) -> str:
+        asked.append(prompt)
+        return ""
+
+    teardown.run_teardown(
+        cfg, cfg_file, verb="uninstall", ask=ask, show=lambda _s: None, is_tty=lambda: True
+    )
+    assert asked, "no confirmation was requested"
+    prompt = asked[0]
+    assert "UNINSTALL" in prompt
+    assert "all caps" in prompt.lower()
+    assert "cancels" in prompt.lower()
+
+
+def test_a_lowercase_answer_is_refused_and_removes_nothing(installed):
+    cfg, cfg_file = installed
+    code, out = _run(cfg, cfg_file, "uninstall", ["uninstall"])
+    assert code == 2
+    assert "not confirmed" in out
+    assert cfg.creds_env.exists(), "a rejected answer must remove nothing"

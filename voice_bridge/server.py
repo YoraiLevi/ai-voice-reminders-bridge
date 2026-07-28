@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .config import Config
+from .prompting import ask_secret
 
 # ONE liveness probe for the whole package. This module had its own copy using
 # os.kill(pid, 0), which on Windows is not a query at all: it maps to
@@ -161,9 +162,8 @@ def init(
 
 
 def _prompt_password() -> str:  # pragma: no cover - interactive
-    import getpass
 
-    pw = getpass.getpass("Radicale password (new): ")
+    pw = ask_secret("Radicale password (new): ")
     if not pw:
         raise ValueError("a Radicale password is required")
     return pw

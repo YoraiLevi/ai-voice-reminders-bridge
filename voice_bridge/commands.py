@@ -22,6 +22,7 @@ from typing import Callable
 from .config import Config, set_value
 from .errors import CommandError, raise_command_error
 from .factory import make_transport
+from .prompting import ask as _ask_line
 from .selection import confirm_selection, pick, resolve_selection
 from .transport import Transport
 
@@ -215,7 +216,7 @@ def select_command(
     t: Transport,
     *,
     config_path: Path,
-    ask: Callable[[str], str] = input,
+    ask: Callable[[str], str] = _ask_line,
     show: Callable[[str], None] = print,
     is_tty: Callable[[], bool] | None = None,
 ) -> int:

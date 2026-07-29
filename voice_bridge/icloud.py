@@ -45,6 +45,20 @@ def _retrying(fn: Callable[[], Any], *, tries: int = 4) -> Any:
             delay = min(delay * 2, 30)
 
 
+def _tighter(given: Any, budget: float) -> Any:
+    """The smaller of a caller's timeout and ours, preserving the caller's shape.
+
+    `requests` accepts either a number or a `(connect, read)` pair, and silently
+    doing the wrong thing with the pair is how a "fix" becomes a new bug - so the
+    pair stays a pair, clamped element-wise.
+    """
+    if isinstance(given, (int, float)):
+        return min(float(given), budget)
+    if isinstance(given, tuple):
+        return tuple(min(float(v), budget) if isinstance(v, (int, float)) else v for v in given)
+    return budget  # an unrecognised shape: ours is the one we can reason about
+
+
 def _apply_timeout(api: Any, seconds: float) -> None:
     """Give every iCloud HTTP call a client-side deadline.
 
@@ -56,9 +70,25 @@ def _apply_timeout(api: Any, seconds: float) -> None:
     refuses is bounded only by the OS TCP stack. So the user waited on a socket,
     not on us, and no amount of reading our code would have shown a number.
 
-    `requests` has no session-level timeout setting, so the default is injected
-    around `session.request`. An explicit per-call timeout still wins - this fills
-    the gap, it does not override a caller who has an opinion.
+    `requests` has no session-level timeout setting, so the budget is injected
+    around `session.request`.
+
+    IT CLAMPS RATHER THAN YIELDS, and the change is deliberate. The first version
+    used `setdefault`, so an explicit per-call timeout won - which sounds correct
+    and had the exact wrong effect: pyicloud's cloudkit client passes `timeout=60`
+    on the reminders calls, so our 30s budget applied to everything EXCEPT the
+    calls that actually hang. A user set 30, waited 60, and the setting they could
+    see was the one thing not in force.
+
+    The argument for yielding is real: a library may pass a longer timeout because
+    that call genuinely needs it, and clamping could cut off a legitimate slow
+    operation. We take the other side for two reasons. A library's default is a
+    guess about its median caller, not a considered opinion about THIS user's
+    patience; and the cost of clamping too tightly is now cheap - the interactive
+    paths retry in place and keep what was already decided - while the cost of
+    yielding is a person watching a frozen terminal with no feedback, which is the
+    complaint that produced this. Anyone who needs longer raises `icloud_timeout`,
+    which is the point of it being settable.
 
     Non-fatal by design: a pyicloud that does not expose a session should not stop
     the bridge from working, it should only mean we cannot bound the wait.
@@ -69,7 +99,8 @@ def _apply_timeout(api: Any, seconds: float) -> None:
         return
 
     def _with_timeout(*args: Any, **kwargs: Any) -> Any:
-        kwargs.setdefault("timeout", seconds)
+        given = kwargs.get("timeout")
+        kwargs["timeout"] = seconds if given is None else _tighter(given, seconds)
         return original(*args, **kwargs)
 
     session.request = _with_timeout

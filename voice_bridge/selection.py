@@ -93,10 +93,27 @@ class SelectionPlan:
 
 @dataclass(frozen=True)
 class Choice:
-    """What a human decided at the picker."""
+    """What a human decided at the picker, and what they decided it FROM.
+
+    `ref` and `seen` exist so a caller never has to go back to the network to find
+    out what the user picked. That round trip was real: `lists --select` re-fetched
+    the whole inventory purely to turn an id into a name for the confirmation line,
+    which on a slow day raised a 60-second read timeout AFTER the choice was made
+    and lost it.
+
+    It was also, more quietly, wrong. "21" refers to row 21 of the screen the user
+    was looking at - `seen` - and resolving it against a listing fetched afterwards
+    is not freshness, it is answering a different question. The name we echo must be
+    the name they read.
+    """
 
     action: str  # select | keep | clear | skip
     list_id: str = ""
+    #: The chosen row, exactly as displayed. None for keep/clear/skip.
+    ref: ListRef | None = None
+    #: The listing the choice was made against - the opening one, or whatever the
+    #: last `r) refresh` produced. The freshest inventory anyone has actually SEEN.
+    seen: list[ListRef] = field(default_factory=list)
 
 
 def missing_roles(cfg: Config) -> list[str]:
@@ -340,12 +357,12 @@ def pick(
             except EOFError:
                 # isatty lies under MSYS/Git Bash. A stream that ends is "no
                 # answer": change nothing, never block, never invent a pick.
-                return Choice("skip")
+                return Choice("skip", seen=candidates)
 
             # `q` stays accepted but undocumented: it was the key before this was
             # relabelled, and silently breaking a habit is worse than a branch.
             if answer in ("s", "q"):
-                return Choice("skip")
+                return Choice("skip", seen=candidates)
             if answer == "r":
                 if refresh is None:
                     show("  (nothing to refresh here)")
@@ -354,9 +371,13 @@ def pick(
                 show("")
                 break  # redraw the whole screen with the new listing
             if answer in keys:
-                return Choice("keep" if answer == "k" else "clear")
+                return Choice("keep" if answer == "k" else "clear", seen=candidates)
             if answer.isdigit() and 1 <= int(answer) <= top:
-                return Choice("select", candidates[int(answer) - 1].id)
+                # The REF travels with the id. The caller needs the name for its
+                # confirmation line, and going back to the network for it is both a
+                # crash window and a different question - see `Choice`.
+                chosen = candidates[int(answer) - 1]
+                return Choice("select", chosen.id, ref=chosen, seen=candidates)
 
             # An unusable answer must re-ask. Falling through to a default would
             # be the silent wrong choice arriving by another door.

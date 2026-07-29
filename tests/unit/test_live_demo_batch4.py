@@ -231,8 +231,12 @@ def test_a_transient_failure_is_logged_with_its_class_and_budget(sample_config, 
 
     import requests
 
+    # Moved to `transient.report` in batch 5, so `lists --select` and `setup` say
+    # the same thing. The property is unchanged; the seam is shared now.
+    from voice_bridge import transient
+
     with caplog.at_level(logging.WARNING, logger="voice-bridge"):
-        setup_mod._report_transient(requests.ConnectionError("Request failed"), sample_config)
+        transient.report(requests.ConnectionError("Request failed"), sample_config)
     out = capsys.readouterr().out
 
     assert "ConnectionError" in out, "name the class; 'Request failed' identifies nothing"

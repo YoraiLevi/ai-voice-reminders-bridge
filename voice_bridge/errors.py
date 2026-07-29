@@ -115,6 +115,14 @@ def _classify_dav(exc: BaseException) -> bool | None:
     return False  # unclassified -> bounded stop, not endless retry
 
 
+#: Message fragments that mean "the network gave up waiting", for wrappers that
+#: keep the words and lose the type. pyicloud raises `PyiCloudAPIResponseException`
+#: for a read timeout, which is neither a requests type nor a throttle - so a real
+#: 60s read timeout mid-pick was classified as permanent and escaped as a
+#: traceback. Matching text is a last resort, used only after type and cause fail.
+_TIMEOUT_MARKERS = ("read timed out", "read timeout", "timed out", "timeout")
+
+
 def is_transient(exc: BaseException) -> bool:
     """True when retrying could plausibly succeed.
 
@@ -135,20 +143,32 @@ def is_transient(exc: BaseException) -> bool:
     # failure in `ICloudError`, so a wifi drop at connect arrives auth-shaped.
     # Judging it by its own type would stop the loop for good and tell the
     # operator to re-login over a blip. Judge it by what caused it.
-    cause = exc.__cause__
-    if cause is not None and cause is not exc:
-        if _is_requests_network(cause) or _is_throttle(cause):
-            return True
+    #
+    # `__context__` as well as `__cause__`: a wrapper that raises inside an
+    # `except` block WITHOUT `from` still records what it was handling, and a
+    # library is under no obligation to chain explicitly.
+    for related in (exc.__cause__, exc.__context__):
+        if related is not None and related is not exc:
+            if _is_requests_network(related) or _is_throttle(related):
+                return True
+            if _is_timeout_text(related):
+                return True
 
-    # An auth failure that merely *mentions* a status must not read as a blip,
-    # so the auth check comes before the throttle sniff.
+    # An auth failure that merely *mentions* a status or the word "timeout" must
+    # not read as a blip, so the auth verdict comes before both text sniffs.
     if _is_auth(exc):
         return False
 
     if _is_throttle(exc):
         return True
 
-    return False
+    return _is_timeout_text(exc)
+
+
+def _is_timeout_text(exc: BaseException) -> bool:
+    """Last resort: the message says it timed out even though the type does not."""
+    text = str(exc).lower()
+    return any(m in text for m in _TIMEOUT_MARKERS)
 
 
 # --------------------------------------------------------------------------- #

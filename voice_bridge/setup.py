@@ -26,6 +26,7 @@ from .mailbox import append_line, format_mailbox_line
 from .prompting import Cancelled
 from .prompting import ask as _ask_line
 from .selection import (
+    ROLE_LABEL,
     confirm_selection,
     missing_roles,
     missing_roles_message,
@@ -274,32 +275,6 @@ def report(cfg: Config, t: Transport, *, as_json: bool = False) -> int:
     return 0
 
 
-def _report_transient(exc: Exception, cfg: Config) -> None:
-    """Say what failed, in enough detail to act on, and log it.
-
-    Asked for directly: *"log what happened? it took a really long time? fix?
-    investigate?"*. Three separate complaints, and the middle one is the important
-    one - a failure with no duration and no exception class is indistinguishable
-    from the program hanging, so the user cannot tell whether to wait or to quit.
-
-    The exception CLASS is named rather than only its message, because "Request
-    failed" is what the library says for every network fault and it identifies
-    nothing. Elapsed time is on the logger, not printed: it matters when you are
-    diagnosing and is noise when you are not.
-    """
-    from . import log as log_mod
-
-    log_mod.get().warning(
-        "transient transport failure during setup: %s: %s (icloud_timeout=%ss)",
-        type(exc).__name__,
-        exc,
-        cfg.icloud_timeout,
-    )
-    print(f"config written, credentials fine. The transport did not answer: {exc}")
-    print(f"That is a temporary failure, not a setup problem ({type(exc).__name__}).")
-    print(f"Calls give up after {cfg.icloud_timeout:g}s; -v logs the detail, --log-file keeps it.")
-
-
 def run_setup(
     *,
     config_path: str | Path | None = None,
@@ -416,8 +391,12 @@ def run_setup(
             # a bad password, and provision's name-based guidance), so it is named
             # plainly: a message that names a REMEDY is a claim about the CAUSE.
             if is_transient(exc):
-                _report_transient(exc, cfg)
-                if _is_tty() and onboard._yes(_ask_line, "  Try again now?"):
+                # ONE implementation, shared with `lists --select`. That command
+                # had no transient path at all until a crash mid-pick proved the
+                # gap, and a second wording here would have been the next drift.
+                from .transient import offer_retry
+
+                if offer_retry(exc, cfg, ask=_ask_line, show=print, is_tty=_is_tty):
                     cfg = load_config(path)  # keep every choice already made
                     continue
                 print("Re-run when you are ready:  voice-bridge setup")
@@ -568,6 +547,16 @@ def settle_selection(
         )
         confirm_selection(ref, role=res.role, show=show)
         written += 1
+
+    # SAY WHAT IS ALREADY CHOSEN, like the steps either side of it. Steps 1 and 3
+    # report "already configured: <path>" on a re-run; this one printed its header
+    # and then nothing at all, so the only step whose state the user actually cares
+    # about was the only silent one. The names come from the resolver, which reads
+    # them from the account by id - so this doubles as a check that the selection
+    # still points at something real.
+    for res in plan.resolutions:
+        if res.status == "selected":
+            show(f"  already chosen - {ROLE_LABEL[res.role]}: {res.name}  [{res.current}]")
 
     unresolved = [r for r in plan.resolutions if r.status != "selected"]
     if unresolved and tty and cfg.transport == "icloud" and not created:

@@ -220,6 +220,40 @@ def _choose_role(plan: object, *, ask: Callable[[str], str], show: Callable[[str
         show(f"  not one of the options - choose 1-{len(resolutions)}, or d.")
 
 
+def _pick_with_retry(
+    res,
+    *,
+    cfg: Config,
+    t: Transport,
+    ask: Callable[[str], str],
+    show: Callable[[str], None],
+    is_tty: bool,
+):
+    """Run the picker, surviving a stall on `r) refresh`. None = give up.
+
+    The refresh is the only network call left inside the picker, and it is the one
+    a user reaches for precisely when the account is being slow - they pressed `r`
+    because the list had not appeared yet. A traceback there is the worst possible
+    answer: it is the moment they were being patient.
+
+    Retrying re-enters `pick`, which redraws from `res.candidates` - so nothing the
+    user has done is lost, because at this point they have not decided anything
+    yet. The decision itself is protected further down, by never going back to the
+    network after it.
+    """
+    from .transient import offer_retry
+
+    def _refresh() -> list:
+        return t.list_todo_lists()
+
+    while True:
+        try:
+            return pick(res, ask=ask, show=show, refresh=_refresh)
+        except Exception as exc:
+            if not offer_retry(exc, cfg, ask=ask, show=show, is_tty=lambda: is_tty):
+                return None
+
+
 def select_command(
     cfg: Config,
     t: Transport,
@@ -241,7 +275,10 @@ def select_command(
     `pick` - the same engine and the same component `setup` uses. Two pickers
     would drift apart exactly the way two resolvers would.
     """
-    if not (is_tty or _tty)():
+    from .transient import offer_retry
+
+    tty = (is_tty or _tty)()
+    if not tty:
         # Never prompt a pipe: it blocks for ever, or reads EOF and takes an
         # answer nobody gave. Say what happened and name the fix instead.
         show("error: `lists --select` is interactive and stdin is not a terminal.")
@@ -249,8 +286,17 @@ def select_command(
         show("       voice-bridge config set inbox_list_id <id>   (see `voice-bridge lists`)")
         return 2
 
-    refs = t.list_todo_lists()  # the opening menu; `r` inside the picker re-reads
+    # The opening read. This path had NO transient handling at all - `setup` grew
+    # it in batch 2 and this command never did, so a slow account here produced a
+    # raw traceback where `setup` would have said "temporary, try again?".
     current = cfg
+    while True:
+        try:
+            refs = t.list_todo_lists()  # the menu; `r` inside the picker re-reads
+            break
+        except Exception as exc:
+            if not offer_retry(exc, current, ask=ask, show=show, is_tty=lambda: tty):
+                return 1
     plan = resolve_selection(current, t, refs=refs)
     changed = 0
 
@@ -269,10 +315,23 @@ def select_command(
         if res.status == "stale":
             show(f"  the selected list no longer exists ({res.current}) - choose a replacement.")
 
-        choice = pick(res, ask=ask, show=show, refresh=t.list_todo_lists)
+        choice = _pick_with_retry(res, cfg=current, t=t, ask=ask, show=show, is_tty=tty)
+        if choice is None:  # a blip the user chose not to wait out
+            break
         if choice.action == "select":
             value = choice.list_id
-            ref = next(r for r in t.list_todo_lists() if r.id == value)
+            # NO THIRD FETCH. The picker hands back the row the user chose, from
+            # the listing they chose it FROM - the role menu and the picker have
+            # already read the account twice within seconds, and a third read here
+            # bought nothing: it could only agree with what they saw, disagree with
+            # it, or - as happened - time out after the decision and lose it.
+            #
+            # This is not the batch-3 rule inverted. That rule was about re-drawing
+            # a SCREEN after changing the world. Resolving an answer against the
+            # question it answered is the opposite case: "21" means row 21 of the
+            # list in front of them, and any other listing is a different question.
+            assert choice.ref is not None  # `select` always carries its row
+            ref = choice.ref
             confirm_selection(ref, role=res.role, show=show)
             # The name travels with the id: the phone prompt shows both, and it
             # must show what the list is actually called rather than a default.
@@ -302,14 +361,14 @@ def select_command(
         # role->field mapping lives, and re-deriving it here is exactly the
         # duplication that mapping exists to prevent (UX-1 inverted it once).
         current = dataclasses.replace(current, **{res.field: value})  # type: ignore[arg-type]
-        # RE-READ the account, do not reuse the opening snapshot. `r) refresh`
-        # inside the picker exists precisely so a list created seconds ago can be
-        # chosen - and re-classifying that choice against the inventory from before
-        # it existed declared it STALE, so the menu announced "the selected list no
-        # longer exists" about a list the user had just picked from a refreshed
-        # screen. A false "no longer exists" is worse than saying nothing: it is the
-        # mis-advice class again, and here it points at a repair for a healthy row.
-        refs = t.list_todo_lists()
+        # Re-classify against WHAT THE PICKER SAW, not the opening snapshot and not
+        # a fresh fetch. `r) refresh` exists so a list created seconds ago can be
+        # chosen, and re-classifying that choice against the inventory from before
+        # it existed declared it STALE - the menu announced "the selected list no
+        # longer exists" about a list the user had just picked off a refreshed
+        # screen. `choice.seen` is that refreshed screen, so the bug stays fixed
+        # with no network call and no window in which one can fail.
+        refs = choice.seen or refs
         plan = resolve_selection(current, t, refs=refs)
 
     if changed:

@@ -41,9 +41,25 @@ from .runner import run_command
 from .factory import TRANSPORTS as _TRANSPORTS  # noqa: E402 - grouped with its reason
 
 #: The commands whose OUTPUT changes shape for `--json`. A global flag that silently
-#: does nothing on eleven of fifteen commands is a promise to a script that the
-#: script cannot check: it asked for JSON, got prose, and had no way to know.
-_JSON_COMMANDS = frozenset({"setup", "status", "lists", "peek"})
+#: does nothing on most commands is a promise to a script that the script cannot
+#: check: it asked for JSON, got prose, and had no way to know.
+#:
+#: `config show` was MISSING from the first version of this set, so the note that
+#: exists to stop `--json` lying started lying itself - that path has always worked,
+#: inside `_config_cmd` rather than in the dispatch table I read to build the list.
+#:
+#: Entries are "cmd" or "cmd op", because the truth is finer than command level:
+#: `config show --json` emits JSON and `config fields --json` does not. Declaring
+#: `config` wholesale would have been a second, smaller version of the same lie.
+#: Two tests check the set in both directions - a hand-maintained list of what the
+#: code does is the fact-in-two-places defect the batch it shipped in was about.
+_JSON_COMMANDS = frozenset({"setup", "status", "lists", "peek", "config show"})
+
+
+def _json_target(args) -> str:
+    """What the user asked to have formatted: `cmd`, or `cmd op` where there is one."""
+    op = getattr(args, "op", None)
+    return f"{args.cmd} {op}" if op else str(args.cmd)
 
 
 #: One convention across every command, so a script can branch on the code
@@ -439,9 +455,10 @@ def main(argv: list[str] | None = None) -> int:
     # what was asked, only the formatting request did not apply - but a script that
     # passes `--json` and receives prose deserves to be told, on stderr, where it
     # cannot corrupt the output it is parsing.
-    if args.json and args.cmd not in _JSON_COMMANDS:
+    target = _json_target(args)
+    if args.json and target not in _JSON_COMMANDS:
         print(
-            f"note: --json has no effect on `{args.cmd}` - "
+            f"note: --json has no effect on `{target}` - "
             f"supported by: {', '.join(sorted(_JSON_COMMANDS))}",
             file=sys.stderr,
         )

@@ -695,7 +695,9 @@ def test_json_on_a_command_that_ignores_it_says_so(monkeypatch, capsys):
     cli.main(["--json", "config", "fields"])
     captured = capsys.readouterr()
 
-    assert "--json has no effect on `config`" in captured.err
+    # `config fields` specifically: `config show --json` DOES work, so the note has to
+    # be finer than command level or it becomes the very thing it was added to prevent.
+    assert "--json has no effect on `config fields`" in captured.err
     assert "--json" not in captured.out
 
 
@@ -774,3 +776,84 @@ def test_the_cli_passes_the_factory_rather_than_a_connection():
             assert not isinstance(arg, ast.Call), (
                 f"cli.py:{call.lineno} connects before the offline gate runs"
             )
+
+
+# --------------------------------------------------------------------------- #
+# 6b - the note that exists to stop --json lying, lying
+# --------------------------------------------------------------------------- #
+
+
+def test_every_command_in_the_json_set_really_emits_json(monkeypatch, capsys):
+    """Over-claim guard, and the defect that produced it in reverse.
+
+    `_JSON_COMMANDS` shipped without `config`, so `--json config show` printed
+    "no effect on `config`" about a path that has always worked - the json branch
+    lives inside `_config_cmd`, not in the dispatch table I read to build the list.
+    CI was green on that; nothing had asked whether the list was right.
+    """
+    import json as _json
+
+    from voice_bridge import cli
+
+    monkeypatch.setattr(cli, "path_note", lambda: "")
+    monkeypatch.setattr(cli.status_mod, "gather", lambda _cfg: {"probe": 1})
+
+    # `config show` and `status` are the two that need no transport; the rest are
+    # covered by their own command tests. This checks the CLAIM, not the formatting.
+    for argv in (["--json", "status"], ["--json", "config", "show"]):
+        cli.main(argv)
+        captured = capsys.readouterr()
+        assert "no effect" not in captured.err, f"{argv} is in the set but was disclaimed"
+        payload = captured.out.strip().splitlines()[-1]
+        _json.loads(payload)  # raises if it was prose
+
+
+def test_no_json_path_hides_outside_the_declared_set():
+    """Under-claim guard - the direction that actually bit.
+
+    Every read of `args.json` in `cli.py` must sit in a branch or helper belonging to
+    a command in `_JSON_COMMANDS`. Helpers count: `_config_cmd` is where the missing
+    one was, and reading only the dispatch table is how it stayed missing.
+    """
+    import ast
+
+    from voice_bridge import cli
+
+    tree = ast.parse(Path(cli.__file__).read_text(encoding="utf-8"))
+
+    def _reads_json(node) -> bool:
+        return any(
+            isinstance(n, ast.Attribute)
+            and n.attr == "json"
+            and isinstance(n.value, ast.Name)
+            and n.value.id == "args"
+            for n in ast.walk(node)
+        )
+
+    unclaimed: list[str] = []
+    for fn in ast.walk(tree):
+        if not isinstance(fn, ast.FunctionDef):
+            continue
+        # A helper named `_<command>_cmd` belongs to that command.
+        helper = fn.name[1:-4] if fn.name.startswith("_") and fn.name.endswith("_cmd") else None
+        if helper and _reads_json(fn) and helper not in cli._JSON_COMMANDS:
+            unclaimed.append(f"{fn.name} reads args.json but '{helper}' is not declared")
+        if helper:
+            continue
+        # Otherwise: dispatch-style `if cmd == "name":` blocks.
+        for node in ast.walk(fn):
+            if not isinstance(node, ast.If):
+                continue
+            test = node.test
+            if not (
+                isinstance(test, ast.Compare)
+                and isinstance(test.left, ast.Name)
+                and test.left.id == "cmd"
+                and isinstance(test.comparators[0], ast.Constant)
+            ):
+                continue
+            name = test.comparators[0].value
+            if _reads_json(node) and name not in cli._JSON_COMMANDS:
+                unclaimed.append(f"`{name}` reads args.json but is not declared")
+
+    assert not unclaimed, "; ".join(unclaimed)

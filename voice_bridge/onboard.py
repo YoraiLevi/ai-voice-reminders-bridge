@@ -148,19 +148,19 @@ def step_notifications(cfg: Config, *, config_path: Path, ask: Ask, show: Show) 
         return True
 
     # "A banner the moment a reply arrives" described a thing the user has not seen
-    # yet, in a word they may not use for it. PUSH NOTIFICATION is what it is called
-    # on the device, and the cost of declining is stated as an action they will have
-    # to take rather than as a mild inconvenience.
-    # ONE statement of the cost, in the question block below - not here as well.
-    # The block is what the user reads at the moment of deciding, so a header that
-    # repeats it is two lines of scroll buying nothing.
+    # yet, in a word they may not use for it. PUSH NOTIFICATION is what it is
+    # called on the device, and the cost of declining is stated as an action they
+    # will have to take rather than as a mild inconvenience - once, in the block.
+    #
+    # THE OPTIONS ARE LISTED ONCE, in the block. An earlier version printed them
+    # above AND in the block, in different words, which is worse than repeating
+    # them verbatim: two descriptions of one option invite the reader to work out
+    # whether they are the same option. Only genuinely long content belongs above -
+    # here, the generated topic string, which is 36 characters nobody needs while
+    # they are still deciding whether they want notifications at all.
     show("  Delivered by the ntfy app on your phone.")
-    show("")
     suggested = suggest_topic()
-    show(f"    1) generate a private topic for me   (128-bit random: {suggested})")
-    show("    2) enter a topic you already use")
-    show("    3) use your own ntfy server (its URL, and a topic)")
-    show("    4) skip for now")
+    show(f"  A topic is ready if you want one:  {suggested}")
 
     question_block(
         show,
@@ -168,7 +168,7 @@ def step_notifications(cfg: Config, *, config_path: Path, ask: Ask, show: Show) 
         why="Without one, replies still arrive - you just have to look MANUALLY.",
         current="none configured",
         keys=[
-            "1)|a private topic, generated now (nothing to type)",
+            "1)|use the private topic above (nothing to type)",
             "2)|a topic you already subscribe to",
             "3)|your own ntfy server, and a topic on it",
             "4)|skip - no notifications until you set one later",

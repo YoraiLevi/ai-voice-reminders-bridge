@@ -246,3 +246,20 @@ def installed_cfg(tmp_path, tmp_mailbox):
     cfg.peer_inbox.write_text("m", encoding="utf-8")
     cfg.our_inbox.write_text("m", encoding="utf-8")
     return cfg, cfg_file
+
+
+def test_an_option_is_described_once(sample_config, tmp_path):
+    """Found by reading the whole flow rather than the screen.
+
+    The notifications step listed its four options above the block AND again
+    inside it, in different words. That is worse than repeating them verbatim:
+    two descriptions of one option make the reader stop and work out whether they
+    are the same option. Only genuinely long content belongs above - here, the
+    generated topic string.
+    """
+    ask, show, lines = _capture(["4"])
+    onboard.step_notifications(sample_config, config_path=tmp_path / "c.json", ask=ask, show=show)
+
+    text = "\n".join(line for line in lines if not line.startswith("<<PROMPT>>"))
+    for option in ("1)", "2)", "3)", "4)"):
+        assert text.count(f"  {option}") == 1, f"option {option} is described twice"

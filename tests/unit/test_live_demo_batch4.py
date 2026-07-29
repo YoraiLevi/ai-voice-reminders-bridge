@@ -394,13 +394,19 @@ def test_the_path_note_is_printed_to_stderr_before_anything_else(monkeypatch, ca
     """Coverage of this line must not depend on whose shell ran the tests.
 
     Found by an instrument delta: the manager's run missed exactly one statement
-    that mine covered - `cli.main`'s `print(note, ...)`. The cause was real and
-    benign: `uv run` puts the console script on PATH, so `path_note()` returns ""
-    there and the branch never executes, while in a bare shell it fires. Two honest
-    runs, one line apart, and the number moved.
+    that mine covered - `cli.main`'s `print(note, ...)`. The cause: `uv run` puts the
+    console script on PATH, so `path_note()` returned "" there and the branch never
+    executed, while in a bare shell it fired. Two honest runs, one line apart, and
+    the number moved.
 
     The finding is not the 0.04%: it is that a branch shipped in the same commit
     was covered BY ACCIDENT OF ENVIRONMENT. This pins it.
+
+    **This docstring used to call that cause "real and benign". It was real and it
+    was the bug** - batch 10 traced the user's second "not recognized" to exactly
+    that branch staying silent under `uv run`. A condition that changes behaviour is
+    not benign because the number it moved was small; the question is what the
+    condition MEANS. See `test_live_demo_batch10.py`.
 
     stderr specifically, because `vox-prompt | clip` must pipe the prompt alone.
     """

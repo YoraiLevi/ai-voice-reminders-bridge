@@ -135,6 +135,29 @@ def test_asking_for_an_inventory_always_downloads_one(wired):
     assert t.downloads == 1
 
 
+def test_asking_for_an_inventory_REBUILDS_the_cache(wired, monkeypatch):
+    """The property this test should have asserted the first time.
+
+    Batch 6's version only asked whether an inventory request still DOWNLOADS -
+    true before the change and after it - so it passed while the iCloud refactor
+    had silently never applied. The point of the request is that it makes the
+    cache agree with the account: after a rename, `list_todo_lists` returned the
+    new name while `resolve_list(id)` kept answering with the old one, from two
+    different eras.
+    """
+    _, _, t = wired
+    assert t.resolve_list("", "A").name == "Vox-Message-Outbox"
+
+    # The same list, renamed on the phone.
+    class _Renamed:
+        id, title = "A", "Renamed On The Phone"
+
+    monkeypatch.setattr(t, "_svc", lambda: type("S", (), {"lists": lambda self: [_Renamed()]})())
+    t.list_todo_lists()
+
+    assert t.resolve_list("", "A").name == "Renamed On The Phone"
+
+
 def test_invalidating_forces_the_next_lookup_to_pay(wired):
     _, _, t = wired
     t.resolve_list("", "A")

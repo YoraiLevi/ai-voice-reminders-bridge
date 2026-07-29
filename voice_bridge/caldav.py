@@ -14,6 +14,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from .config import Config
+from .progress import step
 from .transport import Item, ListRef, NotSupportedError, RefCache, Transport
 from .util import read_env
 
@@ -118,7 +119,8 @@ class CalDAVTransport(Transport):
         apple_id, password, url = _creds(self.cfg)
         client = DAVClient(url=url, username=apple_id, password=password, timeout=30.0)  # type: ignore[operator]
         try:
-            self._principal = client.principal()
+            with step("connecting to your CalDAV server"):
+                self._principal = client.principal()
         except AuthorizationError as exc:
             # Auth: no amount of retrying enters a correct password. Stays a
             # CredsError, which `is_transient` classifies as NOT transient, so the
@@ -160,7 +162,9 @@ class CalDAVTransport(Transport):
         """
         out: list[ListRef] = []
         self._refs.refresh()
-        for cal in self._p().calendars():
+        with step("reading your lists"):
+            cals = list(self._p().calendars())
+        for cal in cals:
             try:
                 comps = cal.get_supported_components()
             except Exception:

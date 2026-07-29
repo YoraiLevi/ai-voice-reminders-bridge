@@ -14,6 +14,7 @@ from typing import Any, Callable
 
 from . import _icloud_crdt
 from .config import Config
+from .progress import step
 from .transport import Item, ListRef, NotSupportedError, RefCache, Transport
 from .util import read_kv
 
@@ -150,7 +151,8 @@ class ICloudTransport(Transport):
         # (LIVE-5). See _icloud_crdt for why the API cannot detect it.
         _icloud_crdt.install()
         try:
-            api = PyiCloudService(apple_id, password, cookie_directory=str(self.cfg.cookie_dir))
+            with step("connecting to iCloud"):
+                api = PyiCloudService(apple_id, password, cookie_directory=str(self.cfg.cookie_dir))
         except Exception as exc:
             raise ICloudError(f"pyicloud login failed: {type(exc).__name__}: {exc}") from exc
         if getattr(api, "requires_2fa", False):
@@ -164,7 +166,8 @@ class ICloudTransport(Transport):
         # and it returns the whole inventory, which we used to throw away and then
         # immediately re-download on the first resolve. Keeping it makes `lists`
         # cost one fetch instead of two, and every id resolved during setup free.
-        primed = [ListRef(name=lst.title, id=str(lst.id)) for lst in r.lists()]
+        with step("reading your lists"):
+            primed = [ListRef(name=lst.title, id=str(lst.id)) for lst in r.lists()]
         self.r = r
         self._refs.remember(primed)
 
@@ -174,9 +177,23 @@ class ICloudTransport(Transport):
         return self.r
 
     def list_todo_lists(self) -> list[ListRef]:
+        """The full inventory - a real download - and the cache is rebuilt from it.
+
+        Callers that only need ONE list by id should use `resolve_list`, which
+        answers from the cache. This is for the three places that genuinely want an
+        inventory: a picker's menu, an explicit refresh, and stale-id recovery.
+
+        The refresh-then-remember is the whole point of `r`. Without it a renamed
+        list would be shown correctly here and STILL resolve to its old name by id,
+        because the two answers would come from different eras.
+        """
         # `RemindersList.id` is the required identifier the create/query helpers
         # take; `guid` is optional metadata and is NOT what they want.
-        return [ListRef(name=lst.title, id=str(lst.id)) for lst in self._svc().lists()]
+        svc = self._svc()
+        self._refs.refresh()
+        with step("reading your lists"):
+            refs = [ListRef(name=lst.title, id=str(lst.id)) for lst in svc.lists()]
+        return self._refs.remember(refs)
 
     def resolve_list(self, name: str, list_id: str = "") -> ListRef:
         # CACHED BY ID. A selected id either still names a list - same answer every

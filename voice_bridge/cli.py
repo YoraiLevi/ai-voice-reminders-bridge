@@ -13,6 +13,7 @@ from . import log as log_mod
 from . import login as login_mod
 from . import ntfy
 from . import poller as poller_mod
+from . import progress
 from . import prompt as prompt_mod
 from . import server as server_mod
 from . import setup as setup_mod
@@ -319,6 +320,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
     log_mod.configure(verbose=args.verbose, quiet=args.quiet, logfile=args.log_file)
+    progress.configure(quiet=args.quiet)
     if not args.cmd:
         parser.print_help()
         return 2

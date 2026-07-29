@@ -331,8 +331,14 @@ def test_the_phone_prompt_uses_the_configured_spoke_name(tmp_path, tmp_mailbox):
 
 
 def test_a_new_mailbox_names_its_files_and_what_each_is_for(sample_config):
-    lines = runner.announce_new_mailbox(sample_config)
-    text = "\n".join(lines)
+    """Moved to `orientation` in batch 8, and the move IS the fix.
+
+    This explanation used to hang off mailbox CREATION, so only the one run that
+    happened to create the mailbox ever oriented anybody - a bare `run` on an
+    existing mailbox printed nothing at all. Creation is an event; what the files
+    are is a state, and states are reported every time.
+    """
+    text = "\n".join(runner.orientation(sample_config, interval=10))
 
     assert sample_config.peer_inbox.name in text
     assert sample_config.our_inbox.name in text

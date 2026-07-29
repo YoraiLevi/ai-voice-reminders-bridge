@@ -16,32 +16,82 @@ from .selection import missing_roles, missing_roles_message
 PEER_PROMPT_FILE = "PEER-PROMPT.md"
 
 
+def peer_has_written(cfg: Config) -> bool:
+    """Has anything ever arrived from the peer? Evidence, not liveness.
+
+    Deliberately the weaker claim. We can see that a peer WROTE into our inbox at
+    some point; we cannot see that one is running now, and saying "a peer has
+    joined" from a file that only proves history would be the false-GREEN class
+    this project keeps deleting.
+    """
+    try:
+        return bool(cfg.our_inbox.read_text(encoding="utf-8").strip())
+    except OSError:
+        return False
+
+
+def orientation(cfg: Config, *, interval: int) -> list[str]:
+    """What every run must say before it goes quiet.
+
+    The explainer used to hang off mailbox CREATION, so only the one run that
+    happened to create the mailbox ever oriented anybody. A user's transcript
+    proved it: a bare `voice-bridge run` on an existing mailbox printed NOTHING
+    until "stopped." - no files, no peer instructions, and no sign the program was
+    even alive.
+
+    Ruled: *"this kind of paragraph should be in the 'run' too so that the user
+    knows about these information too."* Creation is an event; orientation is a
+    state, and states are reported every time.
+
+    The last line is the heartbeat the manager asked for: ONE truthful opening
+    line, so a healthy idle bridge is distinguishable from a stuck one at a glance.
+    No per-cycle noise - a log that scrolls while nothing happens is its own way of
+    hiding what does.
+    """
+    width = max(len(cfg.peer_inbox.name), len(cfg.our_inbox.name))
+    out = [
+        f"mailbox: {cfg.mailbox_dir}",
+        f"  {cfg.peer_inbox.name:<{width}}  your dictations land here - your peer READS it",
+        f"  {cfg.our_inbox.name:<{width}}  your peer WRITES replies here - they reach your phone",
+    ]
+
+    prompt_file = cfg.mailbox_dir / PEER_PROMPT_FILE
+    if peer_has_written(cfg):
+        out.append("")
+        out.append("A peer has written here before, so one is set up.")
+    else:
+        out.append("")
+        out.append("NOTHING IS PROCESSED UNTIL A PEER JOINS. Your dictations will arrive")
+        out.append("in the file above and sit there until an agent reads them.")
+        if prompt_file.exists():
+            out.append(f"To make one, paste this at a coding agent:  {prompt_file}")
+        else:
+            out.append("To make one:  voice-bridge peer-prompt")
+
+    out.append("")
+    out.append(f"bridging: polling {cfg.inbox_list or 'your list'} every {interval}s")
+    out.append("Ctrl-C to stop.")
+    return out
+
+
 def announce_new_mailbox(cfg: Config) -> list[str]:
-    """Explain the mailbox we just made, and write the peer prompt into it.
+    """Say the mailbox was CREATED, and drop the peer prompt beside it.
 
-    The old line was `mailbox ready at <dir> - a peer must join to process
-    messages`. Every word of that is true and none of it is actionable: it names a
-    requirement, not a step, in vocabulary the reader has not met yet. A user who
-    had just uninstalled and re-run landed here with a working phone, an empty
-    mailbox, and no idea what a peer was or how one joins.
+    Everything explanatory moved to `orientation`, which every run prints. What is
+    left here is the one thing that is genuinely news: this directory did not exist
+    a moment ago. Creation is an event, so it is announced once; what the files are
+    and whether a peer exists are STATES, and states are reported every time.
 
-    So we say what the two files are, and drop a paste-ready prompt beside them.
-    Writing the file rather than only printing it matters: this output scrolls past
-    while the bridge starts, and the thing you must paste at an agent should still
-    be there tomorrow.
+    Writing the prompt file rather than only printing it matters: this output
+    scrolls past while the bridge starts, and the thing you must paste at an agent
+    should still be there tomorrow.
 
     NEVER OVERWRITTEN. An existing `PEER-PROMPT.md` may have been edited, or put
     there by another spoke; we only fill a gap.
     """
     from .prompt import render_peer_prompt
 
-    width = max(len(cfg.peer_inbox.name), len(cfg.our_inbox.name))
     out = [f"mailbox created at {cfg.mailbox_dir}"]
-    out.append(f"  {cfg.peer_inbox.name:<{width}}  your dictations land here - your peer READS it")
-    out.append(
-        f"  {cfg.our_inbox.name:<{width}}  your peer WRITES replies here - they reach your phone"
-    )
-
     target = cfg.mailbox_dir / PEER_PROMPT_FILE
     if not target.exists():
         try:
@@ -49,12 +99,6 @@ def announce_new_mailbox(cfg: Config) -> list[str]:
         except OSError as exc:  # pragma: no cover - unwritable mailbox dir
             out.append(f"  (could not write {target}: {exc})")
             out.append("  Print it instead with:  voice-bridge peer-prompt")
-            return out
-    out.append("")
-    out.append("NOTHING IS PROCESSED UNTIL A PEER JOINS. To make one, paste this at a")
-    out.append("coding agent on this machine:")
-    out.append(f"  {target}")
-    out.append("Or print it again with:  voice-bridge peer-prompt")
     return out
 
 
@@ -116,6 +160,12 @@ def run_command(
         cfg.our_inbox.touch()
         for line in announce_new_mailbox(cfg):
             print(line)
+
+    # EVERY run, not only the one that happened to create the mailbox. Printed
+    # before the loop goes quiet, so the last thing on screen while nothing is
+    # happening explains what "nothing happening" means.
+    for line in orientation(cfg, interval=interval or cfg.poll_interval):
+        print(line)
 
     # ensure the Radicale server (child lifecycle owned here) + lists
     child = None

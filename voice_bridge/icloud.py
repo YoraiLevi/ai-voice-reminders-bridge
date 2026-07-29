@@ -14,7 +14,7 @@ from typing import Any, Callable
 
 from . import _icloud_crdt
 from .config import Config
-from .transport import Item, ListRef, NotSupportedError, Transport
+from .transport import Item, ListRef, NotSupportedError, RefCache, Transport
 from .util import read_kv
 
 
@@ -125,6 +125,7 @@ class ICloudTransport(Transport):
     def __init__(self, cfg: Config) -> None:
         self.cfg = cfg
         self.r: Any = None  # the primed reminders service
+        self._refs = RefCache()
 
     def connect(self) -> None:
         if self.r is not None:
@@ -159,8 +160,13 @@ class ICloudTransport(Transport):
             )
         _apply_timeout(api, self.cfg.icloud_timeout)
         r = api.reminders
-        list(r.lists())  # REQUIRED priming before list_reminders() or the service 400s
+        # The priming call is REQUIRED before list_reminders() or the service 400s -
+        # and it returns the whole inventory, which we used to throw away and then
+        # immediately re-download on the first resolve. Keeping it makes `lists`
+        # cost one fetch instead of two, and every id resolved during setup free.
+        primed = [ListRef(name=lst.title, id=str(lst.id)) for lst in r.lists()]
         self.r = r
+        self._refs.remember(primed)
 
     def _svc(self) -> Any:
         if self.r is None:
@@ -173,7 +179,14 @@ class ICloudTransport(Transport):
         return [ListRef(name=lst.title, id=str(lst.id)) for lst in self._svc().lists()]
 
     def resolve_list(self, name: str, list_id: str = "") -> ListRef:
+        # CACHED BY ID. A selected id either still names a list - same answer every
+        # time - or it is gone, which surfaces when an operation on it fails. It
+        # does not need re-discovering every poll cycle to find that out.
+        if list_id and (hit := self._refs.get(list_id)) is not None:
+            return hit
+
         lists = list(self._svc().lists())
+        self._refs.remember([ListRef(name=lst.title, id=str(lst.id)) for lst in lists])
         if list_id:
             for lst in lists:
                 if str(lst.id) == list_id:
@@ -196,6 +209,9 @@ class ICloudTransport(Transport):
                 f"{name!r} list is not visible via pyicloud (create it on the iPhone)"
             )
         return ListRef(name=same[0].title, id=str(same[0].id))
+
+    def invalidate_lists(self) -> None:
+        self._refs.refresh()
 
     def _query(self, list_id: str, *, include_completed: bool) -> list[Any]:
         result = _retrying(

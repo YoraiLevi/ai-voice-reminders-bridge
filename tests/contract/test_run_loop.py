@@ -181,10 +181,17 @@ class _Boom:
     def __init__(self, exc):
         self.exc = exc
         self.attempts = 0
+        self.invalidations = 0
 
     def connect(self):
         self.attempts += 1
         raise self.exc
+
+    def invalidate_lists(self):
+        # Part of the Transport contract since the call-count audit: the run loop
+        # forgets remembered list ids before retrying, so a list deleted mid-run
+        # resurfaces as a LookupError instead of being retried forever.
+        self.invalidations += 1
 
 
 def test_auth_failure_stops_immediately_with_guidance(wired_config, capsys):

@@ -574,7 +574,13 @@ def settle_selection(
             continue
 
         if res.field in created:
-            ref = next((r for r in t.list_todo_lists() if r.id == created[res.field]), None)
+            # `res.candidates` is the inventory the plan was built from, one call
+            # up. Re-fetching to find a list we created seconds ago in the same
+            # function is the third-fetch shape again, and `resolve_list` answers
+            # from the cache anyway.
+            ref = next((r for r in res.candidates if r.id == created[res.field]), None)
+            if ref is None:
+                ref = next((r for r in t.list_todo_lists() if r.id == created[res.field]), None)
             if ref is not None:
                 # Say why nothing was asked: we created this list moments ago and
                 # hold the id it returned, so there is nothing to guess at.
@@ -598,8 +604,12 @@ def settle_selection(
 
         choice = pick(res, ask=ask, show=show, refresh=t.list_todo_lists)
         if choice.action == "select":
-            ref = next(r for r in t.list_todo_lists() if r.id == choice.list_id)
-            _record(res, ref)
+            # The SAME ruling as `lists --select`: the picker hands back the row
+            # the user chose, so there is nothing to look up. Fetching again here
+            # would re-ask a question that was already answered on screen, and
+            # would do it in the one window where a stall costs the answer.
+            assert choice.ref is not None  # `select` always carries its row
+            _record(res, choice.ref)
         else:
             show(
                 "  left unselected - nothing will be delivered for this role until you"

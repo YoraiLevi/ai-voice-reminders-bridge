@@ -363,6 +363,16 @@ def run(
                         print("         voice-bridge lists --select")
                         return 2
 
+                    # FORGET THE REMEMBERED LISTS before retrying. Ids are cached
+                    # so a healthy cycle costs no inventory download, but that means
+                    # a list deleted mid-run no longer fails at `resolve_list` - it
+                    # fails at the operation, wearing whatever the backend calls it,
+                    # and could be retried forever against something that is never
+                    # coming back. One invalidation here turns the next cycle's
+                    # resolve back into an honest LookupError, which the branch
+                    # above answers with "choose another list".
+                    t.invalidate_lists()
+
                     attempts += 1
                     kind = "transient" if is_transient(exc) else "unexpected"
                     if attempts >= max_attempts or once:

@@ -47,6 +47,48 @@ class Item:
     needs_input: bool = False
 
 
+class RefCache:
+    """id -> ListRef, remembered for the life of one connection.
+
+    **Ids are stable; inventories are for pickers.** Both live adapters implement
+    `resolve_list` as a FULL INVENTORY DOWNLOAD followed by a filter, and every
+    steady-state operation called it: the poller re-resolved its inbox once per
+    cycle and its outbox once per reply, so an idle hour cost roughly 360 identical
+    downloads of a list of lists that had not changed.
+
+    A selected id does not go stale in the way a name does. It either still names a
+    list - in which case the answer is the same every time - or the list is gone,
+    and that surfaces when an OPERATION on the id fails. It does not need
+    re-discovering every cycle to find out.
+
+    So the inventory is fetched when someone actually needs an inventory - a
+    picker's menu, an explicit refresh, or recovery after a stale-id failure - and
+    the ids resolved from it are remembered. `refresh()` is how the picker's `r`
+    and any recovery path say "forget what you knew".
+
+    NOT a correctness shortcut. `resolve_list` still raises `LookupError` for an id
+    that matches nothing, because it can only cache what an inventory actually
+    contained; the hold-batch rule that a dead id never falls back to a name is
+    untouched by this.
+    """
+
+    def __init__(self) -> None:
+        self._by_id: dict[str, ListRef] = {}
+
+    def remember(self, refs: list[ListRef]) -> list[ListRef]:
+        """Record a whole inventory. Returns it, so callers can wrap a fetch."""
+        for ref in refs:
+            self._by_id[ref.id] = ref
+        return refs
+
+    def get(self, list_id: str) -> ListRef | None:
+        return self._by_id.get(list_id) if list_id else None
+
+    def refresh(self) -> None:
+        """Forget everything. The next lookup pays for a fresh inventory."""
+        self._by_id.clear()
+
+
 class Transport(ABC):
     """The backend contract. Implementations: ICloudTransport, CalDAVTransport, and the
     FakeTransport below. Only these ops touch the backend; nothing else does."""
@@ -62,7 +104,31 @@ class Transport(ABC):
     @abstractmethod
     def resolve_list(self, name: str, list_id: str = "") -> ListRef:
         """Resolve a list by id when given (ghost-safe), else by exact name.
-        Raises LookupError if not found."""
+        Raises LookupError if not found.
+
+        May answer from a cache: an id that resolved once resolves the same way
+        until something says otherwise. `invalidate_lists()` is that something."""
+
+    def invalidate_lists(self) -> None:
+        """Forget any remembered inventory. Safe to call on any transport.
+
+        This is the third legitimate reason to fetch an inventory - after a
+        picker's menu and an explicit refresh - and it exists to keep a cache from
+        turning a DELETED list into an endless retry.
+
+        The failure mode it prevents: with ids cached, a list deleted mid-run no
+        longer surfaces as `LookupError` from `resolve_list`; the cached ref is
+        handed out and the OPERATION fails instead, with whatever the backend says.
+        That could look transient and be retried forever against a list that is
+        never coming back. So the run loop invalidates before it retries, which
+        turns the next cycle's resolve back into an honest `LookupError` and lands
+        on the "a selected list is gone - choose another" path.
+
+        Costs one inventory fetch per FAILED cycle, and nothing at all on the happy
+        path - which is the shape we want: pay for discovery only when something
+        actually needs re-discovering.
+        """
+        return None
 
     @abstractmethod
     def read_incomplete(self, lst: ListRef) -> list[Item]:

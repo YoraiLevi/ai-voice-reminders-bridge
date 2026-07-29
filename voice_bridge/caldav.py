@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from .config import Config
-from .transport import Item, ListRef, NotSupportedError, Transport
+from .transport import Item, ListRef, NotSupportedError, RefCache, Transport
 from .util import read_env
 
 CALDAV_URL = "https://caldav.icloud.com/"
@@ -106,6 +106,7 @@ class CalDAVTransport(Transport):
         self.native_alarm = native_alarm
         self._principal: Any = None
         self._cals: dict[str, Any] = {}  # ListRef.id (== str(cal.url)) -> cal object
+        self._refs = RefCache()
 
     # --- session ------------------------------------------------------------
     def connect(self) -> None:
@@ -144,7 +145,21 @@ class CalDAVTransport(Transport):
 
     # --- Transport interface ------------------------------------------------
     def list_todo_lists(self) -> list[ListRef]:
+        """The full inventory, and a genuinely expensive one.
+
+        `get_supported_components()` is a PROPFIND PER CALENDAR - N+1 over the
+        account - and caldav 3.x exposes no batched form of it: `Principal
+        .calendars()` returns objects whose properties are fetched lazily, one
+        request each. So the cost is inherent to the library, and the answer is to
+        CALL THIS LESS rather than to make it cheaper. It is now reached only where
+        an inventory is genuinely wanted: a picker's menu, an explicit refresh, and
+        recovery after a stale id.
+
+        The per-calendar objects are memoised in `self._cals` for `_cal`, which was
+        already right; the refs are memoised for `resolve_list`, which was not.
+        """
         out: list[ListRef] = []
+        self._refs.refresh()
         for cal in self._p().calendars():
             try:
                 comps = cal.get_supported_components()
@@ -155,9 +170,16 @@ class CalDAVTransport(Transport):
             ref = ListRef(name=_display_name(cal), id=str(cal.url))
             self._cals[ref.id] = cal
             out.append(ref)
-        return out
+        return self._refs.remember(out)
 
     def resolve_list(self, name: str, list_id: str = "") -> ListRef:
+        # CACHED BY ID, like the iCloud adapter: `list_todo_lists` is a full
+        # inventory walk (one PROPFIND per calendar, below), and the poller used to
+        # pay for it once per cycle and once per reply to re-answer a question
+        # whose answer does not change while the id is valid.
+        if list_id and (hit := self._refs.get(list_id)) is not None:
+            return hit
+
         lists = self.list_todo_lists()
         if list_id:
             for ref in lists:
@@ -169,6 +191,9 @@ class CalDAVTransport(Transport):
             if ref.name.strip().lower() == target:
                 return ref
         raise LookupError(f"{name!r} list is not visible over CalDAV")
+
+    def invalidate_lists(self) -> None:
+        self._refs.refresh()
 
     def _iter_objects(self, cal: Any):
         """Per-item load that SKIPS un-loadable entries - a dangling Radicale index

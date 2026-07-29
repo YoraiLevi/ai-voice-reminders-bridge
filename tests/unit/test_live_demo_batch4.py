@@ -72,7 +72,7 @@ def test_verify_refuses_when_a_role_is_unselected(unselected_config, fake_transp
     assert "lists --select" in err.value.msg
 
 
-def test_icloud_never_falls_back_from_a_dead_id_to_a_name(monkeypatch):
+def test_icloud_never_falls_back_from_a_dead_id_to_a_name(monkeypatch, sample_config):
     """The other half of the same bug, in the adapter.
 
     A given-but-unmatched id fell THROUGH to name matching, so a stale selection
@@ -84,7 +84,7 @@ def test_icloud_never_falls_back_from_a_dead_id_to_a_name(monkeypatch):
     class _Lst:
         id, title = "REAL", "Vox-Message-Inbox"
 
-    t = ICloudTransport.__new__(ICloudTransport)
+    t = ICloudTransport(sample_config)
     monkeypatch.setattr(t, "_svc", lambda: type("S", (), {"lists": lambda self: [_Lst()]})())
 
     with pytest.raises(LookupError) as err:
@@ -92,10 +92,10 @@ def test_icloud_never_falls_back_from_a_dead_id_to_a_name(monkeypatch):
     assert "lists --select" in str(err.value)
 
 
-def test_icloud_refuses_a_lookup_with_no_id_and_no_name(monkeypatch):
+def test_icloud_refuses_a_lookup_with_no_id_and_no_name(monkeypatch, sample_config):
     from voice_bridge.icloud import ICloudTransport
 
-    t = ICloudTransport.__new__(ICloudTransport)
+    t = ICloudTransport(sample_config)
     monkeypatch.setattr(t, "_svc", lambda: type("S", (), {"lists": lambda self: []})())
 
     with pytest.raises(LookupError, match="no list id selected"):

@@ -21,10 +21,12 @@ temporary failure says the network is busy, and those need different faces.
 
 from __future__ import annotations
 
-from typing import Callable
+from typing import Callable, TypeVar
 
 from .config import Config
 from .errors import is_transient
+
+T = TypeVar("T")
 
 Ask = Callable[[str], str]
 Show = Callable[[str], None]
@@ -52,6 +54,37 @@ def report(exc: BaseException, cfg: Config, *, show: Show = print) -> None:
     show(f"  the transport did not answer: {exc}")
     show(f"  That is a temporary failure, not a setup problem ({type(exc).__name__}).")
     show(f"  Calls give up after {cfg.icloud_timeout:g}s; -v logs the detail, --log-file keeps it.")
+
+
+def guarded(
+    fn: Callable[[], T],
+    cfg: Config,
+    *,
+    ask: Ask,
+    show: Show = print,
+    is_tty: Callable[[], bool],
+) -> T | None:
+    """Run one network-bound PHASE with classification and in-place retry.
+
+    This exists because wrapping call sites by hand kept leaving holes. `setup`
+    grew transient handling around the credentials phase, then the lists phase, and
+    the TEST MESSAGE phase raised a raw traceback the first time iCloud was slow -
+    three holes in one flow, each fixed after a user hit it.
+
+    A wrapper is the fix only if it is the ONLY way in, so every network phase in
+    the guided flow goes through here and a test enumerates the call sites. That is
+    the same move as the AST prompt test: stop relying on remembering.
+
+    Returns whatever `fn` returned, or `None` if the user declined to retry - the
+    caller decides what an abandoned phase means for the rest of the flow, because
+    only it knows whether the remaining steps can stand without it.
+    """
+    while True:
+        try:
+            return fn()
+        except Exception as exc:
+            if not offer_retry(exc, cfg, ask=ask, show=show, is_tty=is_tty):
+                return None
 
 
 def offer_retry(

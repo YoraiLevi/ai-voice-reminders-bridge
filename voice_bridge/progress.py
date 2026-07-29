@@ -50,6 +50,30 @@ def configure(*, quiet: bool = False) -> None:
 
 
 @contextmanager
+def suspended() -> Iterator[None]:
+    """Silence progress for a block. For the POLL LOOP, and only that.
+
+    The two tiers are deliberate and the manager's order named the boundary: *"do
+    NOT print per-cycle noise; one truthful opening line."* An interactive command
+    runs once and a person is watching it, so every wait deserves a line. The
+    poller runs the same three calls every ten seconds for hours - announcing each
+    would bury the events that matter under the ones that do not, and a log that
+    scrolls while nothing happens is its own way of hiding what does.
+
+    A stall inside the loop is not left silent: the run loop logs the failure with
+    its class and retries, which is the feedback that path actually needs. What it
+    must not do is narrate success.
+    """
+    global _enabled
+    was = _enabled
+    _enabled = False
+    try:
+        yield
+    finally:
+        _enabled = was
+
+
+@contextmanager
 def step(what: str) -> Iterator[None]:
     """Announce `what` on stderr, run the block, then report if it dragged.
 

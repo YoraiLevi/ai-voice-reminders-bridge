@@ -30,7 +30,7 @@ def peer_has_written(cfg: Config) -> bool:
         return False
 
 
-def orientation(cfg: Config, *, interval: int) -> list[str]:
+def orientation(cfg: Config, *, interval: int, just_created: bool = False) -> list[str]:
     """What every run must say before it goes quiet.
 
     The explainer used to hang off mailbox CREATION, so only the one run that
@@ -49,8 +49,9 @@ def orientation(cfg: Config, *, interval: int) -> list[str]:
     hiding what does.
     """
     width = max(len(cfg.peer_inbox.name), len(cfg.our_inbox.name))
+    made = "  (just created)" if just_created else ""
     out = [
-        f"mailbox: {cfg.mailbox_dir}",
+        f"mailbox: {cfg.mailbox_dir}{made}",
         f"  {cfg.peer_inbox.name:<{width}}  your dictations land here - your peer READS it",
         f"  {cfg.our_inbox.name:<{width}}  your peer WRITES replies here - they reach your phone",
     ]
@@ -91,7 +92,7 @@ def announce_new_mailbox(cfg: Config) -> list[str]:
     """
     from .prompt import render_peer_prompt
 
-    out = [f"mailbox created at {cfg.mailbox_dir}"]
+    out: list[str] = []
     target = cfg.mailbox_dir / PEER_PROMPT_FILE
     if not target.exists():
         try:
@@ -151,6 +152,7 @@ def run_command(
         return 2
 
     # ensure mailbox files
+    created_now = False
     if not (cfg.peer_inbox.exists() and cfg.our_inbox.exists()):
         if require_mailbox:
             print(f"error: no mailbox at {cfg.mailbox_dir} (--require-mailbox set)")
@@ -158,13 +160,14 @@ def run_command(
         cfg.mailbox_dir.mkdir(parents=True, exist_ok=True)
         cfg.peer_inbox.touch()
         cfg.our_inbox.touch()
+        created_now = True
         for line in announce_new_mailbox(cfg):
             print(line)
 
     # EVERY run, not only the one that happened to create the mailbox. Printed
     # before the loop goes quiet, so the last thing on screen while nothing is
     # happening explains what "nothing happening" means.
-    for line in orientation(cfg, interval=interval or cfg.poll_interval):
+    for line in orientation(cfg, interval=interval or cfg.poll_interval, just_created=created_now):
         print(line)
 
     # ensure the Radicale server (child lifecycle owned here) + lists

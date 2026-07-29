@@ -170,14 +170,20 @@ def test_orientation_is_not_conditioned_on_creating_the_mailbox(tmp_path, tmp_ma
     assert "READS" in text and "WRITES" in text
 
 
-def test_the_creation_line_carries_only_what_is_actually_news(tmp_path, tmp_mailbox):
-    """`announce_new_mailbox` keeps the one fact that is new - this directory did
-    not exist a moment ago - and no longer duplicates the orientation."""
+def test_created_ness_is_folded_into_the_state_block(tmp_path, tmp_mailbox):
+    """Batch 9 finished the job: "mailbox created at X" then "mailbox: X" printed
+    the same path twice in two lines. Folding it in keeps ONE place that says where
+    the mailbox is - and "(just created)" is exactly the context that makes an empty
+    mailbox unsurprising rather than alarming."""
     cfg, _ = _cfg(tmp_path, tmp_mailbox)
-    lines = runner.announce_new_mailbox(cfg)
 
-    assert any("created at" in line for line in lines)
-    assert not any("READS" in line for line in lines), "state belongs to orientation"
+    assert runner.announce_new_mailbox(cfg) == [], "nothing left to say separately"
+    fresh = "\n".join(runner.orientation(cfg, interval=10, just_created=True))
+    later = "\n".join(runner.orientation(cfg, interval=10))
+
+    assert "(just created)" in fresh
+    assert "(just created)" not in later
+    assert fresh.count(str(cfg.mailbox_dir)) == later.count(str(cfg.mailbox_dir))
 
 
 def test_run_says_it_is_polling_and_how_to_stop(tmp_path, tmp_mailbox):

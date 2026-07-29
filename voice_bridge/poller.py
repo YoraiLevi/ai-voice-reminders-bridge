@@ -17,6 +17,7 @@ from datetime import datetime
 
 from . import log as _log
 from . import ntfy
+from . import progress
 from .config import Config
 from .errors import _is_auth, is_transient
 from .status import staleness_hint as _staleness_hint
@@ -335,68 +336,76 @@ def run(
         # traceback that said something broke when nothing had. The eject in
         # `finally` was never at risk; only the reporting was (LIVE-6).
         try:
-            while True:
-                try:
-                    t.connect()
-                    polled, drained = run_once(cfg, t)
-                    # Report the one thing a working bridge cannot otherwise tell you:
-                    # the messages are being delivered and nothing is reading them.
-                    if (hint := _staleness_hint(cfg, stale_after=stale_after)) is not None:
-                        log.warning("%s", hint)
-                    attempts = 0  # a good cycle clears the budget, so unrelated
-                    backoff = max(backoff_base, 0)  # blips never accumulate to a stop
-                    if once:
-                        return 0 if (polled or drained) else 1
-                except Exception as exc:
-                    if _is_auth(exc):
-                        print(f"error: {exc}")
-                        print("The session needs attention - run `voice-bridge icloud-login`.")
-                        return 2
-
-                    if isinstance(exc, LookupError):
-                        # A selected list stopped existing - deleted on the phone,
-                        # most likely, mid-run. Retrying cannot bring it back, and
-                        # the generic give-up message blames connectivity, sending
-                        # the user to look at their network for a list they deleted.
-                        print(f"error: a selected list is gone - {exc}")
-                        print("       Nothing can be delivered until you choose another:")
-                        print("         voice-bridge lists --select")
-                        return 2
-
-                    # FORGET THE REMEMBERED LISTS before retrying. Ids are cached
-                    # so a healthy cycle costs no inventory download, but that means
-                    # a list deleted mid-run no longer fails at `resolve_list` - it
-                    # fails at the operation, wearing whatever the backend calls it,
-                    # and could be retried forever against something that is never
-                    # coming back. One invalidation here turns the next cycle's
-                    # resolve back into an honest LookupError, which the branch
-                    # above answers with "choose another list".
-                    t.invalidate_lists()
-
-                    attempts += 1
-                    kind = "transient" if is_transient(exc) else "unexpected"
-                    if attempts >= max_attempts or once:
+            # PROGRESS OFF for the loop. Interactive commands announce every wait
+            # because a person is watching one; the poller makes the same calls
+            # every ten seconds for hours, and narrating them would bury the events
+            # that matter under the ones that do not. The orientation block is this
+            # path's feedback, and a failure still logs itself with its class.
+            with progress.suspended():
+                while True:
+                    try:
+                        t.connect()
+                        polled, drained = run_once(cfg, t)
+                        # Report the one thing a working bridge cannot otherwise tell you:
+                        # the messages are being delivered and nothing is reading them.
+                        if (hint := _staleness_hint(cfg, stale_after=stale_after)) is not None:
+                            log.warning("%s", hint)
+                        attempts = 0  # a good cycle clears the budget, so unrelated
+                        backoff = max(backoff_base, 0)  # blips never accumulate to a stop
                         if once:
-                            log.error("run --once failed: %s", exc)
+                            return 0 if (polled or drained) else 1
+                    except Exception as exc:
+                        if _is_auth(exc):
                             print(f"error: {exc}")
+                            print("The session needs attention - run `voice-bridge icloud-login`.")
                             return 2
-                        # Only a TRANSIENT failure earns the connectivity advice.
-                        # Saying it after a permissions error or a bug sends the
-                        # user to inspect a network that was never the problem.
-                        hint = (
-                            "       check connectivity, or whether a second poller is running."
-                            if kind == "transient"
-                            else "       this is not a connectivity problem - read the error above."
-                        )
-                        print(f"error: giving up after {attempts} {kind} failures - {exc}\n{hint}")
-                        return 2
 
-                    log.warning("%s error: %s - retrying in %ss", kind, exc, backoff)
-                    if backoff:
-                        time.sleep(backoff)
-                    backoff = min(max(backoff * 2, 1), max_backoff)
-                    continue
-                time.sleep(period)
+                        if isinstance(exc, LookupError):
+                            # A selected list stopped existing - deleted on the phone,
+                            # most likely, mid-run. Retrying cannot bring it back, and
+                            # the generic give-up message blames connectivity, sending
+                            # the user to look at their network for a list they deleted.
+                            print(f"error: a selected list is gone - {exc}")
+                            print("       Nothing can be delivered until you choose another:")
+                            print("         voice-bridge lists --select")
+                            return 2
+
+                        # FORGET THE REMEMBERED LISTS before retrying. Ids are cached
+                        # so a healthy cycle costs no inventory download, but that means
+                        # a list deleted mid-run no longer fails at `resolve_list` - it
+                        # fails at the operation, wearing whatever the backend calls it,
+                        # and could be retried forever against something that is never
+                        # coming back. One invalidation here turns the next cycle's
+                        # resolve back into an honest LookupError, which the branch
+                        # above answers with "choose another list".
+                        t.invalidate_lists()
+
+                        attempts += 1
+                        kind = "transient" if is_transient(exc) else "unexpected"
+                        if attempts >= max_attempts or once:
+                            if once:
+                                log.error("run --once failed: %s", exc)
+                                print(f"error: {exc}")
+                                return 2
+                            # Only a TRANSIENT failure earns the connectivity advice.
+                            # Saying it after a permissions error or a bug sends the
+                            # user to inspect a network that was never the problem.
+                            hint = (
+                                "       check connectivity, or whether a second poller is running."
+                                if kind == "transient"
+                                else "       this is not a connectivity problem - read the error above."
+                            )
+                            print(
+                                f"error: giving up after {attempts} {kind} failures - {exc}\n{hint}"
+                            )
+                            return 2
+
+                        log.warning("%s error: %s - retrying in %ss", kind, exc, backoff)
+                        if backoff:
+                            time.sleep(backoff)
+                        backoff = min(max(backoff * 2, 1), max_backoff)
+                        continue
+                    time.sleep(period)
         except KeyboardInterrupt:
             print("stopped.")
             return 0

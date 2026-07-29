@@ -25,6 +25,7 @@ from .factory import make_transport
 from .mailbox import append_line, format_mailbox_line
 from .prompting import Cancelled
 from .prompting import ask as _ask_line
+from .transient import guarded
 from .selection import (
     ROLE_LABEL,
     confirm_selection,
@@ -432,7 +433,10 @@ def run_setup(
         return 2
 
     if do_verify:
-        result = verify(cfg, t)
+        result = guarded(lambda: verify(cfg, t), cfg, ask=_ask_line, is_tty=_is_tty)
+        if result is None:  # a stall the user chose not to wait out
+            print("verification not completed. Try again with:  voice-bridge setup --verify")
+            return 1
         for leg, ok in (
             ("dictation reached the mailbox", result["dictation_delivered"]),
             ("reply reached the outbox list", result["reply_delivered"]),
@@ -470,7 +474,7 @@ def run_setup(
             cfg,
             ask=_ask_line,
             show=print,
-            run_verify=lambda: verify(cfg, t),
+            run_verify=lambda: guarded(lambda: verify(cfg, t), cfg, ask=_ask_line, is_tty=_is_tty),
             probe=_PROBE,
         )
 

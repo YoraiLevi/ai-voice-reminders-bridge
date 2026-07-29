@@ -125,7 +125,11 @@ def _item(rem: Any) -> Item:
 class ICloudTransport(Transport):
     def __init__(self, cfg: Config) -> None:
         self.cfg = cfg
-        self.r: Any = None  # the primed reminders service
+        self.r: Any = None  # the reminders service
+        #: pyicloud requires ONE `lists()` call before `list_reminders()`, or the
+        #: service 400s. Tracked rather than done eagerly, so the first real
+        #: inventory read satisfies it and nobody pays for a separate one.
+        self._primed = False
         self._refs = RefCache()
 
     def connect(self) -> None:
@@ -161,20 +165,43 @@ class ICloudTransport(Transport):
                 "expired. Re-run `voice-bridge icloud-login`."
             )
         _apply_timeout(api, self.cfg.icloud_timeout)
-        r = api.reminders
-        # The priming call is REQUIRED before list_reminders() or the service 400s -
-        # and it returns the whole inventory, which we used to throw away and then
-        # immediately re-download on the first resolve. Keeping it makes `lists`
-        # cost one fetch instead of two, and every id resolved during setup free.
-        with step("reading your lists"):
-            primed = [ListRef(name=lst.title, id=str(lst.id)) for lst in r.lists()]
-        self.r = r
-        self._refs.remember(primed)
+        # NO PRIMING FETCH HERE, deliberately. pyicloud requires one `lists()` call
+        # before `list_reminders()` or the service 400s - but making it a separate
+        # step meant `lists` paid for the inventory TWICE, once to prime and once to
+        # display. On a slow day that is two ~7s waits back to back, which the new
+        # progress lines made impossible to miss. Priming is now a SIDE EFFECT of
+        # the first real inventory read (`_inventory`), so nobody pays for it twice.
+        self.r = api.reminders
 
     def _svc(self) -> Any:
         if self.r is None:
             self.connect()
         return self.r
+
+    def _inventory(self) -> list[ListRef]:
+        """THE one place that downloads the list of lists. Also does the priming.
+
+        Every inventory read goes through here, which is what makes the priming
+        requirement free: the first read satisfies it, and there is no second call
+        to pay for.
+        """
+        # `RemindersList.id` is the required identifier the create/query helpers
+        # take; `guid` is optional metadata and is NOT what they want.
+        svc = self._svc()
+        refs = [ListRef(name=lst.title, id=str(lst.id)) for lst in svc.lists()]
+        self._primed = True
+        self._refs.refresh()
+        return self._refs.remember(refs)
+
+    def _ensure_primed(self) -> None:
+        """Satisfy pyicloud's required first `lists()` call, once, lazily.
+
+        Item operations call this because they cannot run before priming. If an
+        inventory has already been read - which is the usual case, since something
+        had to resolve the list first - this costs nothing.
+        """
+        if not self._primed:
+            self._inventory()
 
     def list_todo_lists(self) -> list[ListRef]:
         """The full inventory - a real download - and the cache is rebuilt from it.
@@ -183,17 +210,12 @@ class ICloudTransport(Transport):
         answers from the cache. This is for the three places that genuinely want an
         inventory: a picker's menu, an explicit refresh, and stale-id recovery.
 
-        The refresh-then-remember is the whole point of `r`. Without it a renamed
-        list would be shown correctly here and STILL resolve to its old name by id,
-        because the two answers would come from different eras.
+        Always fetches: `r) refresh` exists because the user just made a list, and a
+        freshness window that answered it from a cache would break the one case the
+        key is for.
         """
-        # `RemindersList.id` is the required identifier the create/query helpers
-        # take; `guid` is optional metadata and is NOT what they want.
-        svc = self._svc()
-        self._refs.refresh()
         with step("reading your lists"):
-            refs = [ListRef(name=lst.title, id=str(lst.id)) for lst in svc.lists()]
-        return self._refs.remember(refs)
+            return self._inventory()
 
     def resolve_list(self, name: str, list_id: str = "") -> ListRef:
         # CACHED BY ID. A selected id either still names a list - same answer every
@@ -202,12 +224,12 @@ class ICloudTransport(Transport):
         if list_id and (hit := self._refs.get(list_id)) is not None:
             return hit
 
-        lists = list(self._svc().lists())
-        self._refs.remember([ListRef(name=lst.title, id=str(lst.id)) for lst in lists])
+        with step("reading your lists"):
+            refs = self._inventory()
         if list_id:
-            for lst in lists:
-                if str(lst.id) == list_id:
-                    return ListRef(name=lst.title, id=str(lst.id))
+            for ref in refs:
+                if ref.id == list_id:
+                    return ref
             # An id that matches nothing is a STALE SELECTION, and it must not fall
             # through to a name. Falling through is how a probe "succeeded": with a
             # role unselected, the fabricated default name matched a real leftover
@@ -220,20 +242,22 @@ class ICloudTransport(Transport):
             )
         if not name:
             raise LookupError("no list id selected - run `voice-bridge lists --select`")
-        same = [lst for lst in lists if lst.title == name]
+        same = [ref for ref in refs if ref.name == name]
         if not same:
             raise LookupError(
                 f"{name!r} list is not visible via pyicloud (create it on the iPhone)"
             )
-        return ListRef(name=same[0].title, id=str(same[0].id))
+        return same[0]
 
     def invalidate_lists(self) -> None:
         self._refs.refresh()
 
     def _query(self, list_id: str, *, include_completed: bool) -> list[Any]:
-        result = _retrying(
-            lambda: self._svc().list_reminders(list_id, include_completed=include_completed)
-        )
+        self._ensure_primed()
+        with step("reading that list's items"):
+            result = _retrying(
+                lambda: self._svc().list_reminders(list_id, include_completed=include_completed)
+            )
         return list(result.reminders)
 
     def read_incomplete(self, lst: ListRef) -> list[Item]:
@@ -250,14 +274,16 @@ class ICloudTransport(Transport):
     def add_todo(
         self, lst: ListRef, summary: str, notes: str = "", *, needs_input: bool = False
     ) -> str:
-        created = _retrying(
-            lambda: self._svc().create(
-                list_id=lst.id,
-                title=summary,
-                desc=notes,
-                priority=1 if needs_input else 0,
+        self._ensure_primed()
+        with step(f"sending {summary[:40]!r} to your phone"):
+            created = _retrying(
+                lambda: self._svc().create(
+                    list_id=lst.id,
+                    title=summary,
+                    desc=notes,
+                    priority=1 if needs_input else 0,
+                )
             )
-        )
 
         # LIVE-4: roughly one create in two came back titled "New Reminder" -
         # Apple's default for a reminder with no title - while the notes held the
@@ -281,8 +307,10 @@ class ICloudTransport(Transport):
         "cleared off the phone" from "quietly didn't", the reminder stayed
         visible, the user re-dictated it, and the agent got it twice (FMA-2).
         """
+        self._ensure_primed()
         try:
-            rem = _retrying(lambda: self._svc().get(item_id))
+            with step("marking that message done"):
+                rem = _retrying(lambda: self._svc().get(item_id))
         except Exception as exc:
             raise LookupError(f"no item {item_id!r} in list {lst.name!r}: {exc}") from exc
         if rem is None:

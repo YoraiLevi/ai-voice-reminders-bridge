@@ -238,7 +238,7 @@ def step_test_message(
     *,
     ask: Ask,
     show: Show,
-    run_verify: Callable[[], dict],
+    run_verify: Callable[[], dict | None],
     probe: str,
 ) -> bool:
     """Run the round trip, say what should have appeared, and ASK.
@@ -267,6 +267,12 @@ def step_test_message(
     # the same consent is how a retry starts to feel like a loop you cannot leave.
     while True:
         result = run_verify()
+        if result is None:
+            # The transport stalled and the user chose not to wait it out. Not a
+            # failed round trip - an unfinished one, and saying otherwise would
+            # blame the setup for the network.
+            show("  not completed - re-test later with:  voice-bridge setup --verify")
+            return False
         machine_ok = bool(result["dictation_delivered"] and result["reply_delivered"])
         show(f"  [{'ok  ' if machine_ok else 'FAIL'}] machine round trip")
         if not machine_ok:

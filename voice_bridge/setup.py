@@ -21,7 +21,7 @@ from typing import Any, Callable
 from . import ntfy
 from .config import Config, load_config, read_raw, resolve_config_path, set_value, write_raw
 from .errors import CommandError, is_transient
-from .factory import make_transport
+from .factory import TRANSPORTS, make_transport
 from .mailbox import append_line, format_mailbox_line
 from .prompting import Cancelled
 from .prompting import ask as _ask_line
@@ -43,10 +43,15 @@ from .transport import ListRef, NotSupportedError, Transport
 #: writes the chosen list's REAL name back to the config. So the answers were
 #: overwritten minutes later by the same run - the user typed something, watched it
 #: be ignored, and had no way to know that was correct behaviour rather than a bug.
+#:
+#: Third element: the closed set of acceptable answers, or None for free text.
+#: A prompt that PRINTS its choices and then accepts anything else is making a
+#: false claim in the same breath - the human typed `rad` and was told
+#: "ACCEPTED - transport = rad".
 _PROMPTABLE = (
-    ("transport", "transport (icloud/radicale)"),
-    ("spoke_name", "this spoke's name"),
-    ("mailbox_dir", "shared mailbox directory"),
+    ("transport", f"transport ({'/'.join(TRANSPORTS)})", TRANSPORTS),
+    ("spoke_name", "this spoke's name", None),
+    ("mailbox_dir", "shared mailbox directory", None),
 )
 
 
@@ -72,28 +77,84 @@ def prompt_fields(cfg: Config, *, preset: dict[str, Any]) -> dict[str, Any]:
 
     answers: dict[str, Any] = {}
     print("Press Enter to keep each current value.")
-    for field, label in _PROMPTABLE:
+    for field, label, choices in _PROMPTABLE:
         if field in preset:
             continue
         current = str(getattr(cfg, field, ""))
-        try:
-            given = _ask(field, label, current)
-        except EOFError:  # isatty can lie; treat "no input" as "no answers"
-            return answers
+        while True:
+            try:
+                given = _ask(field, label, current)
+            except EOFError:  # isatty can lie; treat "no input" as "no answers"
+                return answers
+            if not given or choices is None or given in choices:
+                break
+            # RE-ASK, exactly as `[Y/n]` does for junk. The alternative - accept and
+            # let the failure surface three steps later - is what turned one typo
+            # into a config naming a backend that does not exist.
+            print(f"  not one of the choices - type {' or '.join(choices)}")
         if given:
             answers[field] = given
             # Explicit acceptance, program-wide: an answer that vanishes into the
-            # next prompt leaves the user unsure whether it registered at all.
+            # next prompt leaves the user unsure whether it registered at all. It is
+            # printed only AFTER validation - ACCEPTED on a value we are about to
+            # reject is a lie in the one line the user is reading for reassurance.
             print(f"  ACCEPTED - {field} = {given}")
     return answers
 
 
-def write_config(path: Path, *, transport: str, overrides: dict[str, Any] | None = None) -> None:
-    """Merge transport + overrides into the config file (create it if absent)."""
+#: The selection fields, and the display cache that belongs to each. Kept together
+#: because they are one fact - "which list, and what it was called" - and a switch
+#: that dropped the id while keeping the name would leave a config claiming a list
+#: nobody selected, which is precisely the batch-4 defect.
+_SELECTION_FIELDS = (("inbox_list_id", "inbox_list"), ("output_list_id", "output_list"))
+
+
+def write_config(
+    path: Path, *, transport: str, overrides: dict[str, Any] | None = None
+) -> list[str]:
+    """Merge transport + overrides into the config file (create it if absent).
+
+    Returns lines to show the user - empty unless the transport CHANGED.
+
+    **A transport switch leaves no hybrid behind.** The human switched icloud ->
+    radicale mid-setup and the config on disk ended up naming radicale while still
+    holding two CloudKit list ids: runbook section 0's dangling-pin scenario,
+    performed by the product itself. An id is issued BY a backend and means nothing
+    to any other, so carrying it across is not conservative, it is wrong.
+
+    So the ids and their cached names are cleared in the SAME write that changes the
+    transport. Not "write transport last" - that leaves the same window one step
+    later, and the flow below needs a coherent config to run at all. One write, one
+    consistent state, and the invariant is checkable: **a config never holds ids
+    from a transport other than its own.**
+
+    CLEARED, never re-resolved - the doctor dangling-pin rule. Re-resolving would
+    hand back a different list under a switch verb. The batch-4 gate then refuses to
+    finish setup until both roles are chosen again, so the user cannot walk away
+    half-switched, and the returned lines say that is coming rather than letting it
+    arrive as a surprise.
+    """
     data = read_raw(path)
+    previous = str(data.get("transport") or "")
     data["transport"] = transport
     data.update(overrides or {})
+    now = str(data.get("transport") or "")
+
+    notes: list[str] = []
+    if previous and now and now != previous:
+        dropped = [id_field for id_field, _ in _SELECTION_FIELDS if data.get(id_field)]
+        notes.append(f"transport changed: {previous} -> {now}")
+        if dropped:
+            for id_field, name_field in _SELECTION_FIELDS:
+                data[id_field] = ""
+                data[name_field] = ""
+            notes.append(
+                f"  cleared the {len(dropped)} list selection(s) from {previous} - "
+                f"a list id belongs to the backend that issued it, and means nothing to {now}."
+            )
+            notes.append("  You will choose both lists again on the new transport.")
     write_raw(path, data)
+    return notes
 
 
 def provision(
@@ -161,11 +222,15 @@ _PROBE = "voice-bridge setup --verify probe"
 
 
 def _check_title(t: Transport, item_id: str) -> tuple[bool | None, str]:
-    """Renderability of the probe's stored title, or (None, why) if unavailable.
+    """Renderability of the probe's stored title, or (None, why) if we cannot say.
 
     Only meaningful where the backend stores a CRDT document, so a backend without
     one reports None rather than a false pass - "not applicable" and "fine" must
     not look the same.
+
+    None now covers a second, larger case: the check RAN and could not reach a
+    verdict, usually because Apple had not made the fresh record readable yet. That
+    is neither a pass nor a failure, and the caller must not dress it as either.
     """
     from .titlelint import check_stored
 
@@ -173,6 +238,8 @@ def _check_title(t: Transport, item_id: str) -> tuple[bool | None, str]:
     if svc is None:
         return None, "not applicable for this transport"
     verdict = check_stored(svc, item_id)
+    if verdict.undetermined:
+        return None, verdict.describe()
     return verdict.ok, verdict.describe()
 
 
@@ -246,6 +313,81 @@ def verify(cfg: Config, t: Transport) -> dict[str, Any]:
     return report_out
 
 
+def report_verification(result: dict[str, Any], *, show: Callable[[str], None] = print) -> int:
+    """Print the legs and decide the verdict. 0 verified, 2 failed.
+
+    ONE implementation, because there are now two doors onto it - `verify` the verb
+    and `setup --verify` - and the rule this codebase keeps re-learning is that a
+    fact stated in two places will eventually disagree with itself. The specific
+    disagreement to avoid here is not hypothetical: this block already printed
+    `[FAIL]` and `verified:` in the same breath once.
+    """
+    for leg, ok in (
+        ("dictation reached the mailbox", result["dictation_delivered"]),
+        ("reply reached the outbox list", result["reply_delivered"]),
+        ("notification sent", result["banner_sent"]),
+    ):
+        show(f"  [{'ok  ' if ok else 'FAIL'}] {leg}")
+    if not result["banner_sent"]:
+        show(f"         notification: {result['banner_detail']}")
+
+    # THREE STATES, AND THE MIDDLE ONE IS THE POINT.
+    #
+    # A live run printed "[FAIL] the phone will not render that title" and then,
+    # four lines later, "verified: a message makes the round trip." Both came from
+    # here. Whatever the truth was, that output cannot be right - and the batch-9
+    # ruling applies: if a leg is best-effort its failure must not wear a contract
+    # leg's dress, and if it is NOT best-effort then `verified` must not print over
+    # it.
+    #
+    # So the leg is split by what we actually know. A CONFIRMED bad stored title is
+    # a real user-visible failure (LIVE-5: the reminder arrives blank) and it blocks.
+    # "Could not check" - a fresh record Apple has not served yet - is reported as
+    # unknown and blocks nothing, because a diagnostic that cannot reach a verdict
+    # has not found a defect.
+    if result["title_renderable"] is False:
+        show(f"  [FAIL] the phone will not render that title - {result['title_detail']}")
+    elif result["title_renderable"]:
+        show("  [ok  ] title is renderable on the phone")
+    elif result["title_detail"]:
+        show(f"  [ ?  ] title not confirmed - {result['title_detail']}")
+        show("         the message itself arrived; this check is about the title only.")
+
+    # The notification leg is best-effort by design, so it does not fail the
+    # verification; the two delivery legs are the actual contract, and a title we
+    # PROVED unrenderable joins them - it is a message the phone cannot show.
+    if not (result["dictation_delivered"] and result["reply_delivered"]):
+        show("verification FAILED - a message did not complete the round trip.")
+        return 2
+    if result["title_renderable"] is False:
+        show("verification FAILED - the round trip works, but the title will not render.")
+        return 2
+    show("verified: a message makes the round trip.")
+    return 0
+
+
+def verify_command(cfg: Config, t: Transport) -> int:
+    """The round-trip check, alone. No config written, no questions, no ceremony.
+
+    Ordered after a phone dictation: *"What is the purpose of setup --verify? It
+    seems unclear and confusing."* It was doing what it said - a setup, with a
+    verification inside it - and the name promised the reverse. Someone asking
+    "does my bridge still work?" answered five guided steps to reach one probe.
+
+    So the check is its own verb. `setup` keeps its embedded test step, because
+    proving the round trip is a legitimate part of installing; what it loses is the
+    claim to be the only way to ask. This is deliberately NOT a `doctor` flag:
+    doctor reports, and this WRITES - it creates a probe reminder in each list and
+    completes it afterwards. A verb that mutates should not hide inside one that
+    inspects.
+    """
+    result = guarded(lambda: verify(cfg, t), cfg, ask=_ask_line, is_tty=_is_tty)
+    if result is None:  # a stall the user chose not to wait out
+        print("verification not completed. Try again with:  voice-bridge verify")
+        return 1
+    return report_verification(result)
+
+
 def report(cfg: Config, t: Transport, *, as_json: bool = False) -> int:
     """Print the setup state - structured behind --json, prose otherwise."""
     import json as _json
@@ -305,10 +447,27 @@ def run_setup(
         existing = load_config(path) if path.exists() else load_config(None)
         preset.update(prompt_fields(existing, preset=preset))
 
-    write_config(path, transport=transport, overrides=preset)
+    for line in write_config(path, transport=transport, overrides=preset):
+        print(line)
     cfg = load_config(path)
 
-    if guided and transport == "icloud":
+    # FROM HERE ON, `cfg.transport` IS THE ONLY ANSWER TO "WHICH BACKEND".
+    #
+    # The parameter is a REQUEST (from `--transport`, defaulting to icloud); the file
+    # is the DECISION, and the preamble above may have overridden the request. They
+    # disagreed, and every step keyed off the parameter was wrong while every step
+    # keyed off the config was right - which is the whole diagnosis of the transport
+    # switch. The user answered "radicale", the file said radicale, `make_transport`
+    # built the CalDAV adapter, and this function still walked them through an Apple
+    # ID login and skipped the radicale server check, because two lines here were
+    # reading a stale local variable. A fact stated in two places will eventually
+    # disagree with itself; the fix is to stop stating it twice.
+    #
+    # `test_no_step_in_run_setup_branches_on_the_transport_PARAMETER` enumerates this
+    # rather than trusting anyone to remember it.
+    del transport
+
+    if guided and cfg.transport == "icloud":
         # Offered INLINE rather than named in a footnote: knowing the command
         # exists is not the same as being walked to it, and the gap between those
         # is where a first run stalls.
@@ -322,15 +481,26 @@ def run_setup(
             return 0
         cfg = onboard.reload_config(path)
 
-    if transport == "radicale":
+    if cfg.transport == "radicale":
         from . import server as server_mod
 
+        if guided and not onboard.step_radicale_credentials(cfg, show=print):
+            onboard.farewell(print, ready=False)
+            return 0
+
         if not server_mod.is_reachable(server_mod.client_url(cfg)):
+            # NOT the same message as the credentials step above, because it is not
+            # the same state. Reaching here means the account exists (that step
+            # passed) and the process is simply not running - so `init`, which
+            # refuses to overwrite credentials anyway, is the wrong instruction.
+            # One remedy per diagnosis; a message that names a remedy is a claim
+            # about the cause.
             print(
-                "config written. Next, stand up the server, then re-run setup:\n"
-                "  voice-bridge radicale-server init\n"
-                "  voice-bridge radicale-server start --background"
+                f"config written. The server is configured but not answering at "
+                f"{server_mod.client_url(cfg)}."
             )
+            print("Start it, then re-run setup:")
+            print("  voice-bridge radicale-server start --background")
             return 0
 
     # THE RETRY LOOP IS HERE, around the lists step alone.
@@ -435,26 +605,11 @@ def run_setup(
     if do_verify:
         result = guarded(lambda: verify(cfg, t), cfg, ask=_ask_line, is_tty=_is_tty)
         if result is None:  # a stall the user chose not to wait out
-            print("verification not completed. Try again with:  voice-bridge setup --verify")
+            print("verification not completed. Try again with:  voice-bridge verify")
             return 1
-        for leg, ok in (
-            ("dictation reached the mailbox", result["dictation_delivered"]),
-            ("reply reached the outbox list", result["reply_delivered"]),
-            ("notification sent", result["banner_sent"]),
-        ):
-            print(f"  [{'ok  ' if ok else 'FAIL'}] {leg}")
-        if not result["banner_sent"]:
-            print(f"         notification: {result['banner_detail']}")
-        if result["title_renderable"] is False:
-            print(f"  [FAIL] the phone will not render that title - {result['title_detail']}")
-        elif result["title_renderable"]:
-            print("  [ok  ] title is renderable on the phone")
-        # The notification leg is best-effort by design, so it does not fail the
-        # verification; the two delivery legs are the actual contract.
-        if not (result["dictation_delivered"] and result["reply_delivered"]):
-            print("verification FAILED - a message did not complete the round trip.")
-            return 2
-        print("verified: a message makes the round trip.")
+        rc = report_verification(result)
+        if rc != 0:
+            return rc
 
     if not guided:
         return 0

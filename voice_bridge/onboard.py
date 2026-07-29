@@ -114,8 +114,43 @@ def suggest_topic() -> str:
 # --------------------------------------------------------------------------- #
 
 
+def step_radicale_credentials(cfg: Config, *, show: Show) -> bool:
+    """The radicale half of the credentials step. Returns False if it is not set up.
+
+    This step existed only for iCloud, and `setup` reached the iCloud one on the
+    radicale transport - so a user switching backends was asked for an "Apple ID
+    (email)", had pyicloud run SRP against Apple with it, and got a 400. Nothing
+    about that sequence is relevant to a self-hosted CalDAV server.
+
+    There is no prompting here on purpose. Radicale's credentials are not something
+    the user knows and types in; they are the account `radicale-server init` CREATES,
+    and that command is also the only thing that can write the matching server
+    config and bcrypt user file. Asking for a username and password we could not
+    register anywhere would produce credentials for an account that does not exist -
+    a worse failure than saying plainly where they come from.
+    """
+    _step(show, "Credentials", does="lets this reach your self-hosted CalDAV server")
+    from .server import radicale_creds_path
+
+    creds = radicale_creds_path(cfg)
+    if creds.exists() and creds.read_text(encoding="utf-8").strip():
+        show(f"  already configured: {creds}")
+        return True
+
+    show(f"  No server credentials yet. They are created - not typed - and stored in {creds}.")
+    show("  Run these two, then re-run setup:")
+    show("    voice-bridge radicale-server init")
+    show("    voice-bridge radicale-server start --background")
+    return False
+
+
 def step_credentials(cfg: Config, *, ask: Ask, show: Show, login: Callable[[], int]) -> bool:
-    """Offer to run the login flow inline. Returns False if it still is not set up."""
+    """Offer to run the login flow inline. Returns False if it still is not set up.
+
+    ICLOUD ONLY - it prompts for an Apple ID and authenticates against Apple. The
+    caller must branch on `cfg.transport`, never on a requested transport that the
+    config may have already overridden. See `step_radicale_credentials`.
+    """
     _step(show, "Credentials", does="lets this reach the Reminders on your phone")
     if cfg.creds_env.exists() and cfg.creds_env.read_text(encoding="utf-8").strip():
         show(f"  already configured: {cfg.creds_env}")

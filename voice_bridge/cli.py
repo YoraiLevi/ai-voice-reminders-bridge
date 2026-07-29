@@ -35,7 +35,15 @@ from .invocation import path_note
 from .prompting import Cancelled
 from .runner import run_command
 
-_TRANSPORTS = ("icloud", "radicale")
+#: Imported, not restated. This was a third copy of the closed set - `factory`,
+#: setup's preamble, and here - and the flag audit found it while looking for
+#: something else. Three copies of one fact is two chances to disagree.
+from .factory import TRANSPORTS as _TRANSPORTS  # noqa: E402 - grouped with its reason
+
+#: The commands whose OUTPUT changes shape for `--json`. A global flag that silently
+#: does nothing on eleven of fifteen commands is a promise to a script that the
+#: script cannot check: it asked for JSON, got prose, and had no way to know.
+_JSON_COMMANDS = frozenset({"setup", "status", "lists", "peek"})
 
 
 #: One convention across every command, so a script can branch on the code
@@ -67,7 +75,14 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("-v", "--verbose", action="store_true", help="INFO logging")
     p.add_argument("-q", "--quiet", action="store_true", help="errors only")
     p.add_argument("--log-file", metavar="PATH", help="also log to this file")
-    p.add_argument("--json", action="store_true", help="machine-readable output where supported")
+    p.add_argument(
+        "--json",
+        action="store_true",
+        # "where supported" was a true statement that told you nothing: the reader
+        # still cannot find out where without reading the source, and a script that
+        # guesses wrong parses prose as JSON. Name them.
+        help=f"machine-readable output ({', '.join(sorted(_JSON_COMMANDS))} only)",
+    )
     sub = p.add_subparsers(dest="cmd")
 
     r = sub.add_parser(
@@ -80,19 +95,36 @@ def _build_parser() -> argparse.ArgumentParser:
             "--force is given, and --dry-run writes nothing at all."
         ),
     )
-    r.add_argument("--mailbox")
-    r.add_argument("--transport", choices=_TRANSPORTS)
-    r.add_argument("--require-mailbox", action="store_true")
-    r.add_argument("--interval", type=int)
-    r.add_argument("--once", action="store_true")
-    r.add_argument("--dry-run", action="store_true")
+    r.add_argument("--mailbox", metavar="DIR", help="override the configured mailbox directory")
+    r.add_argument("--transport", choices=_TRANSPORTS, help="use this backend for this run only")
+    r.add_argument(
+        "--require-mailbox",
+        action="store_true",
+        help="refuse to CREATE a missing mailbox - fail instead",
+    )
+    r.add_argument("--interval", type=int, metavar="SECONDS", help="override the poll interval")
+    r.add_argument("--once", action="store_true", help="run a single poll cycle, then exit")
+    r.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="say what would happen and write NOTHING - not even a config file",
+    )
     r.add_argument(
         "--force", action="store_true", help="run even if another poller holds the mailbox"
     )
     r.add_argument(
         "--with-server", action="store_true", help="(radicale) spawn the server as a child"
     )
-    r.add_argument("--set", action="append", dest="overrides", metavar="KEY=VALUE")
+    r.add_argument(
+        "--set",
+        action="append",
+        dest="overrides",
+        metavar="KEY=VALUE",
+        # The audit's sharpest find: the same flag name PERSISTS on `setup` and does
+        # not here. Saying so is the fix; making them agree would be worse, because
+        # both behaviours are the right one for their command.
+        help="override a config field for THIS RUN only, without writing it (repeatable)",
+    )
 
     s = sub.add_parser(
         "setup",
@@ -100,13 +132,45 @@ def _build_parser() -> argparse.ArgumentParser:
         formatter_class=_RAW,
         epilog=_epilog(
             "Prompts only on a terminal; --set pre-answers a field and skips its prompt.\n"
-            "--verify sends a real probe through the whole path and cleans up after itself,\n"
-            "exiting 2 if a message does not complete the round trip."
+            "--verify runs the WHOLE guided setup and proves the round trip as part of it.\n"
+            "If all you want is the check, use `voice-bridge verify` - one probe, no questions."
         ),
     )
-    s.add_argument("--transport", choices=_TRANSPORTS, default="icloud")
-    s.add_argument("--set", action="append", dest="overrides", metavar="KEY=VALUE")
-    s.add_argument("--verify", action="store_true", help="prove a message round-trips")
+    s.add_argument(
+        "--transport",
+        choices=_TRANSPORTS,
+        default="icloud",
+        help="the backend to configure; the preamble question can still override it",
+    )
+    s.add_argument(
+        "--set",
+        action="append",
+        dest="overrides",
+        metavar="KEY=VALUE",
+        help="set a config field PERMANENTLY and skip its prompt (repeatable)",
+    )
+    s.add_argument(
+        "--verify",
+        action="store_true",
+        # The old help said "prove a message round-trips", which is what the flag
+        # DOES and not what the command does. Asked from a phone: "What is the
+        # purpose of setup --verify? It seems unclear and confusing." They had
+        # answered five guided steps to reach one probe. The flag was not lying about
+        # itself; it was silent about the ceremony around it.
+        help="run the full guided setup AND prove the round trip (see `verify` for the check alone)",
+    )
+
+    v = sub.add_parser(
+        "verify",
+        help="prove a message makes the round trip, and nothing else",
+        formatter_class=_RAW,
+        epilog=_epilog(
+            "One probe each way, then it cleans up after itself. No prompts, no config\n"
+            "written, no steps: exit 0 means a message made it, exit 2 means it did not.\n"
+            "Not a `doctor` check, because this WRITES - doctor inspects, this sends."
+        ),
+    )
+    del v  # no flags of its own; the verb is the whole interface
 
     d = sub.add_parser(
         "doctor",
@@ -118,7 +182,11 @@ def _build_parser() -> argparse.ArgumentParser:
             "worst row found, so a script can gate on it."
         ),
     )
-    d.add_argument("--fix", action="store_true")
+    d.add_argument(
+        "--fix",
+        action="store_true",
+        help="repair the safe items (a stale selection is CLEARED, never re-resolved)",
+    )
 
     ls = sub.add_parser(
         "lists",
@@ -178,9 +246,14 @@ def _build_parser() -> argparse.ArgumentParser:
     un.add_argument("--yes", action="store_true", help="skip the confirmation (scripts, non-TTY)")
 
     pk = sub.add_parser("peek", help="show messages in a box")
-    pk.add_argument("--box", choices=("inbox", "outbox"), default="inbox")
-    pk.add_argument("--completed", action="store_true")
-    pk.add_argument("-n", type=int, dest="limit")
+    pk.add_argument(
+        "--box",
+        choices=("inbox", "outbox"),
+        default="inbox",
+        help="which reminder LIST to read: inbox = your dictations, outbox = replies to you",
+    )
+    pk.add_argument("--completed", action="store_true", help="show items already marked done")
+    pk.add_argument("-n", type=int, dest="limit", metavar="N", help="show at most N items")
 
     n = sub.add_parser(
         "notify",
@@ -193,7 +266,9 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     n.add_argument("text")
-    n.add_argument("--click", metavar="URL")
+    n.add_argument(
+        "--click", metavar="URL", help="open this URL when the banner is tapped on the phone"
+    )
 
     c = sub.add_parser(
         "config",
@@ -233,9 +308,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     li.add_argument("--new", action="store_true", help="capture fresh credentials, overwriting")
     li.add_argument("--enter-2fa", action="store_true", help="force a fresh 2FA, keeping creds")
-    li.add_argument("--code")
-    li.add_argument("--code-file")
-    li.add_argument("--code-stdin", action="store_true")
+    li.add_argument("--code", metavar="DIGITS", help="the 2FA code, if you already have it")
+    li.add_argument("--code-file", metavar="PATH", help="read the 2FA code from this file")
+    li.add_argument("--code-stdin", action="store_true", help="read the 2FA code from stdin")
 
     sub.add_parser("vox-prompt", help="print the phone prompt with your list names")
     sub.add_parser(
@@ -260,32 +335,59 @@ def _build_parser() -> argparse.ArgumentParser:
             "being truncated or rotated instead of going quietly silent."
         ),
     )
-    tp.add_argument("--box", choices=("both", "manager", "vox"), default="both")
+    tp.add_argument(
+        "--box",
+        choices=("both", "manager", "vox"),
+        default="both",
+        # NOTE: `peek --box` selects a reminder LIST; this selects a mailbox FILE.
+        # One flag name, two subjects - recorded in the batch-11 flag audit.
+        help="which mailbox FILE to follow (not a reminder list - see `peek --box`)",
+    )
     tp.add_argument("-n", type=int, dest="limit", help="last N lines (default 20)")
-    tp.add_argument("-f", "--follow", action="store_true")
+    tp.add_argument(
+        "-f", "--follow", action="store_true", help="keep watching and print new lines as they land"
+    )
 
     sp = sub.add_parser("send", help="push one reply through the outbound path")
     sp.add_argument("text")
-    sp.add_argument("--no-notify", action="store_true")
+    sp.add_argument(
+        "--no-notify",
+        action="store_true",
+        help="write the reply to the list without buzzing the phone",
+    )
 
     dl = sub.add_parser("deliver", help="publish a file as a gist + tappable banner")
     dl.add_argument("file")
-    dl.add_argument("--summary")
-    dl.add_argument("--public", action="store_true")
+    dl.add_argument("--summary", metavar="TEXT", help="the gist description")
+    dl.add_argument(
+        "--public",
+        action="store_true",
+        help="publish the gist PUBLICLY and searchably (default: a secret link)",
+    )
     dl.add_argument("--yes", action="store_true", help="skip the confirmation")
 
     rs = sub.add_parser("radicale-server", help="manage the self-hosted Radicale server")
     rssub = rs.add_subparsers(dest="op")
     rsi = rssub.add_parser("init")
-    rsi.add_argument("--user")
+    rsi.add_argument("--user", metavar="NAME", help="the CalDAV account to create")
     # NO --password flag: argv is readable by every other user on the machine.
     # The password comes from $RADICALE_PASSWORD or an interactive prompt, the
     # same rule icloud-login follows.
-    rsi.add_argument("--host")
-    rsi.add_argument("--port", type=int)
-    rsi.add_argument("--force", action="store_true", help="rotate existing credentials")
+    rsi.add_argument(
+        "--host", metavar="ADDR", help="address to bind (see the warning about 0.0.0.0)"
+    )
+    rsi.add_argument("--port", type=int, metavar="PORT", help="port to bind")
+    rsi.add_argument(
+        "--force",
+        action="store_true",
+        # Understated: it rewrites the server config and the bcrypt user file too,
+        # and the phone stops connecting until its CalDAV account is updated. The
+        # FileExistsError said so; the flag that causes it did not.
+        help="rewrite the server config and ROTATE the password - the phone's CalDAV "
+        "account must be updated to match",
+    )
     rst = rssub.add_parser("start")
-    rst.add_argument("--background", action="store_true")
+    rst.add_argument("--background", action="store_true", help="run the server as a detached child")
     rssub.add_parser("stop")
     rssub.add_parser("status")
     rssub.add_parser("url")
@@ -332,6 +434,17 @@ def main(argv: list[str] | None = None) -> int:
     note = path_note()
     if note:
         print(note, file=sys.stderr)
+
+    # A flag that did nothing says so. Not an error - the command still does exactly
+    # what was asked, only the formatting request did not apply - but a script that
+    # passes `--json` and receives prose deserves to be told, on stderr, where it
+    # cannot corrupt the output it is parsing.
+    if args.json and args.cmd not in _JSON_COMMANDS:
+        print(
+            f"note: --json has no effect on `{args.cmd}` - "
+            f"supported by: {', '.join(sorted(_JSON_COMMANDS))}",
+            file=sys.stderr,
+        )
 
     try:
         return _dispatch(args)
@@ -413,6 +526,9 @@ def _dispatch(args) -> int:  # noqa: C901 - a flat command table
 
     # commands that need a transport
     cfg = load_config(cfg_path)
+
+    if cmd == "verify":
+        return setup_mod.verify_command(cfg, connected_transport(cfg))
 
     if cmd == "doctor":
         return doctor_mod.run(cfg, fix=args.fix)

@@ -152,7 +152,18 @@ def run_command(
         return 2
 
     # ensure mailbox files
-    created_now = False
+    #
+    # `(just created)` is a claim about the MAILBOX - that is the noun the line
+    # names - so it is measured on the directory, not on the two files.
+    #
+    # Keyed off the files, it printed on every single run of a live session,
+    # including back-to-back runs minutes apart: a peer that ejects removes its own
+    # inbox file, so the next start legitimately re-touches one and the flag came
+    # back true. An event that fires every time is a state wearing an event's
+    # clothes - the exact inverse of the section-24 law, which this same block was
+    # written to satisfy. Re-touching a message file is routine; a mailbox coming
+    # into existence happens once.
+    created_now = not cfg.mailbox_dir.exists()
     if not (cfg.peer_inbox.exists() and cfg.our_inbox.exists()):
         if require_mailbox:
             print(f"error: no mailbox at {cfg.mailbox_dir} (--require-mailbox set)")
@@ -160,7 +171,6 @@ def run_command(
         cfg.mailbox_dir.mkdir(parents=True, exist_ok=True)
         cfg.peer_inbox.touch()
         cfg.our_inbox.touch()
-        created_now = True
         for line in announce_new_mailbox(cfg):
             print(line)
 

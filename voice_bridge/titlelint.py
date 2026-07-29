@@ -28,11 +28,23 @@ from dataclasses import dataclass, field
 
 @dataclass(frozen=True)
 class Verdict:
-    """Whether a title document is renderable, and why not if it isn't."""
+    """Whether a title document is renderable, and why not if it isn't.
+
+    THREE states, not two. `ok=False, undetermined=True` means *we could not find
+    out* - which is a different claim from *the phone will not render this*, and
+    printing the second when we only know the first is exactly what happened live:
+    `setup --verify` announced "the phone will not render that title" about a record
+    it had merely failed to read yet.
+
+    Same shape as `PushResult`'s three states, for the same reason: a check that
+    collapses "no" and "don't know" will eventually assert the wrong one, and it will
+    do so at the moment the user is deciding whether their install works.
+    """
 
     ok: bool
     text: str = ""
     problems: list[str] = field(default_factory=list)
+    undetermined: bool = False
 
     def __bool__(self) -> bool:
         return self.ok
@@ -40,6 +52,8 @@ class Verdict:
     def describe(self) -> str:
         if self.ok:
             return f"renderable: {self.text!r}"
+        if self.undetermined:
+            return "could not be checked - " + "; ".join(self.problems)
         return f"NOT renderable: {self.text!r} - " + "; ".join(self.problems)
 
 
@@ -118,7 +132,9 @@ def check_stored(service: object, reminder_id: str) -> Verdict:
     try:
         from pyicloud.services.reminders import _reads as reads_mod
     except ImportError as exc:  # pragma: no cover - pyicloud not installed
-        return Verdict(False, problems=[f"cannot reach the raw read path: {exc}"])
+        return Verdict(
+            False, problems=[f"cannot reach the raw read path: {exc}"], undetermined=True
+        )
 
     zone = getattr(reads_mod, "_REMINDERS_ZONE_REQ", None)
     as_record_name = getattr(reads_mod, "_as_record_name", None)
@@ -128,6 +144,7 @@ def check_stored(service: object, reminder_id: str) -> Verdict:
             problems=[
                 "pyicloud's raw read helpers have moved; the stored-title check needs updating"
             ],
+            undetermined=True,
         )
 
     try:
@@ -136,12 +153,45 @@ def check_stored(service: object, reminder_id: str) -> Verdict:
             record_names=[as_record_name(reminder_id, "Reminder")],
             zone_id=zone,
         )
+        # THREE OUTCOMES, AND THEY USED TO PRINT AS ONE.
+        #
+        # CloudKit answers a lookup for a record it cannot serve with an entry that
+        # carries no `fields` - and a record just written is exactly the case it
+        # cannot serve yet. Both that and "records: []" fell out of the loop below
+        # into a single line reading "no TitleDocument on the stored record", which
+        # asserts something we never observed: that the record exists WITHOUT a
+        # title. `setup --verify` then told a user the phone would not render a
+        # reminder whose document it had simply not managed to read.
+        #
+        # That the lag is real is documented in this codebase from live measurement:
+        # see LIVE-4 in `icloud.py:add_todo` - pyicloud's own create writes the CRDT
+        # document and reads it back, and roughly one create in two returned Apple's
+        # placeholder title because the read landed first.
+        saw_record = False
         for rec in resp.records:
-            fields = getattr(rec, "fields", None) or {}
+            fields = getattr(rec, "fields", None)
+            if fields is None:
+                continue  # an entry with no fields is a record we did not get
+            saw_record = True
             entry = fields.get("TitleDocument") or {}
             doc = entry.get("value") if isinstance(entry, dict) else None
             if doc:
                 return check_document(doc)
-        return Verdict(False, problems=["no TitleDocument on the stored record"])
+        if not saw_record:
+            return Verdict(
+                False,
+                problems=[
+                    "the record was not readable yet - a lookup this soon after a write "
+                    "often lands before Apple has it (LIVE-4)"
+                ],
+                undetermined=True,
+            )
+        # A record we DID read, carrying no title document, is a real finding: that
+        # is what a titleless reminder on the phone looks like from here.
+        return Verdict(False, problems=["the stored record carries no TitleDocument"])
     except Exception as exc:
-        return Verdict(False, problems=[f"lookup failed: {type(exc).__name__}: {exc}"])
+        return Verdict(
+            False,
+            problems=[f"lookup failed: {type(exc).__name__}: {exc}"],
+            undetermined=True,
+        )

@@ -314,36 +314,38 @@ def test_run_refuses_before_creating_the_mailbox_or_printing_instructions(
 # --------------------------------------------------------------------------- #
 
 
-def test_the_path_note_is_silent_when_the_command_is_typeable(monkeypatch):
+def test_the_path_note_is_silent_when_the_command_is_typeable(monkeypatch, plain_shell):
     """A warning that fires when nothing is wrong is one people learn to scroll
     past, and then miss the time it matters."""
     from voice_bridge import invocation
 
-    monkeypatch.setattr(invocation.shutil, "which", lambda _n: "/usr/bin/voice-bridge")
+    monkeypatch.setattr(invocation.shutil, "which", lambda _n, path=None: "/usr/bin/voice-bridge")
     assert invocation.path_note() == ""
     assert invocation.working_form() == "voice-bridge"
 
 
-def test_the_path_note_names_the_uv_form_inside_a_project(monkeypatch, tmp_path):
+def test_the_path_note_names_the_uv_form_inside_a_project(monkeypatch, tmp_path, plain_shell):
     """The human followed our own advice and got "not recognized"."""
     from voice_bridge import invocation
 
     venv = tmp_path / ".venv" / "Scripts"
     venv.mkdir(parents=True)
     (tmp_path / "pyproject.toml").write_text("", encoding="utf-8")
-    monkeypatch.setattr(invocation.shutil, "which", lambda _n: None)
+    monkeypatch.setattr(invocation.shutil, "which", lambda _n, path=None: None)
     monkeypatch.setattr(invocation.sys, "argv", [str(venv / "voice-bridge.exe")])
 
     assert invocation.working_form() == "uv run voice-bridge"
     note = invocation.path_note()
-    assert "not on your PATH" in note
+    # Batch 10 replaced "not on your PATH here" with one wording that is true of
+    # both causes: under `uv run`, "here" is exactly where it DOES work.
+    assert "shell you type into" in note
     assert "uv run voice-bridge" in note
 
 
-def test_the_module_form_is_reported_when_that_is_how_we_were_launched(monkeypatch):
+def test_the_module_form_is_reported_when_that_is_how_we_were_launched(monkeypatch, plain_shell):
     from voice_bridge import invocation
 
-    monkeypatch.setattr(invocation.shutil, "which", lambda _n: None)
+    monkeypatch.setattr(invocation.shutil, "which", lambda _n, path=None: None)
     monkeypatch.setattr(invocation.sys, "argv", ["/x/voice_bridge/cli.py"])
 
     assert "-m voice_bridge.cli" in invocation.working_form()

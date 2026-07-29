@@ -29,6 +29,19 @@ def _clean_icloud_env(monkeypatch):
 
 
 @pytest.fixture
+def plain_shell(monkeypatch):
+    """A shell that borrowed nothing - no `uv run` around us.
+
+    The suite itself is normally launched with `uv run pytest`, so the marker IS in
+    the environment and any test reasoning about invocation advice would otherwise
+    inherit the harness's accident. That is the same lesson batch 4 paid for with an
+    instrument delta: a claim that depends on a condition you arranged has to state
+    the condition. Tests that WANT the borrowed case set the marker themselves.
+    """
+    monkeypatch.delenv("UV_RUN_RECURSION_DEPTH", raising=False)
+
+
+@pytest.fixture
 def fixed_clock() -> datetime:
     """A frozen wall-clock for deterministic [HH:MM] stamps."""
     return datetime(2026, 7, 12, 8, 48, 0)

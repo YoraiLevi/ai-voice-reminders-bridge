@@ -137,7 +137,9 @@ def test_skipping_says_what_is_lost_and_how_to_do_it_later(sample_config, tmp_pa
     )
     joined = "\n".join(out)
 
-    assert "still arrive in your list" in joined, "what you lose must be stated"
+    # Stated ONCE, in the question block beside the cursor rather than in a header
+    # that has scrolled away by the time the user is choosing.
+    assert "look MANUALLY" in joined, "what you lose must be stated"
     assert str(sample_config.ntfy_topic_file) in joined, "and how to set it later"
     assert not sample_config.ntfy_topic_file.exists()
 
@@ -182,9 +184,16 @@ def test_existing_credentials_are_not_re_asked(sample_config):
 # --------------------------------------------------------------------------- #
 
 
-def test_every_step_says_what_comes_next(sample_config, monkeypatch, tmp_path):
-    """Being told what is happening and what follows is what makes this read as
-    guidance rather than as something acting on your behalf."""
+def test_every_step_names_itself_and_says_what_it_is_for(sample_config, monkeypatch, tmp_path):
+    """Each step explains ITSELF, by name.
+
+    This used to assert `[1/5]`, `[3/5]`, `[5/5]` and `next:`. Both were ruled out
+    from live use: the forward reference "doesn't stand out, doesn't make sense,
+    and the user misses it", and the counter is a fact about the flow duplicated
+    into every step, so reordering one silently makes the rest wrong. The surviving
+    property - a person always knows which step they are in and what it is for - is
+    what this checks now.
+    """
     monkeypatch.setattr(onboard, "copy_to_clipboard", lambda text: True)
     out: list[str] = []
 
@@ -195,8 +204,11 @@ def test_every_step_says_what_comes_next(sample_config, monkeypatch, tmp_path):
     onboard.step_phone_prompt(sample_config, ask=lambda _p: "y", show=out.append)
 
     joined = "\n".join(out)
-    for marker in ("[1/5]", "[3/5]", "[5/5]", "next:"):
-        assert marker in joined
+    for marker in ("== CREDENTIALS ==", "== NOTIFICATIONS", "== YOUR PHONE PROMPT =="):
+        assert marker in joined, f"a step must name itself: {marker}"
+    assert "next:" not in joined, "forward references were removed, not decorated"
+    assert "/5]" not in joined, "step counters go stale the moment the flow changes"
+    assert "lets this reach the Reminders on your phone" in joined, "and say what IT is for"
 
 
 def test_the_welcome_promises_nothing_happens_unasked(sample_config):

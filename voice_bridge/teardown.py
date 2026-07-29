@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Callable
 
 from .config import Config
+from .layout import question_block
 from .prompting import ask as _ask_line
 
 Ask = Callable[[str], str]
@@ -248,6 +249,22 @@ def confirm(plan: Plan, *, ask: Ask, show: Show) -> bool:
     user cannot see is a trap rather than a safeguard.
     """
     word = plan.confirm_word
+    # The preview above this is the longest dump the program prints, so the thing
+    # the user is agreeing to had scrolled past by the time the cursor appeared.
+    # The COUNT and the survivors are restated here: a number is not the same as
+    # the list, but it is the fact the decision turns on, and it is now beside the
+    # question rather than a scroll above it.
+    going = [a for a in plan.remove if a.exists]
+    kept = [a for a in plan.keep if a.path.exists()]
+    question_block(
+        show,
+        choosing=f"whether to {plan.verb} - {len(going)} path(s) will be DELETED",
+        why="Listed above in full. Nothing on your Apple or GitHub account is touched.",
+        current=(
+            "surviving: " + ", ".join(a.label for a in kept) if kept else "nothing will survive"
+        ),
+        keys=[f"{word}|type it in ALL CAPS, exactly, to go ahead", "anything else|cancel"],
+    )
     try:
         answer = ask(
             f"Type {word} (all caps, exactly) to confirm - anything else cancels: "

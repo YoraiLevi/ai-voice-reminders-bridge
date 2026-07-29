@@ -356,8 +356,8 @@ def run_setup(
             # Asking unifies them: answer no and the flow is exactly iCloud's.
             if guided:
                 print("")
-                print("[2/5] Your lists")
-                print("        next: notifications")
+                print("== YOUR LISTS ==")
+                print("   pick the two lists that carry messages between phone and PC")
             auto = True
             if cfg.transport == "radicale" and _is_tty():
                 auto = ask_radicale_creation(ask=_ask_line, show=print)
@@ -462,8 +462,8 @@ def run_setup(
 
     if do_verify:
         print("")
-        print("[4/5] A test message")
-        print("        next: your phone prompt")
+        print("== A TEST MESSAGE ==")
+        print("   send one message the whole way round and check it")
         print("  already verified above.")
     else:
         onboard.step_test_message(

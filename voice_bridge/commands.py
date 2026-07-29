@@ -22,6 +22,7 @@ from typing import Callable
 from .config import Config, set_value
 from .errors import CommandError, raise_command_error
 from .factory import make_transport
+from .layout import question_block
 from .prompting import ask as _ask_line
 from .selection import (
     ROLE_DIRECTION,
@@ -192,8 +193,7 @@ def _choose_role(plan: object, *, ask: Callable[[str], str], show: Callable[[str
     """
     resolutions = plan.resolutions  # type: ignore[attr-defined]
     show("")
-    show("Which list do you want to change?")
-    show("Pick a role to change its list; each shows what it uses today.")
+    show("Your two lists:")
     for i, res in enumerate(resolutions, start=1):
         state = res.current if res.current else "nothing selected"
         note = _STATE_NOTE.get(res.status, "")
@@ -204,8 +204,25 @@ def _choose_role(plan: object, *, ask: Callable[[str], str], show: Callable[[str
         caption = f'  "{res.name}"' if res.name else ""
         show(f"  {i}) {ROLE_LABEL[res.role]}  ({ROLE_DIRECTION[res.role]}){caption}")
         show(f"       currently: {state}{suffix}")
-    show("")
-    show("  d) done - leave everything else unchanged")
+
+    # The block sits below the roles for the same reason it does in the picker:
+    # what you must know in order to answer belongs beside the cursor, not above
+    # whatever the program happened to print first.
+    unsettled = [r for r in resolutions if r.status != "selected"]
+    question_block(
+        show,
+        choosing="which of the two to change",
+        why="Each list carries messages one way; change one and leave.",
+        current=(
+            "both chosen"
+            if not unsettled
+            else "needs attention: " + ", ".join(ROLE_LABEL[r.role] for r in unsettled)
+        ),
+        keys=[
+            f"1-{len(resolutions)}|open the picker for that list",
+            "d)|done - leave everything else unchanged",
+        ],
+    )
 
     prompt = f"Choose 1-{len(resolutions)}, or d: "
     while True:

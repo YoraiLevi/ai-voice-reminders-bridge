@@ -32,19 +32,34 @@ from pathlib import Path
 from typing import Callable
 
 from .config import Config, load_config, set_value
+from .layout import question_block
 
 Ask = Callable[[str], str]
 Show = Callable[[str], None]
 
-TOTAL_STEPS = 5
 
+def _step(show: Show, title: str, *, does: str = "") -> None:
+    """Announce the step by NAME, and say what it is for.
 
-def _step(show: Show, n: int, title: str, *, then: str = "") -> None:
-    """Announce the step and what follows it, so the path is always visible."""
+    Two things were removed here, both ruled from live use.
+
+    **The `next: <following step>` line.** *"They don't stand out and they dont
+    make sense and the user misses them."* A forward reference answers a question
+    nobody is asking: the roadmap already exists once, at the top, where someone is
+    deciding whether to begin. Repeating a fragment of it inside each step puts
+    orientation about the FUTURE where a person is trying to act NOW.
+
+    **The `[n/5]` counter.** *"It's either hardcoded or self incrementing coded
+    procedure and it's overhead. Just make it an obvious title so if we change the
+    flow we don't need to manually update the numbering."* Right, and the argument
+    is maintenance rather than looks: a count is a fact about the whole flow,
+    duplicated into every step, so adding or reordering one silently makes every
+    other header wrong. A NAME cannot go stale that way.
+    """
     show("")
-    show(f"[{n}/{TOTAL_STEPS}] {title}")
-    if then:
-        show(f"        next: {then}")
+    show(f"== {title.upper()} ==")
+    if does:
+        show(f"   {does}")
 
 
 def _yes(ask: Ask, prompt: str, *, default: bool = True, show: Show = print) -> bool:
@@ -101,7 +116,7 @@ def suggest_topic() -> str:
 
 def step_credentials(cfg: Config, *, ask: Ask, show: Show, login: Callable[[], int]) -> bool:
     """Offer to run the login flow inline. Returns False if it still is not set up."""
-    _step(show, 1, "Credentials", then="choosing your lists")
+    _step(show, "Credentials", does="lets this reach the Reminders on your phone")
     if cfg.creds_env.exists() and cfg.creds_env.read_text(encoding="utf-8").strip():
         show(f"  already configured: {cfg.creds_env}")
         return True
@@ -127,7 +142,7 @@ def step_notifications(cfg: Config, *, config_path: Path, ask: Ask, show: Show) 
     them. Someone running their own ntfy must not have to skip the step and go
     hand-edit a config afterwards.
     """
-    _step(show, 3, "Notifications (optional)", then="a test message")
+    _step(show, "Notifications (optional)", does="buzz your phone when a reply lands")
     if cfg.ntfy_topic_file.exists() and cfg.ntfy_topic_file.read_text(encoding="utf-8").strip():
         show(f"  already configured: {cfg.ntfy_topic_file}")
         return True
@@ -136,15 +151,29 @@ def step_notifications(cfg: Config, *, config_path: Path, ask: Ask, show: Show) 
     # yet, in a word they may not use for it. PUSH NOTIFICATION is what it is called
     # on the device, and the cost of declining is stated as an action they will have
     # to take rather than as a mild inconvenience.
-    show("  PUSH NOTIFICATIONS on your phone, via the ntfy app, when a reply lands.")
-    show("  Without them replies still arrive in your list, but you have to look")
-    show("  MANUALLY - nothing tells you.")
+    # ONE statement of the cost, in the question block below - not here as well.
+    # The block is what the user reads at the moment of deciding, so a header that
+    # repeats it is two lines of scroll buying nothing.
+    show("  Delivered by the ntfy app on your phone.")
     show("")
     suggested = suggest_topic()
     show(f"    1) generate a private topic for me   (128-bit random: {suggested})")
     show("    2) enter a topic you already use")
     show("    3) use your own ntfy server (its URL, and a topic)")
     show("    4) skip for now")
+
+    question_block(
+        show,
+        choosing="how push notifications reach your phone",
+        why="Without one, replies still arrive - you just have to look MANUALLY.",
+        current="none configured",
+        keys=[
+            "1)|a private topic, generated now (nothing to type)",
+            "2)|a topic you already subscribe to",
+            "3)|your own ntfy server, and a topic on it",
+            "4)|skip - no notifications until you set one later",
+        ],
+    )
 
     while True:
         # Only option 3 changes the server, and subscribing on the WRONG server is
@@ -225,7 +254,7 @@ def step_test_message(
     to SEE is listed explicitly, and then they are asked. A "no" is not a failure
     to report - it is the beginning of the part we can actually help with.
     """
-    _step(show, 4, "A test message", then="your phone prompt")
+    _step(show, "A test message", does="send one message the whole way round and check it")
 
     show("  This tests the MACHINE round trip: a message out to your list and back.")
     show("  It cannot see your phone's screen - only you can confirm that half.")
@@ -373,7 +402,7 @@ def step_phone_prompt(cfg: Config, *, ask: Ask, show: Show) -> None:
     """
     from .prompt import render_vox_prompt
 
-    _step(show, 5, "Your phone prompt", then="starting the bridge")
+    _step(show, "Your phone prompt", does="the instructions you paste into the app on your phone")
     text = render_vox_prompt(cfg)
 
     show("  The instruction set your phone runs. It carries the lists you chose -")
@@ -408,7 +437,10 @@ def welcome(show: Show) -> None:
     # encouragement - but it is stated once, flatly, and not repeated per step.
     show("Setting up your voice bridge - talk to your agents from your phone.")
     show("")
-    show(f"  {TOTAL_STEPS} steps: credentials, lists, notifications, a test, the phone prompt.")
+    # NAMES, not a count - the same maintenance trap as the per-step `[n/5]`. A
+    # count is a fact about the flow stated in a second place, so changing the flow
+    # silently makes it false; a list of names stays honest.
+    show("  Steps: credentials, your lists, notifications, a test, the phone prompt.")
     show("  Nothing changes on your machine or your accounts without asking first.")
     show("  Every step can be skipped; each names the command to do it later.")
 

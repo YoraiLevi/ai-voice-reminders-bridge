@@ -230,7 +230,9 @@ def test_the_keep_label_says_what_choosing_it_does():
 def test_the_skip_label_does_not_claim_to_quit():
     """It advances rather than exiting; "quit" described neither (ruled live)."""
     _, shown = _run(_resolution(current="L1"), ["k"])
-    assert "s) skip" in shown
+    # Key and meaning asserted separately: the legend is column-aligned now, so the
+    # gap between them is layout rather than content.
+    assert "s)" in shown and "skip" in shown
     assert "quit" not in shown.lower()
 
 
@@ -540,7 +542,8 @@ def test_refresh_picks_up_a_list_that_only_just_synced():
 
     assert choice.action == "select"
     assert choice.list_id == "NEW", "the newly synced list must be choosable"
-    assert "r) refresh" in "\n".join(shown)
+    rows = "\n".join(shown)
+    assert "r)" in rows and "refresh" in rows
 
 
 def test_refresh_is_offered_even_when_the_account_looks_empty():
@@ -560,7 +563,7 @@ def test_refresh_is_offered_even_when_the_account_looks_empty():
     joined = "\n".join(shown)
 
     assert choice.action == "skip"
-    assert "r) refresh" in joined
+    assert "r)" in joined and "refresh" in joined
     assert "no lists yet" in joined
 
 
@@ -598,7 +601,7 @@ def test_keep_is_not_offered_for_a_selection_that_no_longer_exists():
     _, shown = _run(stale, ["s"])
 
     assert "keep this selection" not in shown
-    assert "c) clear this selection" in shown, "clearing a dead id is the repair"
+    assert "clear this selection" in shown, "clearing a dead id is the repair"
 
 
 def test_keep_is_offered_for_a_live_selection():
@@ -612,4 +615,4 @@ def test_keep_is_offered_for_a_live_selection():
         chosen="L1",
     )
     _, shown = _run(live, ["s"])
-    assert "k) keep this selection as it is" in shown
+    assert "keep this selection as it is" in shown

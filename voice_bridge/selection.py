@@ -27,6 +27,7 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from .config import Config
+from .layout import question_block
 from .transport import ListRef, Transport
 
 # role -> (configured-name attribute, selected-id attribute)
@@ -264,6 +265,19 @@ _ROLE_TEACH: dict[str, tuple[str, str]] = {
 }
 
 
+def _current_label(resolution: Resolution) -> str:
+    """What this role uses TODAY, said where the decision is made.
+
+    A user deciding whether to change something needs to know what they are
+    changing FROM, and on a fresh install its absence is itself the answer.
+    """
+    if resolution.status == "stale":
+        return f"{resolution.name or '(unknown)'}  [{resolution.current}]  - THAT LIST IS GONE"
+    if resolution.status == "selected":
+        return f"{resolution.name}  [{resolution.current}]"
+    return ""
+
+
 def _header(resolution: Resolution, *, count: int | None = None) -> list[str]:
     """Ask the question, teach what the answer means, and state how many rows follow.
 
@@ -305,6 +319,10 @@ def pick(
     candidates = list(resolution.candidates)
 
     while True:
+        # THE DUMP GOES FIRST, and only the dump. Everything a person needs in order
+        # to answer is printed AFTER it, in the question block, because on a real
+        # account this list is twenty rows long and anything above it has scrolled
+        # off the screen by the time the cursor appears.
         for line in _header(resolution, count=len(candidates)):
             show(line)
         for i, ref in enumerate(candidates, start=1):
@@ -312,42 +330,43 @@ def pick(
         if not candidates:
             show("  (this account has no lists yet)")
 
-        # CHANGING is what this command is for, so the change action is stated on
-        # its own line, directly under the rows, before anything else is offered.
-        # An earlier layout listed only navigation verbs beneath them, and a real
-        # user read the whole screen as a viewer with no way to edit.
-        show("")
-        if candidates:
-            show(f"  Type 1-{len(candidates)} to CHOOSE that list.")
-
-        # Every other label states what CHOOSING IT DOES, because two of them did
-        # not and a user had to discover the difference by trying them (both ruled
-        # from live use): "quit" did not quit - it moved on - and a bare "keep"
-        # gave no hint whether it meant keep-and-stop or keep-and-carry-on.
+        # Every label states what CHOOSING IT DOES, because two of them did not and
+        # a user had to discover the difference by trying them (both ruled from live
+        # use): "quit" did not quit - it moved on - and a bare "keep" gave no hint
+        # whether it meant keep-and-stop or keep-and-carry-on.
         # `keep` only when there is something valid to keep. Offering to keep a
         # selection that no longer exists is offering to keep something broken -
         # found by reading the picker's own output on a stale role. `clear` still
         # applies, because clearing a dead id IS the repair.
-        extra = []
-        if resolution.status == "selected":
-            extra.append("k) keep this selection as it is")
-        if resolution.current:
-            extra.append("c) clear this selection")
-
-        # "skip, change nothing" is true only when there is something to change.
-        # On a FROM-ZERO setup there is not, so the same label promised safety
-        # while leaving the install unusable - the user skipped, setup ended, and
-        # nothing said the bridge could not run. Ruled from live use: state the
-        # consequence, do not hide the exit.
-        skip = (
-            "s) skip, change nothing"
-            if resolution.current
-            else "s) skip - the bridge cannot run until a list is selected"
-        )
-        show("  or:  " + "      ".join([*extra, "r) refresh the list", skip]))
-
         top = len(candidates)
-        keys = [label[0] for label in extra]
+        legend = []
+        if top:
+            # CHANGING is what this screen is for, so it leads the legend.
+            legend.append(f"1-{top}|choose that list")
+        if resolution.status == "selected":
+            legend.append("k)|keep this selection as it is")
+        if resolution.current:
+            legend.append("c)|clear this selection")
+        legend.append("r)|refresh - re-read the account (a list you just made)")
+        # "skip, change nothing" is true only when there is something to change. On
+        # a FROM-ZERO setup there is not, so the same label promised safety while
+        # leaving the install unusable.
+        legend.append(
+            "s)|skip, change nothing"
+            if resolution.current
+            else "s)|skip - the bridge cannot run until a list is selected"
+        )
+
+        where, teach = _ROLE_TEACH[resolution.role]
+        question_block(
+            show,
+            choosing=f"the list that will {where}",
+            why=teach,
+            current=_current_label(resolution),
+            keys=legend,
+        )
+
+        keys = [label[0] for label in legend if label[0] in ("k", "c")]
         letters = "/".join([*keys, "r", "s"])
         prompt = f"Choose 1-{top}, or {letters}: " if top else f"Choose {letters}: "
 

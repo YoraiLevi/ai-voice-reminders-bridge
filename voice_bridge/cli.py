@@ -528,7 +528,11 @@ def _dispatch(args) -> int:  # noqa: C901 - a flat command table
     cfg = load_config(cfg_path)
 
     if cmd == "verify":
-        return setup_mod.verify_command(cfg, connected_transport(cfg))
+        # The factory is PASSED, not called: `verify_command` checks its offline
+        # precondition first, so a run with no lists selected never touches the
+        # account. Calling `connected_transport(cfg)` here authenticated first and
+        # refused second.
+        return setup_mod.verify_command(cfg, connected_transport)
 
     if cmd == "doctor":
         return doctor_mod.run(cfg, fix=args.fix)

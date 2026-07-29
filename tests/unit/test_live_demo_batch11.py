@@ -557,7 +557,7 @@ def test_the_verify_verb_runs_no_flow_at_all(tmp_path, tmp_mailbox, monkeypatch,
     monkeypatch.setattr(setup_mod, "_ask_line", _never)
     monkeypatch.setattr(setup_mod, "verify", lambda *_a, **_k: _passing_result())
 
-    rc = setup_mod.verify_command(load_config(cfg_file), object())
+    rc = setup_mod.verify_command(load_config(cfg_file), lambda _cfg: object())
     out = capsys.readouterr().out
 
     assert rc == 0
@@ -580,7 +580,7 @@ def test_the_verify_verb_writes_no_config(tmp_path, tmp_mailbox, monkeypatch):
         lambda *_a, **_k: _passing_result(title_renderable=None, title_detail=""),
     )
 
-    setup_mod.verify_command(load_config(cfg_file), object())
+    setup_mod.verify_command(load_config(cfg_file), lambda _cfg: object())
 
     assert cfg_file.read_text(encoding="utf-8") == before
 
@@ -602,7 +602,7 @@ def test_both_doors_print_one_report(tmp_path, tmp_mailbox, monkeypatch, capsys,
         ),
     )
 
-    via_verb = setup_mod.verify_command(load_config(cfg_file), fake_transport)
+    via_verb = setup_mod.verify_command(load_config(cfg_file), lambda _cfg: fake_transport)
     verb_out = capsys.readouterr().out
     via_flag = setup_mod.run_setup(config_path=cfg_file, do_verify=True)
     flag_out = capsys.readouterr().out
@@ -727,3 +727,50 @@ def test_the_two_flags_whose_help_understated_the_consequence():
 
     assert "phone" in flags["radicale-server init --force"]
     assert "PUBLICLY" in flags["deliver --public"]
+
+
+def test_verify_touches_no_network_when_it_was_never_going_to_work(tmp_path, tmp_mailbox, capsys):
+    """Found by running the new verb once, for real, at the gated ref.
+
+    With no lists selected it printed `connecting to iCloud...` and THEN refused. The
+    precondition is offline and free; authenticating first means a command that could
+    not possibly do its job still reaches somebody's account. That is the batch-4
+    ordering rule - which `run` already obeys - and the reason `verify_command` takes
+    a factory rather than a live transport.
+
+    This one also has teeth beyond tidiness: the account here belongs to a person, and
+    a check is the command most likely to be run idly.
+    """
+    cfg_file = _write_cfg(tmp_path, tmp_mailbox, transport="icloud")  # no ids selected
+
+    def _never(_cfg):
+        raise AssertionError("connected before checking a precondition that needs no network")
+
+    rc = setup_mod.verify_command(load_config(cfg_file), _never)
+    out = capsys.readouterr().out
+
+    assert rc == 2
+    assert "No list is selected" in out
+
+
+def test_the_cli_passes_the_factory_rather_than_a_connection():
+    """The seam has to survive at the call site too - building the transport in `cli`
+    would restore the defect while every test here still passed."""
+    import ast
+
+    from voice_bridge import cli
+
+    tree = ast.parse(Path(cli.__file__).read_text(encoding="utf-8"))
+    calls = [
+        n
+        for n in ast.walk(tree)
+        if isinstance(n, ast.Call)
+        and isinstance(n.func, ast.Attribute)
+        and n.func.attr == "verify_command"
+    ]
+    assert calls, "the verb must still be wired"
+    for call in calls:
+        for arg in call.args[1:]:
+            assert not isinstance(arg, ast.Call), (
+                f"cli.py:{call.lineno} connects before the offline gate runs"
+            )

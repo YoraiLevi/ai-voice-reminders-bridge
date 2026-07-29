@@ -366,7 +366,7 @@ def report_verification(result: dict[str, Any], *, show: Callable[[str], None] =
     return 0
 
 
-def verify_command(cfg: Config, t: Transport) -> int:
+def verify_command(cfg: Config, connect: Callable[[Config], Transport]) -> int:
     """The round-trip check, alone. No config written, no questions, no ceremony.
 
     Ordered after a phone dictation: *"What is the purpose of setup --verify? It
@@ -380,7 +380,21 @@ def verify_command(cfg: Config, t: Transport) -> int:
     doctor reports, and this WRITES - it creates a probe reminder in each list and
     completes it afterwards. A verb that mutates should not hide inside one that
     inspects.
+
+    `connect` is a CALLABLE, not a transport, so nothing authenticates until the
+    offline precondition passes. The first version took a connected transport and
+    the CLI built it at the call site - so running `verify` with no lists selected
+    logged into the account and THEN said it could not check anything. That is the
+    batch-4 ordering rule, which `run` already obeys: a check that is cheap and
+    local goes before any side effect, and reaching a network at all is one.
     """
+    unsettled = missing_roles(cfg)
+    if unsettled:
+        for line in missing_roles_message(unsettled):
+            print(line)
+        return 2
+
+    t = connect(cfg)
     result = guarded(lambda: verify(cfg, t), cfg, ask=_ask_line, is_tty=_is_tty)
     if result is None:  # a stall the user chose not to wait out
         print("verification not completed. Try again with:  voice-bridge verify")

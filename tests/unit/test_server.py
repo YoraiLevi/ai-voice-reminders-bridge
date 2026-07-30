@@ -12,7 +12,7 @@ from voice_bridge.config import load_config
 from voice_bridge.util import read_secret
 
 
-def _cfg(tmp_path, tmp_mailbox, port=5299):
+def _cfg(tmp_path, tmp_mailbox, port=5299, host=None):
     p = tmp_path / "voice-bridge.json"
     p.write_text(
         json.dumps(
@@ -21,6 +21,7 @@ def _cfg(tmp_path, tmp_mailbox, port=5299):
                 "mailbox_dir": str(tmp_mailbox),
                 "state_dir": str(tmp_path / "state"),
                 "radicale_port": port,
+                **({"radicale_host": host} if host else {}),
             }
         ),
         encoding="utf-8",
@@ -32,7 +33,10 @@ def test_init_writes_config_user_and_creds(tmp_path, tmp_mailbox):
     cfg = _cfg(tmp_path, tmp_mailbox, port=5299)
     server.init(cfg, user="tester", password="secret")
     p = server.paths(cfg)
-    assert "hosts = 0.0.0.0:5299" in p.config.read_text(encoding="utf-8")
+    # Asserted from the CONFIG, not as a literal: the bind default changed in batch 14
+    # and this test is about init WRITING what it was told, not about which host is
+    # default. A literal here re-breaks every time that decision is revisited.
+    assert f"hosts = {cfg.radicale_host}:5299" in p.config.read_text(encoding="utf-8")
     assert p.users.read_text(encoding="utf-8").startswith("tester:$2b$")  # bcrypt, no plaintext
     creds = cfg.creds_env.read_text(encoding="utf-8")
     assert "ICLOUD_CALDAV_URL=http://127.0.0.1:5299" in creds
@@ -152,11 +156,25 @@ def test_creds_file_is_owner_only(tmp_path, tmp_mailbox):
 def test_init_warns_about_binding_publicly_over_plain_http(tmp_path, tmp_mailbox, capsys):
     """`0.0.0.0` plus plain HTTP means anyone who can reach the port can read
     every dictation. That deserves saying out loud, once, at the moment it is set."""
-    cfg = _cfg(tmp_path, tmp_mailbox)
+    # THE CONDITION IS SET, NOT INHERITED. This used to rely on 0.0.0.0 being the
+    # default; batch 14 made loopback the default, so the warning correctly stopped
+    # firing and the test failed for the right reason. A test whose premise arrives from
+    # a default is a test that changes meaning when the default does.
+    cfg = _cfg(tmp_path, tmp_mailbox, host="0.0.0.0")
     server.init(cfg, user="tester", password="secret")
     out = capsys.readouterr().out.lower()
     assert "0.0.0.0" in out or "private" in out
     assert "http" in out
+
+
+def test_init_does_not_cry_wolf_about_a_loopback_bind(tmp_path, tmp_mailbox, capsys):
+    """The converse, and it is the DEFAULT case now: nothing is exposed, so nothing is
+    warned about. A warning that fires when the posture is safe is the noise that trains
+    people to ignore the one that matters."""
+    cfg = _cfg(tmp_path, tmp_mailbox, host="127.0.0.1")
+    server.init(cfg, user="tester", password="secret")
+    out = capsys.readouterr().out.lower()
+    assert "anyone who can reach" not in out
 
 
 # --------------------------------------------------------------------------- #

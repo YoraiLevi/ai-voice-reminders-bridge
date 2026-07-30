@@ -299,9 +299,21 @@ class CalDAVTransport(Transport):
             name=name, cal_id=cal_id, supported_calendar_component_set=["VTODO"]
         )
         ref = self.resolve_list(name)
-        try:  # seed a placeholder - an empty CalDAV list doesn't sync to the iPhone
+        try:
+            # SEEDED COMPLETE. An empty CalDAV collection does not sync to the iPhone,
+            # so the placeholder has to exist - but an INCOMPLETE one in the dictation
+            # list is indistinguishable from a dictation, and the poller duly bridged
+            # it: the peer agent's first ever message was "Vox-Message-Outbox is live -
+            # the voice bridge created this list. Safe to delete." (F3).
+            #
+            # Marking it done was the obvious fix and it hung on a fact only a phone
+            # could supply: does iOS sync a collection whose only item is completed?
+            # **It does** - the human confirmed both lists appeared. So the seed is
+            # created complete, `read_incomplete` never sees it, and nothing has to
+            # recognise it by its text.
             self._cals[ref.id].save_todo(
-                summary=f"{name} is live - the voice bridge created this list. Safe to delete."
+                summary=f"{name} is live - the voice bridge created this list. Safe to delete.",
+                status="COMPLETED",
             )
         except Exception:
             pass

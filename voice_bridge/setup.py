@@ -849,8 +849,15 @@ def ask_radicale_creation(*, ask: Callable[[str], str], show: Callable[[str], No
     them: answer "no" and the flow is exactly iCloud's - create the lists
     yourself, refresh, select.
     """
-    show("Radicale can create the two lists for you, or you can make them yourself")
-    show("in whatever client you use (the same way the iCloud path works).")
+    # The old second line read "in whatever client you use (the same way the iCloud
+    # path works)". The human's verdict, verbatim: "this doesn't make any sense" - and
+    # they were right twice. "Whatever client you use" assumes they have one, and the
+    # parenthesis explains this path by comparing it to a path they may never have
+    # taken. An explanation that requires knowing the other branch is not an
+    # explanation.
+    show("This server can create the two lists for you now.")
+    show("Or say no and make them yourself in any CalDAV app connected to it, then")
+    show("come back and choose them here.")
     while True:
         try:
             answer = ask("Create them for you? [Y/n]: ").strip().lower()

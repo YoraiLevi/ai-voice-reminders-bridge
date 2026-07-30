@@ -20,7 +20,10 @@ def test_defaults_are_the_vox_spoke(sample_config):
     assert cfg.inbox_list == "Vox-Message-Outbox"
     assert cfg.output_list == "Vox-Message-Inbox"
     assert cfg.transport == "icloud"
-    assert cfg.radicale_host == "0.0.0.0"
+    # LOOPBACK since batch 14: an iPhone refuses plain HTTP for CalDAV, so the working
+    # posture is `tailscale serve` in front, and then the LAN needs no access at all -
+    # which makes 0.0.0.0 the worse option rather than the necessary one.
+    assert cfg.radicale_host == "127.0.0.1"
     assert cfg.radicale_port == 5232
     assert cfg.radicale_user == "vox"
 

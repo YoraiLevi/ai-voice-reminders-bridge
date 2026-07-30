@@ -139,6 +139,32 @@ def _selected_ids(cfg: Config) -> str:
     is unconditional - and the absence of a branch is the point: there is no longer
     a shape of this text that can be partially true.
     """
+    # TRANSPORT-AWARE, because on CalDAV the ids are meaningless to the reader.
+    #
+    # Field-reported by the phone agent itself: on radicale these ids are SERVER URLS
+    # (`http://127.0.0.1:5232/vox/...`) and iOS assigns its own local identifiers, so
+    # the "use these exactly" instruction cannot be followed. Worse, the device could
+    # see same-named `Vox-Message-*` lists in TWO accounts - the live iCloud pair and
+    # the new self-hosted pair - so the name was ambiguous and the id was unusable at
+    # the same time. The agent had to GUESS by trying a write and seeing if it landed.
+    #
+    # A prompt that cannot be obeyed is worse than one that says less: it teaches the
+    # reader to improvise, and improvisation is what routes dictations into a list
+    # nobody polls.
+    if cfg.transport == "radicale":
+        return (
+            "\n"
+            "WHICH LISTS ARE MINE - the ACCOUNT disambiguates them, not the ids.\n"
+            f'  Both lists live in the CalDAV account whose user name is "{cfg.radicale_user}".\n'
+            f'  "{cfg.inbox_list}" (you dictate here)\n'
+            f'  "{cfg.output_list}" (answers arrive here)\n'
+            "  If you can see lists with these names in MORE THAN ONE account, the others\n"
+            f'  are not mine - use the pair inside the "{cfg.radicale_user}" account. Try a\n'
+            "  write and check it landed only if you are still unsure; ask me rather than\n"
+            "  guessing twice.\n"
+            "  (This PC addresses those lists by server URL - not something your phone can\n"
+            "  see, so there is no id here for you to match.)\n"
+        )
     return (
         "\n"
         "AUTHORITATIVE LIST IDENTIFIERS - use these exactly; do NOT match by name,\n"

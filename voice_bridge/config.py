@@ -76,7 +76,16 @@ DEFAULTS: dict[str, Any] = {
     # Tighter than a daemon would want on purpose - this path has a person in it.
     "icloud_timeout": 30.0,
     # self-hosted Radicale server (managed by `voice-bridge radicale-server`)
-    "radicale_host": "0.0.0.0",  # bind address
+    # LOOPBACK by default, since batch 14. An iPhone refuses plain HTTP for CalDAV, so
+    # the working posture is `tailscale serve` terminating TLS in front of this - and
+    # then the LAN needs no access at all, which makes `0.0.0.0` the WORSE option rather
+    # than the necessary one. Set it explicitly if you really are serving plain HTTP to
+    # other machines.
+    #
+    # It also shrinks a near-miss: a `radicale-server init --force` run without
+    # `--config` mid-triage wrote a fresh server config into whichever config resolved,
+    # and with the old default that config bound every interface.
+    "radicale_host": "127.0.0.1",  # bind address
     "radicale_port": 5232,  # int
     "radicale_user": "vox",  # the single CalDAV user
     # ntfy

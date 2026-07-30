@@ -155,8 +155,15 @@ def _build_parser() -> argparse.ArgumentParser:
     s.add_argument(
         "--transport",
         choices=_TRANSPORTS,
-        default="icloud",
-        help="the backend to configure; the preamble question can still override it",
+        # NO DEFAULT, deliberately. `default="icloud"` meant a flag nobody typed
+        # arrived at `write_config` as an explicit answer and stamped iCloud over a
+        # radicale config on disk - converting a working install and, after batch 11
+        # correctly recognised that as a transport switch, clearing both list pins
+        # with it. `run --transport` never had a default and was never affected.
+        #
+        # Section 26 says a request is not a decision. A flag's DEFAULT is not even a
+        # request: nobody asked for it.
+        help="the backend to configure (default: keep what the config says)",
     )
     s.add_argument(
         "--set",

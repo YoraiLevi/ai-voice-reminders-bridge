@@ -325,11 +325,27 @@ def report_verification(result: dict[str, Any], *, show: Callable[[str], None] =
     for leg, ok in (
         ("dictation reached the mailbox", result["dictation_delivered"]),
         ("reply reached the outbox list", result["reply_delivered"]),
-        ("notification sent", result["banner_sent"]),
     ):
         show(f"  [{'ok  ' if ok else 'FAIL'}] {leg}")
-    if not result["banner_sent"]:
-        show(f"         notification: {result['banner_detail']}")
+
+    # THE BANNER IS BEST-EFFORT, SO IT DOES NOT WEAR A CONTRACT LEG'S DRESS.
+    #
+    # Batch 9 ruled this for the title leg and I applied it only there, leaving the
+    # banner printing `[FAIL] notification sent` four lines above `verified:` - the
+    # very shape the human called out. Walking the Radicale sim put it back on screen
+    # and made the inconsistency my own.
+    #
+    # `PushResult` already had the three states this needs: not configured is not a
+    # failure at all, and a genuine send failure is a warning, because a message that
+    # arrived without its doorbell still arrived.
+    if result["banner_sent"]:
+        show("  [ok  ] notification sent")
+    elif str(result["banner_detail"]).startswith("no_topic"):
+        show("  [ -- ] notification not configured - no banners will be sent")
+        show(f"         {result['banner_detail']}")
+    else:
+        show("  [warn] notification not sent - the message still arrived")
+        show(f"         {result['banner_detail']}")
 
     # THREE STATES, AND THE MIDDLE ONE IS THE POINT.
     #
@@ -435,7 +451,7 @@ def report(cfg: Config, t: Transport, *, as_json: bool = False) -> int:
 def run_setup(
     *,
     config_path: str | Path | None = None,
-    transport: str = "icloud",
+    transport: str | None = None,
     overrides: dict | None = None,
     do_verify: bool = False,
     as_json: bool = False,
@@ -457,11 +473,24 @@ def run_setup(
     # Guided prompts BEFORE the config is written, so answers actually land in it.
     # `--set` values pre-answer their fields and are not asked about again.
     preset = dict(overrides or {})
+    existing = load_config(path) if path.exists() else load_config(None)
     if not as_json:
-        existing = load_config(path) if path.exists() else load_config(None)
         preset.update(prompt_fields(existing, preset=preset))
 
-    for line in write_config(path, transport=transport, overrides=preset):
+    # WHICH TRANSPORT, IN PRECEDENCE ORDER - and `None` means nobody said.
+    #
+    # `--transport` used to default to "icloud", so a flag nobody typed reached here
+    # as an explicit answer and stamped iCloud over a radicale config: a working
+    # install converted by a bare `voice-bridge setup`, and - once batch 11 correctly
+    # read that as a transport switch - its two list pins cleared with it. Section 26
+    # says a request is not a decision; a flag's DEFAULT is not even a request.
+    #
+    # So: what the person just answered, else what they passed explicitly, else what
+    # the file already decided, else the first-run default. Only the last of those is
+    # ours to choose, and only when nothing else exists.
+    requested = str(preset.get("transport") or transport or existing.transport or TRANSPORTS[0])
+
+    for line in write_config(path, transport=requested, overrides=preset):
         print(line)
     cfg = load_config(path)
 

@@ -181,7 +181,7 @@ def drain_replies(cfg: Config, t: Transport, *, now: datetime | None = None) -> 
         # still one line at a time.
         send_digest(cfg, t, sendable, now=now)
         for _, off in entries:
-            save_cursor(cfg.reply_cursor_file, off)
+            save_cursor(cfg.reply_cursor_file, off, path=cfg.our_inbox)
         return len(sendable)
 
     for text, off in entries:
@@ -191,7 +191,7 @@ def drain_replies(cfg: Config, t: Transport, *, now: datetime | None = None) -> 
         # duplicate: the line that was in flight (FMA-1).
         if text:
             send_reply(cfg, t, text, now=now)
-        save_cursor(cfg.reply_cursor_file, off)
+        save_cursor(cfg.reply_cursor_file, off, path=cfg.our_inbox)
     return len(sendable)
 
 
@@ -206,6 +206,12 @@ def announce_eject(cfg: Config, *, now: datetime | None = None) -> None:
     append_line(cfg.peer_inbox, eject_line(cfg.from_name, now=now))
     if cfg.our_inbox.exists():
         cfg.our_inbox.unlink()
+    # A cursor into a file we just deleted counts bytes that no longer exist. Leaving
+    # it behind is what turned this convention into silent data loss: the peer replies
+    # while we are down, the file comes back shorter or differently, and the next run
+    # reads from an offset measured against a file that is gone. Observed delivering
+    # `[vox] ger) LINE-THREE` with two replies missing entirely.
+    cfg.reply_cursor_file.unlink(missing_ok=True)
 
 
 def run_once(cfg: Config, t: Transport, *, now: datetime | None = None) -> tuple[int, int]:

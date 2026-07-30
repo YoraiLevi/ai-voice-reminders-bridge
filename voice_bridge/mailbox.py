@@ -6,6 +6,8 @@ so timestamps are deterministic under test.
 
 from __future__ import annotations
 
+import hashlib as _hashlib
+
 import os
 import re
 from datetime import datetime
@@ -102,19 +104,88 @@ def clip(text: str, limit: int, *, ellipsis: bool = True) -> str:
     return text[: limit - 1].rsplit(" ", 1)[0].rstrip() + "..."
 
 
+#: Cap on how much of the consumed region is hashed. Bounded work per cycle on a
+#: mailbox that grows all day.
+_SIGNATURE_BYTES = 512
+
+
+def file_signature(data: bytes, upto: int) -> str:
+    """A cheap identity for the region a cursor claims to have already consumed.
+
+    `upto` is the offset itself, so the signature covers exactly the bytes we say we
+    have read - which makes it stable under APPENDS (the only way this file
+    legitimately changes) and different the moment those bytes are not the same bytes.
+
+    The first attempt hashed a fixed 512-byte head, and the suite caught it in one
+    run: for a file smaller than 512 bytes the "head" IS the whole file, so every
+    append changed the signature, every cursor reset to 0, and every reply would have
+    been re-sent forever. A duplicate storm in place of a dropped line is not a fix.
+
+    An offset alone is meaningless without knowing WHICH file it counted. Our own
+    clean exit deletes `our_inbox` (the protocol's convention) while the cursor into
+    it survives in the state dir, so a peer that replies while the bridge is down gets
+    a fresh file read from a stale offset.
+
+    Observed, not theorised: a 92-byte cursor against a new 108-byte file delivered
+    `[vox] ger) LINE-THREE` - two replies silently lost and the third mangled from
+    mid-word. A length check cannot catch it, because the new file was LONGER than the
+    stale offset; only identity can.
+    """
+    return _hashlib.sha256(data[: min(upto, _SIGNATURE_BYTES)]).hexdigest()[:16]
+
+
 def load_cursor(cursor_file: Path) -> int:
-    """The byte offset drained so far (0 if none)."""
+    """The byte offset drained so far (0 if none).
+
+    Reads the FIRST line, so a cursor written by an older version - a bare integer -
+    still loads. Its signature is simply absent, which the readers treat as "cannot
+    verify" rather than as a mismatch: an upgrade must not re-send every reply.
+    """
     if not cursor_file.exists():
         return 0
     try:
-        return int(cursor_file.read_text(encoding="utf-8").strip())
-    except ValueError:
+        return int(cursor_file.read_text(encoding="utf-8").splitlines()[0].strip())
+    except (ValueError, IndexError):
         return 0
 
 
-def save_cursor(cursor_file: Path, offset: int) -> None:
-    """Persist the drain offset. Atomic: a torn cursor re-sends or strands replies."""
-    atomic_write(cursor_file, str(offset))
+def load_cursor_signature(cursor_file: Path) -> str:
+    """The signature of the file this cursor was measured against, or "" if unknown."""
+    if not cursor_file.exists():
+        return ""
+    lines = cursor_file.read_text(encoding="utf-8").splitlines()
+    return lines[1].strip() if len(lines) > 1 else ""
+
+
+def save_cursor(cursor_file: Path, offset: int, *, path: Path | None = None) -> None:
+    """Persist the drain offset. Atomic: a torn cursor re-sends or strands replies.
+
+    Pass `path` - the file the offset counts - and its signature is stored beside the
+    number, so the next read can tell whether it is still the same file.
+    """
+    sig = ""
+    if path is not None and offset > 0:
+        try:
+            sig = file_signature(path.read_bytes(), offset)
+        except OSError:  # pragma: no cover - unreadable mailbox
+            sig = ""
+    atomic_write(cursor_file, "\n".join([str(offset), sig]) if sig else str(offset))
+
+
+def resolved_cursor(cursor_file: Path, data: bytes) -> int:
+    """Where to start reading `data`, given what the cursor claims.
+
+    Resets to 0 when the file cannot be the one the offset was measured against -
+    shorter than the offset, or a different identity. One place decides this, because
+    both readers below need the same answer and two copies would eventually differ.
+    """
+    cur = load_cursor(cursor_file)
+    if cur > len(data):  # file was truncated / rewritten
+        return 0
+    stored = load_cursor_signature(cursor_file)
+    if stored and stored != file_signature(data, cur):
+        return 0  # a DIFFERENT file - the offset counts bytes that no longer exist
+    return cur
 
 
 def read_new_entries(path: Path, cursor_file: Path) -> tuple[list[tuple[str, int]], int]:
@@ -133,9 +204,7 @@ def read_new_entries(path: Path, cursor_file: Path) -> tuple[list[tuple[str, int
     if not path.exists():
         return [], 0
     data = path.read_bytes()
-    cur = load_cursor(cursor_file)
-    if cur > len(data):  # file was truncated / rewritten
-        cur = 0
+    cur = resolved_cursor(cursor_file, data)
     chunk = data[cur:]
     last_nl = chunk.rfind(b"\n")
     if last_nl == -1:  # no complete line yet
@@ -157,9 +226,7 @@ def read_new_lines(path: Path, cursor_file: Path) -> tuple[list[str], int]:
     if not path.exists():
         return [], 0
     data = path.read_bytes()
-    cur = load_cursor(cursor_file)
-    if cur > len(data):  # file was truncated / rewritten
-        cur = 0
+    cur = resolved_cursor(cursor_file, data)
     chunk = data[cur:]
     last_nl = chunk.rfind(b"\n")
     if last_nl == -1:  # no complete line yet

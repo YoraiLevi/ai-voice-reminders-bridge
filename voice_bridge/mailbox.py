@@ -104,11 +104,6 @@ def clip(text: str, limit: int, *, ellipsis: bool = True) -> str:
     return text[: limit - 1].rsplit(" ", 1)[0].rstrip() + "..."
 
 
-#: Cap on how much of the consumed region is hashed. Bounded work per cycle on a
-#: mailbox that grows all day.
-_SIGNATURE_BYTES = 512
-
-
 def file_signature(data: bytes, upto: int) -> str:
     """A cheap identity for the region a cursor claims to have already consumed.
 
@@ -121,6 +116,12 @@ def file_signature(data: bytes, upto: int) -> str:
     append changed the signature, every cursor reset to 0, and every reply would have
     been re-sent forever. A duplicate storm in place of a dropped line is not a fix.
 
+    THE WHOLE consumed prefix is hashed, with no cap - which is what FMA-14's register
+    entry specified before any of this was built ("full prefix, no cap"). A cap would
+    leave a peer rewriting bytes past the cap undetectable, and it buys nothing: the
+    caller has already read the entire file into memory to find new lines, so hashing
+    a prefix of it is free next to the read that produced it.
+
     An offset alone is meaningless without knowing WHICH file it counted. Our own
     clean exit deletes `our_inbox` (the protocol's convention) while the cursor into
     it survives in the state dir, so a peer that replies while the bridge is down gets
@@ -131,7 +132,7 @@ def file_signature(data: bytes, upto: int) -> str:
     mid-word. A length check cannot catch it, because the new file was LONGER than the
     stale offset; only identity can.
     """
-    return _hashlib.sha256(data[: min(upto, _SIGNATURE_BYTES)]).hexdigest()[:16]
+    return _hashlib.sha256(data[:upto]).hexdigest()[:16]
 
 
 def load_cursor(cursor_file: Path) -> int:

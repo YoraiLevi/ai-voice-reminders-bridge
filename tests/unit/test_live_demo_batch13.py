@@ -191,10 +191,13 @@ def test_a_recreated_inbox_is_read_from_the_start(sample_config, fake_transport)
 
 
 def test_appending_does_not_reset_the_cursor(sample_config, fake_transport):
-    """The guard on the fix, and it earned its place: the first signature hashed a
-    fixed 512-byte head, so for any file under 512 bytes every append changed the
-    identity, every cursor reset to 0, and every reply would have been re-sent
-    forever. A duplicate storm in place of a dropped line is not a fix."""
+    """The guard on the fix, and it earned its place immediately: the first signature
+    hashed a fixed 512-byte head, so for any file under 512 bytes every append changed
+    the identity, every cursor reset to 0, and every reply would have been re-sent
+    forever. A duplicate storm in place of a dropped line is not a fix.
+
+    The cap is gone now - FMA-14's register entry had specified "full prefix, no cap"
+    before any of this was built, and it was right."""
     from voice_bridge import poller
     from voice_bridge.mailbox import load_cursor
 

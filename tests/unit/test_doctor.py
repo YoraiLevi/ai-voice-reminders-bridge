@@ -272,9 +272,21 @@ def test_environment_credentials_are_reported_because_they_win(
     user reasonably believes those are in use. An inherited ICLOUD_APPLE_ID
     silently authenticated as someone else and the only symptom was a bare 401.
 
-    The precedence is deliberate and stays - scripted runs depend on env vars. What
-    was wrong was that nothing said so, which is the false-belief class: the tool
-    named a file and then used something else.
+    This docstring used to end: *"the precedence is deliberate and stays - scripted
+    runs depend on env vars. What was wrong was that nothing said so."* **The field
+    disagreed.** In act 5 the identical confusion happened to the human on a live run:
+    `ICLOUD_*` in their shell authenticated the RADICALE transport with their Apple
+    password, and the only symptom was a 401 - again.
+
+    So the rehearsal diagnosed the mechanism correctly and chose the smaller fix, report
+    it. Reporting is not a fix when the reader is a person who did not export the
+    variable on purpose. Batch 15 changed the precedence: a creds file written FOR this
+    transport now outranks an env var named for a different one, and this row's wording
+    follows the behaviour rather than describing the old one.
+
+    Same shape as FMA-14 - correct analysis, deferred remedy, and the field arriving to
+    collect. The row still WARNS, because credentials that are being ignored are worth
+    knowing about; what changed is which sentence is true.
     """
     _healthy_creds(sample_config)
     monkeypatch.setenv("ICLOUD_APPLE_ID", "someone-else")
@@ -282,10 +294,9 @@ def test_environment_credentials_are_reported_because_they_win(
     doctor_mod.run(sample_config, fake_transport)
     out = capsys.readouterr().out
 
-    assert _rows(capsys) or True  # rows already consumed above; assert on text
     assert "ICLOUD_APPLE_ID" in out
     assert "environment" in out
-    assert "WIN over" in out
+    assert "WIN over" not in out, "that claim is no longer true on either transport"
 
 
 def test_no_environment_credentials_means_no_such_warning(

@@ -616,9 +616,20 @@ def run_setup(
                 print("Re-run when you are ready:  voice-bridge setup")
                 return 0
             if type(exc).__name__ in {"ICloudError", "CredsError"}:
+                # TRANSPORT-AWARE, and exit 2 rather than 0.
+                #
+                # It printed "Next: voice-bridge icloud-login" to a user on a self-hosted
+                # CalDAV server ("# icloud-login???" was their comment) and then exited 0 -
+                # so a scripted caller saw success for a run that had authenticated to
+                # nothing. A permanent auth failure is the exit-code contract's "2 = you
+                # must act"; only the transient branch above may end quietly.
+                from .errors import auth_advice
+
                 print(f"config written. Could not authenticate: {exc}")
-                print("Next:  voice-bridge icloud-login    then re-run:  voice-bridge setup")
-                return 0
+                for line in auth_advice(cfg.transport, cfg.creds_env):
+                    print(line)
+                print("Then re-run:  voice-bridge setup")
+                return 2
             raise
 
     if as_json:

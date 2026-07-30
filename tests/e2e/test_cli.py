@@ -86,8 +86,26 @@ def test_radicale_server_url(tmp_path, tmp_mailbox, capsys):
 
 
 def test_radicale_server_status_down(tmp_path, tmp_mailbox, capsys):
-    # nothing running -> reachable False -> exit 1
-    assert main(["--config", _cfg(tmp_path, tmp_mailbox), "radicale-server", "status"]) == 1
+    """Nothing running -> reachable False -> exit 1.
+
+    The port is CHOSEN FREE rather than left at the default. This test failed during
+    batch 15 for a reason that had nothing to do with it: the human was mid-act-5 with a
+    real Radicale on the default port, so `status` correctly reported reachable and the
+    test read that as a regression. "Nothing is running" was an assumption about the
+    machine, written as a comment and never checked - the same class as a coverage figure
+    that depended on whose shell ran it.
+    """
+    import socket
+
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        free_port = probe.getsockname()[1]
+
+    cfg = _cfg(tmp_path, tmp_mailbox)
+    main(["--config", cfg, "config", "set", "radicale_port", str(free_port)])
+    capsys.readouterr()
+
+    assert main(["--config", cfg, "radicale-server", "status"]) == 1
     assert "reachable" in capsys.readouterr().out
 
 

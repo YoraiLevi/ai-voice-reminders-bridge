@@ -423,7 +423,11 @@ def test_an_auth_failure_still_gets_the_login_advice(tmp_path, monkeypatch, caps
     code = s.run_setup(config_path=tmp_path / "voice-bridge.json")
     out = capsys.readouterr().out
 
-    assert code == 0
+    # Exit 2, not 0, since batch 15: a permanent auth failure is the contract's "you must
+    # act", and returning 0 told a scripted caller that a run which authenticated to
+    # nothing had succeeded. The ADVICE assertion below is what this test is for, and it
+    # is unchanged - the transport here is iCloud, where `icloud-login` really is the fix.
+    assert code == 2
     assert "icloud-login" in out
 
 

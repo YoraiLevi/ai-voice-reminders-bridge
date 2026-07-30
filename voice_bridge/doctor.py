@@ -87,11 +87,35 @@ def _creds_row(cfg: Config) -> Row:
         if len(values.get(k, "")) >= 2 and values[k][0] == values[k][-1] and values[k][0] in _QUOTES
     ]
     if overrides := _env_overrides():
+        # THE WORDING TRACKS WHO ACTUALLY READS WHAT, and checking that turned up a
+        # second defect while fixing the first.
+        #
+        # This row said "those WIN over <file>, so the file may not be what is actually
+        # used" for every transport. On radicale that was true and is now fixed (the file
+        # outranks a foreign env name - batch 15). On **iCloud it was never true**:
+        # `ICloudTransport.connect` reads `read_kv(creds_env, ...)`, the file and nothing
+        # else. A user with `ICLOUD_PASSWORD` exported was told their file might be
+        # ignored when it was the only thing being read - the same false claim, pointing
+        # the opposite way, and it had been there all along.
+        #
+        # Both cases still deserve a WARN, because in both the user has set credentials
+        # that are not doing what they expect. What changes is what to tell them.
+        if cfg.transport == "radicale":
+            return (
+                "creds file",
+                "WARN",
+                f"{', '.join(overrides)} set in the environment - these are APPLE "
+                f"credentials and no longer override {cfg.creds_env} on this transport, "
+                "but they would still be used if that file were missing. Unset them for "
+                "a self-hosted server",
+            )
         return (
             "creds file",
             "WARN",
-            f"{', '.join(overrides)} set in the environment - those WIN over "
-            f"{cfg.creds_env}, so the file may not be what is actually used",
+            f"{', '.join(overrides)} set in the environment - this transport reads "
+            f"{cfg.creds_env} and NOT the environment, so those values are being "
+            "ignored. If you meant them to apply, put them in the file "
+            "(`voice-bridge icloud-login` writes it)",
         )
 
     if wrapped:

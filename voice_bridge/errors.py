@@ -210,3 +210,48 @@ def raise_command_error(exc: BaseException) -> None:
         raise CommandError(2, str(exc)) from exc
 
     raise exc
+
+
+#: Env vars that hold credentials, in the order a reader should suspect them.
+_CRED_ENV = ("ICLOUD_APPLE_ID", "ICLOUD_USERNAME", "ICLOUD_PASSWORD", "ICLOUD_APP_PASSWORD")
+
+
+def auth_advice(transport: str, creds_env: object) -> list[str]:
+    """What to actually DO about an authentication failure, per transport.
+
+    A message that names a remedy is a claim about the cause - the fourth time this
+    project has paid for that sentence. Here the claim was `icloud-login`, printed to a
+    user whose transport was a self-hosted CalDAV server. Their comment, verbatim:
+    "# icloud-login???"
+
+    On iCloud the remedy really is `icloud-login`: it captures the Apple password and
+    establishes the trusted session, and there is one place credentials come from.
+
+    On Radicale there are three causes and they are worth ordering by how silently they
+    bite. An `ICLOUD_*` variable exported in the shell used to authenticate to a
+    self-hosted server with an Apple password - it is listed first because it produces a
+    401 while every file on disk looks correct, which is the hardest of the three to see.
+    """
+    import os
+
+    if transport != "radicale":
+        return [
+            "Next:  voice-bridge icloud-login    then re-run:  voice-bridge setup",
+        ]
+
+    lines = ["This is the self-hosted CalDAV path, so `icloud-login` is not the remedy."]
+    leaked = [k for k in _CRED_ENV if os.environ.get(k)]
+    if leaked:
+        lines.append(
+            f"  1. {', '.join(leaked)} is set in your environment. Those are Apple "
+            "credentials and they no longer override a Radicale creds file - but if the "
+            "file is missing they are still what gets tried. Unset them, or write the file."
+        )
+    else:
+        lines.append("  1. No ICLOUD_* variables are set, so an env override is not the cause.")
+    lines.append(f"  2. Check the credentials in {creds_env} against the server's user.")
+    lines.append(
+        "  3. Check the server's users file: `voice-bridge radicale-server init --force` "
+        "rewrites it and rotates the password (the phone's account then needs updating)."
+    )
+    return lines

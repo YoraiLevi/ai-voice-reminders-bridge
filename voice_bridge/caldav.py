@@ -27,20 +27,46 @@ class CredsError(RuntimeError):
 
 
 def _creds(cfg: Config) -> tuple[str, str, str]:
-    """(apple_id, app_password, caldav_url) from env then the creds file. On iCloud the
-    password must be an APP-SPECIFIC password; on Radicale it is the Radicale user's."""
+    """(user, password, caldav_url) in three tiers. On iCloud the password must be an
+    APP-SPECIFIC password; on Radicale it is the Radicale user's.
+
+    **The tiers exist because an Apple password authenticated to a self-hosted server.**
+    Reported from act 5: with `ICLOUD_*` exported in their shell, the Radicale transport
+    logged in with the human's Apple credentials, because env unconditionally beat the
+    creds file. `doctor` had warned that env wins - the reporting was right; the
+    precedence was wrong.
+
+    1. `RADICALE_*` - env named for THIS backend. Highest, because a variable named for
+       the thing you are talking to is an unambiguous instruction.
+    2. **The creds file written FOR this transport** (`radicale.env`, seeded by
+       `radicale-server init`). It now outranks `ICLOUD_*`: a file created for this
+       backend beats a variable named for a different one.
+    3. `ICLOUD_*` env - still consulted, because this adapter also serves iCloud over
+       CalDAV, where those names are exactly right, and because a machine with no creds
+       file must keep working. What it may no longer do is override tier 2.
+
+    iCloud's own precedence is deliberately UNCHANGED (env before file): it is what makes
+    CI and headless runs possible, and it was not what broke. The rule that changed is
+    narrow and statable in one line: **a file written for this transport outranks an env
+    var named for another one.**
+    """
     env = read_env(cfg.creds_env)
 
-    def pick(*keys: str) -> str:
+    def pick(*keys: str, native: tuple[str, ...] = ()) -> str:
+        for k in native:  # tier 1
+            if v := os.environ.get(k):
+                return v.strip()
+        for k in keys:  # tier 2 then tier 3, per key
+            if v := env.get(k):
+                return v.strip()
         for k in keys:
-            v = os.environ.get(k) or env.get(k)
-            if v:
+            if v := os.environ.get(k):
                 return v.strip()
         return ""
 
-    apple_id = pick("ICLOUD_APPLE_ID", "ICLOUD_USERNAME")
-    app_password = pick("ICLOUD_APP_PASSWORD")
-    url = pick("ICLOUD_CALDAV_URL") or CALDAV_URL
+    apple_id = pick("ICLOUD_APPLE_ID", "ICLOUD_USERNAME", native=("RADICALE_USER",))
+    app_password = pick("ICLOUD_APP_PASSWORD", native=("RADICALE_PASSWORD",))
+    url = pick("ICLOUD_CALDAV_URL", native=("RADICALE_URL",)) or CALDAV_URL
     missing = [
         n
         for n, v in (("ICLOUD_APPLE_ID", apple_id), ("ICLOUD_APP_PASSWORD", app_password))

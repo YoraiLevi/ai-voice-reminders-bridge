@@ -318,3 +318,68 @@ def test_the_two_delivery_legs_still_fail_loudly():
     assert rc == 2
     assert "[FAIL] reply reached the outbox list" in text
     assert "verified:" not in text
+
+
+# --------------------------------------------------------------------------- #
+# F5 - the URL a phone can actually use
+# --------------------------------------------------------------------------- #
+
+
+def _server_cfg(tmp_path, tmp_mailbox, host: str):
+    import json as _json
+
+    cfg_file = tmp_path / "voice-bridge.json"
+    cfg_file.write_text(
+        _json.dumps(
+            {
+                "transport": "radicale",
+                "mailbox_dir": str(tmp_mailbox),
+                "state_dir": str(tmp_path / "state"),
+                "radicale_host": host,
+                "radicale_port": 5299,
+            }
+        ),
+        encoding="utf-8",
+    )
+    return load_config(cfg_file)
+
+
+def test_a_loopback_bind_offers_no_phone_url(tmp_path, tmp_mailbox):
+    """There genuinely is no address a phone can use, so offering one would be a lie -
+    and this is the case where the old single-line output was correct."""
+    from voice_bridge import server
+
+    assert server.phone_urls(_server_cfg(tmp_path, tmp_mailbox, "127.0.0.1")) == []
+
+
+def test_a_wildcard_bind_names_the_addresses_that_answer(tmp_path, tmp_mailbox):
+    """Measured in the sim before this was written: a `0.0.0.0` bind answered HTTP 200
+    on the tailnet address, the LAN address and loopback, while `url` printed loopback -
+    so following the runbook produced an iOS account that could never connect."""
+    from voice_bridge import server
+
+    urls = server.phone_urls(_server_cfg(tmp_path, tmp_mailbox, "0.0.0.0"))
+
+    assert urls, "a wildcard bind does answer on some address"
+    for label, url in urls:
+        assert label in ("tailscale", "local network")
+        assert url.startswith("http://") and url.endswith(":5299/")
+        assert "127.0.0.1" not in url, "loopback is not a phone URL"
+
+
+def test_the_url_command_still_prints_the_client_url_first(
+    tmp_path, tmp_mailbox, capsys, monkeypatch
+):
+    """The PC-side client reads the first line, so it must not move - the fix ADDS
+    candidates, it does not replace the answer another caller depends on."""
+    from voice_bridge import cli, server
+
+    cfg = _server_cfg(tmp_path, tmp_mailbox, "0.0.0.0")
+    monkeypatch.setattr(cli, "path_note", lambda: "")
+    monkeypatch.setattr(server, "phone_urls", lambda _c: [("tailscale", "http://100.1.2.3:5299/")])
+    cli.main(["--config", str(cfg.source), "radicale-server", "url"])
+    out = capsys.readouterr().out.splitlines()
+
+    assert out[0] == "http://127.0.0.1:5299"
+    assert "for a phone on your tailscale" in out[1]
+    assert "100.1.2.3" in out[1]

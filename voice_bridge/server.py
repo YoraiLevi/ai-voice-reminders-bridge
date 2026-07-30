@@ -54,6 +54,43 @@ def client_url(cfg: Config) -> str:
     return f"http://127.0.0.1:{cfg.radicale_port}"
 
 
+def phone_urls(cfg: Config) -> list[tuple[str, str]]:
+    """(interface, url) for every local address that a `0.0.0.0` bind answers on.
+
+    Empty when the server binds a loopback address, because then there is genuinely no
+    address a phone can use and offering one would be a lie.
+
+    This exists because `radicale-server url` printed the CLIENT url - correct for its
+    docstring, wrong as the thing a human pastes into an iOS CalDAV account. On a
+    `0.0.0.0` bind it reported `http://127.0.0.1:5298` while the server was answering
+    on the tailnet address, so following the runbook produced an account that could
+    never connect.
+
+    The candidates are LISTED, never chosen: we cannot know which network the phone is
+    on, and picking one for the user is the rule this project deleted name matching for.
+    """
+    if cfg.radicale_host not in ("0.0.0.0", "::"):
+        return []
+
+    import socket
+
+    found: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            addr = str(info[4][0])
+            if addr.startswith("127.") or addr in seen:
+                continue
+            seen.add(addr)
+            # A tailnet address is worth naming: it is the case the runbook is written
+            # for, and 100.64.0.0/10 is the CGNAT range Tailscale allocates from.
+            label = "tailscale" if addr.startswith("100.") else "local network"
+            found.append((label, f"http://{addr}:{cfg.radicale_port}/"))
+    except OSError:  # pragma: no cover - no resolvable hostname
+        return []
+    return found
+
+
 def _render_config(cfg: Config, p: ServerPaths, host: str, port: int) -> str:
     return f"""# voice-bridge managed Radicale config (generated - edit via config fields)
 [server]

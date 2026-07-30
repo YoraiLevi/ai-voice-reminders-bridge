@@ -705,6 +705,11 @@ def _radicale_server_cmd(args, cfg_path) -> int:
         return 0 if s["reachable"] else 1
     if op == "url":
         print(server_mod.client_url(cfg))
+        # The phone cannot use the line above. Printed only when a non-loopback bind
+        # makes it true, and listed rather than chosen - which network the device is on
+        # is not something this machine can know.
+        for label, url in server_mod.phone_urls(cfg):
+            print(f"  for a phone on your {label}:  {url}")
         return 0
     print("usage: voice-bridge radicale-server {init|start|stop|status|url}")
     return 2

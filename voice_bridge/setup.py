@@ -544,7 +544,16 @@ def run_setup(
             )
             print("Start it, then re-run setup:")
             print("  voice-bridge radicale-server start --background")
-            return 0
+            # 2, not 0. AN OBSTACLE IS 2; A DECLINE IS 0.
+            #
+            # Batch 15 fixed exit 0 on a permanent auth failure and left this neighbour
+            # alone - the third time this arc that one ruling reached half its surface
+            # (the title leg without the banner leg, F5 without the HTTPS case, auth
+            # without reachability). A user whose server is down did not choose that, and
+            # the two lines above tell them to go and do something, which is exactly what
+            # the contract's 2 means. A user who SKIPS a step did choose it, so the
+            # declined-step paths keep returning 0.
+            return 2
 
     # THE RETRY LOOP IS HERE, around the lists step alone.
     #

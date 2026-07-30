@@ -243,6 +243,17 @@ def test_setup_exits_2_on_a_permanent_auth_failure(tmp_path, tmp_mailbox, monkey
     monkeypatch.setattr(
         setup_mod, "make_transport", lambda _cfg: (_ for _ in ()).throw(ICloudError("401 auth"))
     )
+    # THE SERVER IS ASSUMED REACHABLE, EXPLICITLY.
+    #
+    # This test went red in CI and green on two developer machines, and the reason was
+    # neither the code nor the credentials: `run_setup` checks `is_reachable` before it
+    # reaches the auth path, and the human's live act-5 Radicale was listening on the
+    # default port here. So the test passed BECAUSE somebody else's server was up - the
+    # same interference that made an e2e case fail an hour earlier, arriving in the more
+    # dangerous direction. A test about the AUTH handler must not depend on a listener.
+    from voice_bridge import server as server_mod
+
+    monkeypatch.setattr(server_mod, "is_reachable", lambda _url: True)
 
     code = setup_mod.run_setup(config_path=cfg_file)
     out = capsys.readouterr().out
@@ -309,3 +320,80 @@ def test_the_setup_handler_uses_the_shared_advice_not_its_own_string():
 
     assert not offenders, f"setup.py still prints its own login advice: {offenders}"
     assert "auth_advice" in source
+
+
+def test_an_unreachable_server_is_an_obstacle_not_a_success(
+    tmp_path, tmp_mailbox, monkeypatch, capsys
+):
+    """Found by reproducing the CI failure rather than by reading the code.
+
+    `setup` on radicale with the server down printed "the server is configured but not
+    answering - start it, then re-run setup" and returned **0**. Two lines telling the
+    user to go and do something, followed by an exit code that says nothing needs doing.
+
+    Batch 15 fixed exactly this shape one branch away (a permanent auth failure exiting 0)
+    and left the neighbour, which is the third time this arc that one ruling reached half
+    its surface. The rule, now stated where both branches can see it:
+
+        AN OBSTACLE IS 2. A DECLINE IS 0.
+
+    A user whose server is down did not choose that. A user who skips a step did.
+    """
+    import socket
+
+    from voice_bridge import server as server_mod, setup as setup_mod
+
+    with socket.socket() as probe:  # a port nothing is on, chosen not assumed
+        probe.bind(("127.0.0.1", 0))
+        dead_port = probe.getsockname()[1]
+
+    cfg_file = tmp_path / "voice-bridge.json"
+    cfg_file.write_text(
+        json.dumps(
+            {
+                "transport": "radicale",
+                "mailbox_dir": str(tmp_mailbox),
+                "state_dir": str(tmp_path / "state"),
+                "radicale_port": dead_port,
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(setup_mod, "_is_tty", lambda: False)
+    assert not server_mod.is_reachable(server_mod.client_url(load_config(cfg_file)))
+
+    code = setup_mod.run_setup(config_path=cfg_file)
+    out = capsys.readouterr().out
+
+    assert code == 2, "an unreachable server is something the user must act on"
+    assert "not answering" in out
+    assert "radicale-server start --background" in out
+
+
+def test_a_declined_step_is_still_zero(tmp_path, tmp_mailbox, monkeypatch, capsys):
+    """The other half of the rule, pinned so the fix above cannot generalise into it.
+
+    Skipping the credentials step is a CHOICE. The run did what the user asked, it names
+    the command to finish later, and turning that into exit 2 would tell a script that a
+    deliberate decision was a problem.
+    """
+    from voice_bridge import onboard, setup as setup_mod
+
+    cfg_file = tmp_path / "voice-bridge.json"
+    cfg_file.write_text(
+        json.dumps(
+            {
+                "transport": "radicale",
+                "mailbox_dir": str(tmp_mailbox),
+                "state_dir": str(tmp_path / "state"),
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(setup_mod, "_is_tty", lambda: True)
+    monkeypatch.setattr(setup_mod, "_ask", lambda *_a, **_k: "")
+    monkeypatch.setattr(onboard, "step_radicale_credentials", lambda *_a, **_k: False)
+
+    code = setup_mod.run_setup(config_path=cfg_file)
+
+    assert code == 0, "a step the user declined is not an obstacle"

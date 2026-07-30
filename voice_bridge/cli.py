@@ -705,11 +705,22 @@ def _radicale_server_cmd(args, cfg_path) -> int:
         return 0 if s["reachable"] else 1
     if op == "url":
         print(server_mod.client_url(cfg))
-        # The phone cannot use the line above. Printed only when a non-loopback bind
-        # makes it true, and listed rather than chosen - which network the device is on
-        # is not something this machine can know.
-        for label, url in server_mod.phone_urls(cfg):
-            print(f"  for a phone on your {label}:  {url}")
+        # The line above is the PC-side URL; these are the addresses that reach a
+        # non-loopback bind. Listed rather than chosen - which network a device is on is
+        # not something this machine can know.
+        #
+        # And they are labelled as unusable by a phone, because they are: an iPhone
+        # refuses plain HTTP for a CalDAV account. That was established in the field
+        # AFTER this listing was added to stop `url` printing something unusable - so
+        # without the caveat the fix would have reintroduced its own defect in a new
+        # form. An iOS account needs TLS, which `tailscale serve` provides.
+        candidates = server_mod.phone_urls(cfg)
+        for label, url in candidates:
+            print(f"  reachable on your {label}:  {url}")
+        if candidates:
+            print("  NOTE: these are plain HTTP. An iPhone will NOT accept them for a")
+            print("        CalDAV account - it requires TLS. Put `tailscale serve` in")
+            print("        front and use the https://<node>.ts.net/ URL it prints.")
         return 0
     print("usage: voice-bridge radicale-server {init|start|stop|status|url}")
     return 2

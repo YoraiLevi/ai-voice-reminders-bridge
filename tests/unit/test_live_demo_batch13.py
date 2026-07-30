@@ -381,5 +381,11 @@ def test_the_url_command_still_prints_the_client_url_first(
     out = capsys.readouterr().out.splitlines()
 
     assert out[0] == "http://127.0.0.1:5299"
-    assert "for a phone on your tailscale" in out[1]
+    assert "reachable on your tailscale" in out[1]
     assert "100.1.2.3" in out[1]
+    # Batch 14 field fact: an iPhone refuses plain HTTP for CalDAV, so a bare list of
+    # http:// candidates is the F5 defect in a new costume - a URL the phone rejects,
+    # printed as the answer. The caveat is part of the output, not a docs note.
+    joined = " ".join(out)
+    assert "will NOT accept them" in joined
+    assert "tailscale serve" in joined

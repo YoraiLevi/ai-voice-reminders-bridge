@@ -86,6 +86,10 @@ def phone_urls(cfg: Config) -> list[tuple[str, str]]:
             # for, and 100.64.0.0/10 is the CGNAT range Tailscale allocates from.
             label = "tailscale" if addr.startswith("100.") else "local network"
             found.append((label, f"http://{addr}:{cfg.radicale_port}/"))
+    # These are plain HTTP, and an iPhone REFUSES plain HTTP for a CalDAV account -
+    # established in the field after this function was written, which is why the caller
+    # prints a caveat rather than letting the list read as phone-ready. A desktop CalDAV
+    # client on the same network can still use them; a phone cannot.
     except OSError:  # pragma: no cover - no resolvable hostname
         return []
     return found

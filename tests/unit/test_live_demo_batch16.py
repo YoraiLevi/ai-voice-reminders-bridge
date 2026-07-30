@@ -73,7 +73,11 @@ def test_the_radicale_prompt_disambiguates_by_ACCOUNT(tmp_path, tmp_mailbox):
 
     assert "CalDAV account whose user name is" in text
     assert '"vox"' in text
-    assert "MORE THAN ONE account" in text, "name the ambiguity the phone actually sees"
+    # The CLAIM is what this pins, not the sentence carrying it: the prompt must name
+    # the ambiguity the phone actually sees. Batch 17b reworded the line while adding
+    # the pinning section, so the assertion follows the wording rather than freezing
+    # copy that is expected to keep improving.
+    assert "OTHER accounts on this phone" in text, "name the ambiguity the phone actually sees"
 
 
 def test_the_radicale_prompt_says_why_there_is_no_id_to_match(tmp_path, tmp_mailbox):
@@ -82,13 +86,20 @@ def test_the_radicale_prompt_says_why_there_is_no_id_to_match(tmp_path, tmp_mail
     text = render_vox_prompt(_cfg(tmp_path, tmp_mailbox, "radicale"))
 
     assert "server URL" in text
-    assert "not something your phone can" in text
+    assert "which your phone never sees" in text
 
 
-def test_the_icloud_prompt_is_UNCHANGED(tmp_path, tmp_mailbox):
+def test_the_icloud_prompt_KEEPS_ITS_SUPPLIED_IDS(tmp_path, tmp_mailbox):
     """CloudKit ids are real identifiers the Reminders side exposes, and that prompt has
     been field-verified working. The fix is transport-awareness, not the removal of a
-    section that earns its place on the transport it was written for."""
+    section that earns its place on the transport it was written for.
+
+    RENAMED from `..._is_UNCHANGED`, which stopped being true in 17b: that batch added a
+    failure clause to this section (what to do when a supplied id dies). The success path
+    is untouched, which is what this test has always actually guarded - a name promising
+    byte-equality while quietly passing through an edit is the same silent-claim problem
+    the prompt work keeps turning up.
+    """
     text = render_vox_prompt(_cfg(tmp_path, tmp_mailbox, "icloud"))
 
     assert "AUTHORITATIVE LIST IDENTIFIERS" in text

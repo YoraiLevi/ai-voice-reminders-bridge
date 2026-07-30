@@ -36,6 +36,7 @@ from .mailbox import (
     mark_seen,
     read_new_entries,
     save_cursor,
+    undrained,
 )
 from .transport import Transport
 
@@ -200,10 +201,49 @@ def announce_join(cfg: Config, *, now: datetime | None = None) -> None:
     append_line(cfg.peer_inbox, join_line(cfg.from_name, now=now))
 
 
-def announce_eject(cfg: Config, *, now: datetime | None = None) -> None:
-    """Write the eject line and delete our own inbox file - exactly the protocol's
-    clean-exit convention (a missed cleanup is harmless under the keystone rule)."""
+def announce_eject(cfg: Config, *, now: datetime | None = None, show=print) -> None:
+    """Write the eject line and, IF NOTHING IS LEFT IN IT, delete our own inbox file.
+
+    The protocol's clean-exit convention deletes `our_inbox`, and a missed cleanup is
+    harmless under the keystone rule - which is exactly the asymmetry this fix rests
+    on. Keeping the file costs the peer nothing; deleting it costs whatever was in it.
+
+    THE UNCONDITIONAL DELETE WAS SILENT DATA LOSS ON THE ROUTINE PATH. Observed live:
+    replies had been queued since early afternoon, the bridge was started at 18:58 and
+    Ctrl-C'd within seconds, and the eject removed the file BEFORE the first cycle had
+    drained it. The file was gone, the replies were never delivered, and nothing said
+    so. Batch 13 fixed this convention's other half - a stale cursor into a deleted
+    file - and this is its sibling: the deletion itself assumed a drain that had not
+    happened.
+
+    So the invariant is now stated rather than assumed: **never delete content this
+    run did not read.** When anything is left, the file AND its cursor both stay -
+    together, because the cursor is what stops the next run re-sending what this one
+    already delivered, and batch 13's signature makes it safe to trust across the gap.
+
+    Deliberately NOT a final drain before ejecting. That was the other candidate fix,
+    and it is worse here: it puts a network call in the shutdown path, at the moment
+    the user has said stop, where it can hang on a dead network, cannot succeed at all
+    after an auth failure, and - if a second Ctrl-C lands inside it - raises out of
+    this `finally` and skips the eject line entirely. It would trade a silent loss for
+    a broken exit. Once the file survives, the delay it saves is one restart, and the
+    next run delivers correctly.
+    """
     append_line(cfg.peer_inbox, eject_line(cfg.from_name, now=now))
+
+    held, replies = undrained(cfg.our_inbox, cfg.reply_cursor_file)
+    if held:
+        # SAY IT. A file quietly left behind reads as a failed cleanup, and the whole
+        # reason this was worth a P1 is that the loss happened without a word.
+        if replies:
+            show(
+                f"kept {replies} undelivered {'reply' if replies == 1 else 'replies'} "
+                f"in {cfg.our_inbox} - the next run delivers them."
+            )
+        else:
+            show(f"kept {cfg.our_inbox} - {held} bytes in it were never read.")
+        return
+
     if cfg.our_inbox.exists():
         cfg.our_inbox.unlink()
     # A cursor into a file we just deleted counts bytes that no longer exist. Leaving

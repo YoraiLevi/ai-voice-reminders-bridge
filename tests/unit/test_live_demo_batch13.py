@@ -223,7 +223,15 @@ def test_the_eject_clears_the_cursor_it_invalidates(sample_config):
     from voice_bridge.mailbox import save_cursor
 
     _reply(sample_config, "- [10:00] (manager) something")
-    save_cursor(sample_config.reply_cursor_file, 10, path=sample_config.our_inbox)
+    # DRAINED TO THE END, stated rather than assumed. The cursor used to sit at byte 10
+    # mid-line, which since batch 17 means the eject KEEPS the file - so this test would
+    # have been asserting the delete from a state that no longer deletes. Its subject is
+    # the cursor, and its premise is "everything was sent"; both now say so.
+    save_cursor(
+        sample_config.reply_cursor_file,
+        sample_config.our_inbox.stat().st_size,
+        path=sample_config.our_inbox,
+    )
     assert sample_config.reply_cursor_file.exists()
 
     poller.announce_eject(sample_config)

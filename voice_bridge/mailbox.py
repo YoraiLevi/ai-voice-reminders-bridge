@@ -189,6 +189,37 @@ def resolved_cursor(cursor_file: Path, data: bytes) -> int:
     return cur
 
 
+def undrained(path: Path, cursor_file: Path) -> tuple[int, int]:
+    """`(bytes, deliverable lines)` sitting in `path` that this run never drained.
+
+    Asked at shutdown, because the clean exit deletes `our_inbox` and that deletion
+    silently assumed everything in it had been sent. A person who starts the bridge
+    and Ctrl-Cs within a few seconds falsifies the assumption on the most ordinary
+    path there is - observed live, with replies queued four hours earlier destroyed
+    before the first cycle completed.
+
+    BYTES decide, lines only describe. A trailing half-written line carries no
+    complete entry yet still carries somebody's words, so counting only deliverable
+    lines would licence deleting it. The count exists to say a true sentence to the
+    user, not to make the decision.
+
+    Uses `resolved_cursor`, so a cursor that cannot be trusted (wrong file, wrong
+    length) reports the WHOLE file as undrained. That errs toward keeping a file we
+    might have drained rather than deleting one we might not have - the same
+    direction every other cursor decision here takes, because a duplicate reply is
+    an annoyance and a lost one is invisible.
+    """
+    if not path.exists():
+        return 0, 0
+    data = path.read_bytes()
+    rest = data[resolved_cursor(cursor_file, data) :]
+    if not rest:
+        return 0, 0
+    lines = rest.decode("utf-8", "replace").splitlines()
+    deliverable = sum(1 for ln in lines if ln.strip() and not ln.strip().startswith("#"))
+    return len(rest), deliverable
+
+
 def read_new_entries(path: Path, cursor_file: Path) -> tuple[list[tuple[str, int]], int]:
     """Complete new lines, each paired with the byte offset that CONSUMES it.
 

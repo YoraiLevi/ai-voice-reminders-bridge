@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from voice_bridge import poller
+from voice_bridge.mailbox import save_cursor
 from voice_bridge.setup import SUGGESTED_NAMES
 from voice_bridge.transport import FakeTransport
 
@@ -95,7 +96,12 @@ def test_send_reply_notify_false_skips_banner(sample_config, fake_transport, mon
 def test_join_and_eject_lifecycle(sample_config, fake_transport, fixed_clock):
     cfg = sample_config
     cfg.our_inbox.parent.mkdir(parents=True, exist_ok=True)
-    cfg.our_inbox.write_text("pending\n", encoding="utf-8")
+    cfg.our_inbox.write_text("drained\n", encoding="utf-8")
+    # STATE THE PREMISE. This test asserts the clean-exit DELETE, which since batch 17
+    # only applies to a fully drained inbox - so the drain has to be part of the setup
+    # rather than inherited from the old unconditional behaviour. The file used to say
+    # "pending", which is precisely the state the delete now refuses.
+    save_cursor(cfg.reply_cursor_file, cfg.our_inbox.stat().st_size, path=cfg.our_inbox)
     poller.announce_join(cfg, now=fixed_clock)
     assert "(vox) joined - async voice spoke" in cfg.peer_inbox.read_text(encoding="utf-8")
     poller.announce_eject(cfg, now=fixed_clock)

@@ -34,6 +34,30 @@ def _load_template(name: str = "vox.md") -> str:
     return files("voice_bridge").joinpath(f"prompts/{name}").read_text(encoding="utf-8")
 
 
+def _render(name: str, /, **values: object) -> str:
+    """Load `prompts/<name>`, drop maintainer comments, and STRICTLY substitute.
+
+    The one path every piece of prompt text takes. Prompt prose is a template file
+    rather than a Python string literal even when it is three lines long: templates
+    can be edited without touching code, they can be diffed as text, and one
+    substitution rule then governs all of them instead of each fragment inventing
+    its own quoting.
+
+    `substitute` (never `safe_substitute`) is what makes that safe - a token this
+    version cannot fill raises rather than shipping `${...}` to the phone as if it
+    were a list name (VOX-2).
+    """
+    try:
+        raw = _load_template(name)
+    except (FileNotFoundError, ModuleNotFoundError, OSError) as exc:
+        raise CommandError(
+            2,
+            f"could not read the prompt template (prompts/{name}) - "
+            f"the installation looks incomplete: {exc}",
+        ) from exc
+    return Template(_strip_comments(raw)).substitute(**values)
+
+
 def _strip_comments(text: str) -> str:
     """Remove HTML comments - they are notes to maintainers, not phone instructions."""
     out = []
@@ -73,16 +97,8 @@ def render_vox_prompt(cfg: Config) -> str:
     if missing:
         raise CommandError(2, "\n       ".join(missing_roles_message(missing)))
 
-    try:
-        raw = _load_template()
-    except (FileNotFoundError, ModuleNotFoundError, OSError) as exc:
-        raise CommandError(
-            2,
-            "could not read the vox prompt template (prompts/vox.md) - "
-            f"the installation looks incomplete: {exc}",
-        ) from exc
-
-    rendered = Template(_strip_comments(raw)).substitute(
+    rendered = _render(
+        "vox.md",
         inbox_list=cfg.inbox_list,
         output_list=cfg.output_list,
         # DEFECT from live use: someone set `spoke_name` to "Phone-Claude" and the
@@ -107,16 +123,8 @@ def render_peer_prompt(cfg: Config) -> str:
     It renders the same way the phone prompt does, from the same config, so the
     paths in it are the paths this install really uses.
     """
-    try:
-        raw = _load_template("peer.md")
-    except (FileNotFoundError, ModuleNotFoundError, OSError) as exc:
-        raise CommandError(
-            2,
-            "could not read the peer prompt template (prompts/peer.md) - "
-            f"the installation looks incomplete: {exc}",
-        ) from exc
-
-    return Template(_strip_comments(raw)).substitute(
+    return _render(
+        "peer.md",
         mailbox_dir=cfg.mailbox_dir,
         peer_inbox=cfg.peer_inbox,
         our_inbox=cfg.our_inbox,
@@ -139,71 +147,30 @@ def _selected_ids(cfg: Config) -> str:
     is unconditional - and the absence of a branch is the point: there is no longer
     a shape of this text that can be partially true.
     """
-    # TRANSPORT-AWARE, because on CalDAV the ids are meaningless to the reader.
-    #
-    # Field-reported by the phone agent itself: on radicale these ids are SERVER URLS
-    # (`http://127.0.0.1:5232/vox/...`) and iOS assigns its own local identifiers, so
-    # the "use these exactly" instruction cannot be followed. Worse, the device could
-    # see same-named `Vox-Message-*` lists in TWO accounts - the live iCloud pair and
-    # the new self-hosted pair - so the name was ambiguous and the id was unusable at
-    # the same time. The agent had to GUESS by trying a write and seeing if it landed.
-    #
-    # A prompt that cannot be obeyed is worse than one that says less: it teaches the
-    # reader to improvise, and improvisation is what routes dictations into a list
-    # nobody polls.
+    # WHICH fragment applies is logic and stays here; WHAT it says is prose and lives
+    # in `prompts/ids-<transport>.md`. The two transports need genuinely different
+    # instructions - iCloud's CloudKit ids are real identifiers the phone accepts,
+    # while radicale's are server URLs the phone cannot see - and the full account of
+    # why is in the ledger (DEMO16-1, DEMO17-2), not duplicated here or in the
+    # templates.
     if cfg.transport == "radicale":
-        # SELF-PINNING. Account-scoping told the phone WHICH lists; this tells it HOW to
-        # address them, which is the half that was still missing. Field evidence: the
-        # phone agent hit `save_failed` creating BY NAME and had to discover the local
-        # id itself by lookup-and-retry - so the working procedure existed, it was just
-        # being reinvented under failure instead of stated up front.
-        #
-        # This is THIS PC's OWN DOCTRINE handed to the other side: resolve once, pin the
-        # id, never match by name again - the exact rule `resolve_list` and the pinned
-        # `*_list_id` config fields enforce here. The ids differ (ours are server URLs,
-        # theirs are iOS-local) but the protocol is the same one, and it is the only one
-        # that survives a second account holding same-named lists.
-        #
-        # The old text ended with "try a write and check it landed if you are unsure",
-        # which RATIFIED the improvisation. Deleted: the first action is to resolve and
-        # pin, not to write somewhere and see.
-        return (
-            "\n"
-            "WHICH LISTS ARE MINE - the ACCOUNT disambiguates them, not the ids.\n"
-            f'  Both lists live in the CalDAV account whose user name is "{cfg.radicale_user}".\n'
-            f'  "{cfg.inbox_list}" (you dictate here)\n'
-            f'  "{cfg.output_list}" (answers arrive here)\n'
-            "  Lists with these names may also exist in OTHER accounts on this phone.\n"
-            f'  Those are not mine - only the pair inside "{cfg.radicale_user}" is.\n'
-            "  (This PC addresses them by server URL, which your phone never sees, so\n"
-            "  there is no id here for you to match. YOUR ids are local to your device -\n"
-            "  you are the only one who can read them, which is why the next section is\n"
-            "  something only you can do.)\n"
-            "\n"
-            "PIN THEM ONCE - resolve by account the FIRST time, then never by name again.\n"
-            f'  1. Find the two lists inside the "{cfg.radicale_user}" account, and note\n'
-            "     whatever identifier your own tools give each one.\n"
-            "  2. From then on address them ONLY by those identifiers. A name lookup that\n"
-            "     picked the right list today can pick a different one tomorrow; an id\n"
-            "     cannot, and creating BY NAME can fail outright.\n"
-            "  3. If a write by a pinned id ever fails, re-derive it ONCE from the\n"
-            f'     "{cfg.radicale_user}" account - not from the name alone - and pin what\n'
-            "     you find. If that fails too, tell me: two failures is a changed setup,\n"
-            "     not something to retry.\n"
+        body = _render(
+            "ids-radicale.md",
+            radicale_user=cfg.radicale_user,
+            inbox_list=cfg.inbox_list,
+            output_list=cfg.output_list,
         )
-    return (
-        "\n"
-        "AUTHORITATIVE LIST IDENTIFIERS - use these exactly; do NOT match by name,\n"
-        "because several lists may share a title and only these ids are unambiguous.\n"
-        f'  "{cfg.inbox_list}" (you dictate here) = {cfg.inbox_list_id}\n'
-        f'  "{cfg.output_list}" (answers arrive here) = {cfg.output_list_id}\n'
-        # NO self-pinning here, deliberately. This prompt is field-verified working with
-        # ids this PC supplies and the phone accepts, and re-deriving from a name is the
-        # one move that could route a dictation into a same-titled list in some other
-        # account. What was missing is only what to do when a supplied id STOPS working:
-        # without a rule, the reader improvises, and the nearest improvisation is exactly
-        # the name match the first two lines forbid.
-        "  If one of these ids ever stops working, tell me and stop - do NOT fall back\n"
-        "  to matching by name. A dead id means this PC's selection is stale, which I\n"
-        "  can fix; a name match would quietly file dictations where I never look.\n"
-    )
+    else:
+        body = _render(
+            "ids-icloud.md",
+            inbox_list=cfg.inbox_list,
+            output_list=cfg.output_list,
+            inbox_list_id=cfg.inbox_list_id,
+            output_list_id=cfg.output_list_id,
+        )
+    # The blank line is a JOIN, not text: it separates this section from the body above
+    # it, and it belongs to whoever does the joining. Leading it inside the template
+    # would make the file's first line invisible to anyone editing it, and a template
+    # that renders differently depending on whether its first byte survived an editor's
+    # trim is a trap for exactly the person this batch is trying to help.
+    return "\n" + body

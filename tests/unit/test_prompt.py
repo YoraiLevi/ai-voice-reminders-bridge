@@ -18,6 +18,28 @@ import pytest
 from voice_bridge import prompt
 
 
+def _stub_template(monkeypatch, body, *, only: str = "vox.md") -> None:
+    """Replace ONE template, leaving every other one real.
+
+    `_load_template` used to be called bare for `vox.md`, so a zero-argument lambda was
+    a faithful stub. It is now the loader for every prompt fragment - the ids sections
+    included - and a stub that answers the same body to every name is a fake of a seam
+    that no longer exists: it would hand the ids section the vox body and pass while
+    testing nothing. Naming the target and delegating the rest keeps these tests about
+    the one failure each is named for.
+    """
+    real = prompt._load_template
+
+    def fake(name: str = "vox.md") -> str:
+        if name != only:
+            return real(name)
+        if isinstance(body, BaseException):
+            raise body
+        return body
+
+    monkeypatch.setattr(prompt, "_load_template", fake)
+
+
 def test_render_substitutes_both_list_names(sample_config):
     out = prompt.render_vox_prompt(sample_config)
     assert sample_config.inbox_list in out
@@ -44,7 +66,7 @@ def test_render_is_strict_about_unknown_tokens(sample_config, monkeypatch):
     that is quietly wrong — the model reads a literal token as if it were a list
     name.
     """
-    monkeypatch.setattr(prompt, "_load_template", lambda: "hello ${future_field}")
+    _stub_template(monkeypatch, "hello ${future_field}")
     with pytest.raises(KeyError):
         prompt.render_vox_prompt(sample_config)
 
@@ -52,10 +74,7 @@ def test_render_is_strict_about_unknown_tokens(sample_config, monkeypatch):
 def test_missing_template_raises_command_error_not_traceback(sample_config, monkeypatch):
     """VOX-3: a packaging fault should explain itself and exit 2."""
 
-    def boom():
-        raise FileNotFoundError("prompts/vox.md")
-
-    monkeypatch.setattr(prompt, "_load_template", boom)
+    _stub_template(monkeypatch, FileNotFoundError("prompts/vox.md"))
     with pytest.raises(prompt.CommandError) as err:
         prompt.render_vox_prompt(sample_config)
     assert err.value.code == 2
@@ -125,8 +144,6 @@ def test_an_unterminated_comment_keeps_the_remaining_text(sample_config, monkeyp
     Dropping everything after a stray `<!--` would ship a truncated prompt that
     still looks like a prompt — the quiet failure this module exists to avoid.
     """
-    monkeypatch.setattr(
-        prompt, "_load_template", lambda: "<!-- never closed\nthe actual ${inbox_list} body"
-    )
+    _stub_template(monkeypatch, "<!-- never closed\nthe actual ${inbox_list} body")
     out = prompt.render_vox_prompt(sample_config)
     assert "the actual" in out and sample_config.inbox_list in out

@@ -186,7 +186,7 @@ be absent.
 | mailbox | `mailbox_dir` | `~/.agent-mail` | the shared mailbox directory |
 | our state | `state_dir` | `$XDG_STATE_HOME/vox-mailbox` | credentials, cookies, bookkeeping |
 | transport | `transport` | `icloud` | `icloud` or `radicale` |
-| Radicale | `radicale_host` / `radicale_port` / `radicale_user` | `0.0.0.0` / `5232` / `vox` | self-hosted server settings |
+| Radicale | `radicale_host` / `radicale_port` / `radicale_user` | `127.0.0.1` / `5232` / `vox` | self-hosted server settings; the loopback bind is deliberate — TLS terminates in front (see the README's Radicale path), so the LAN needs no access at all |
 | notification | `ntfy_server` | `https://ntfy.sh` | override to self-host |
 | | `ntfy_title` / `ntfy_tags` / `ntfy_priority` | `Vox` / `robot` / `high` | banner presentation |
 | | `ntfy_body_limit` | `-1` | cap banner length; `-1` = no cap |

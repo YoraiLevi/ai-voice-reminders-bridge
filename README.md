@@ -29,10 +29,17 @@ one paste, see [agent-to-agent-communication-file-mailbox]. `voice-bridge` attac
 `vox` spoke to it. It will create the bare mailbox files if you point it at an empty
 directory, but it never creates a *peer* — see [step 5](#5-your-peer) for that.
 
-**An iPhone or iPad** with the Reminders app.
+**An iPhone or iPad** with the Reminders app, **and an assistant app on it that you can
+talk to and that can read and write your Reminders lists** — the Claude app, or whatever you
+use. That app is the thing you actually dictate to; `voice-bridge` carries what it writes.
 
 **Nothing else installed.** Everything below runs through `uvx`, which fetches the tool on
-demand. If you don't have [`uv`](https://docs.astral.sh/uv/), install it first.
+demand. If you don't have [`uv`](https://docs.astral.sh/uv/), install it first — then prove
+it, because everything after this depends on it:
+
+```
+uv --version
+```
 
 ### Pick a directory and stay in it
 
@@ -48,10 +55,14 @@ mkdir -p ~/voice-bridge && cd ~/voice-bridge          # bash / zsh
 New-Item -ItemType Directory -Force ~/voice-bridge; cd ~/voice-bridge    # PowerShell
 ```
 
-If you run `setup` in one directory and `run` in another, the second one finds no config,
-falls back to built-in defaults, and refuses with *"no list is selected"* — correctly, and
-confusingly, because nothing is wrong except where you are standing. To use one config from
-anywhere, set `VOICE_BRIDGE_CONFIG` to its full path, or pass `--config PATH` every time.
+Get this wrong and nothing warns you. Run `setup` in one directory and `run` in another,
+and the second one finds no config and **starts a fresh guided setup, writing a second
+config into that directory** — so you end up with two half-installs and no error to tell you
+which is which. Commands that need a finished install, like `verify`, refuse with *"No list
+is selected"* instead.
+
+To use one config from anywhere, set `VOICE_BRIDGE_CONFIG` to its full path, or pass
+`--config PATH` every time.
 
 ### How to type the command
 
@@ -73,10 +84,15 @@ function vb { uvx --from 'voice-bridge[all] @ git+https://github.com/YoraiLevi/a
 vb --help
 ```
 
+**The function lasts only for this terminal window.** This guide spans installing
+Tailscale, steps on your phone, and commands you will come back to days later — open a new
+window and `vb` is simply gone, with a "not recognized" error and nothing to explain it.
+Re-paste the line above in any new terminal.
+
 **If you cloned the repo instead**, read every `voice-bridge` below as
 `uv run --extra all voice-bridge` — the same in both shells:
 
-```bash
+```
 uv run --extra all voice-bridge --help
 ```
 
@@ -133,7 +149,7 @@ called.
 
 ### Run the guided setup
 
-```bash
+```
 voice-bridge setup
 ```
 
@@ -149,7 +165,7 @@ It walks you through the whole thing and asks only what it cannot infer. In orde
    inbox. It never matches by name; it stores the id of what you chose.
 4. **Offer push notifications.** See [step 2](#2-push-notifications-do-this-before-the-test)
    — subscribe on your phone *before* you answer.
-5. **Send a test message round.**
+5. **Offer to send a test message round** — it asks first, and the step is skippable.
 6. **Print the phone prompt.**
 7. **Offer to start the bridge** — *"Start the bridge now? (Enter = yes, start it)"*. Saying
    yes takes over the terminal; Ctrl-C stops it and brings you back here, and nothing on this
@@ -172,14 +188,15 @@ your own devices.
 
 ### Start the server
 
-```bash
+```
 voice-bridge radicale-server init      # asks you to choose a password
 voice-bridge radicale-server start --background
 voice-bridge radicale-server status
 ```
 
-`status` prints a small table; the line to look at is **`reachable : True`**. It also exits
-0 when the server answers and 1 when it does not, so you can script against it.
+`status` prints a small table; the line to look at is **`reachable`**, which must say
+`True`. It also exits 0 when the server answers and 1 when it does not, so scripts should
+gate on the exit code rather than on the text.
 
 `init` asks you to type a password for the CalDAV account, hidden as you type. The account
 name is `vox` unless you pass `--user`. **Write both down** — your phone needs them in a
@@ -208,7 +225,7 @@ tailnet on *both* this machine and the phone. Do that first; the commands below 
 a preference — a plain-HTTP account will not save, whatever else is correct. So TLS goes in
 front, terminated by Tailscale:
 
-```bash
+```
 tailscale serve --bg 5232      # the port the server is on - 5232 unless you changed it
 tailscale serve status
 ```
@@ -251,7 +268,7 @@ machine still shows the proxy, and that the Server field is the `.ts.net` name w
 
 ### Run the guided setup
 
-```bash
+```
 voice-bridge setup
 ```
 
@@ -260,15 +277,14 @@ In order, it will:
 1. **Ask three settings** — the transport (answer `radicale`), this spoke's name, and your
    mailbox directory.
 2. **Check the account exists and the server answers.** Either failure stops setup and
-   names the `radicale-server` command to run — `init` if the account is missing, `start` if
-   it is simply not running.
+   prints the `radicale-server` command or commands to run, then asks you to re-run `setup`.
 3. **Offer to create the two lists for you.** Say yes. They appear on the phone through the
    CalDAV account you just added — no further phone step. (Say no and you create them
    yourself in a CalDAV client, exactly like the iCloud path.)
 4. **Select the two lists** — the ones it just created are chosen for you, by id, and it
    says so rather than matching them by name.
 5. **Offer push notifications.** See [step 2](#2-push-notifications-do-this-before-the-test).
-6. **Send a test message round.**
+6. **Offer to send a test message round** — it asks first, and the step is skippable.
 7. **Print the phone prompt.**
 8. **Offer to start the bridge** — Ctrl-C stops it and brings you back here.
 
@@ -282,12 +298,12 @@ section, before moving on. That is the proof the CalDAV account is really workin
 Replies land in a Reminders list either way. Notifications are what make your phone *buzz*
 when one arrives, instead of you remembering to look.
 
-They are delivered by [ntfy](https://ntfy.sh). Setup offers you four options, including
-generating a private topic for you and pointing at your own ntfy server.
+They are delivered by [ntfy](https://ntfy.sh). Setup offers a menu — a private topic it
+generates for you, a topic you already subscribe to, your own ntfy server, or skip.
 
-**Setup prints the generated topic on screen, just above the question** — something like
-`vox-a1b2c3…`. Install the ntfy app on your phone, subscribe to that string, and *then*
-answer. The test message setup sends immediately afterwards fires a banner, and if you are
+**Setup prints the generated topic on screen, just above the question** — a long `vox-…`
+string. Install the ntfy app on your phone, tap **+** to subscribe to a topic, paste that
+exact string, and *then* answer the question in the terminal. The test message setup sends immediately afterwards fires a banner, and if you are
 not subscribed yet you will not see it and will not know whether it worked.
 
 If you skip notifications entirely, everything still works; you just have to look at the
@@ -299,7 +315,7 @@ list yourself.
 
 Guided setup already sends one message the whole way round. To check again at any time:
 
-```bash
+```
 voice-bridge verify
 ```
 
@@ -308,7 +324,7 @@ config: **exit 0 means a message made it, exit 2 means it did not, and exit 1 me
 check never finished** — a stall you chose not to wait out, or a Ctrl-C. Run it again. It is
 not a `doctor` check, because it *writes* — `doctor` only inspects.
 
-```bash
+```
 voice-bridge doctor          # survey every interface; --fix repairs the safe ones
 voice-bridge status          # a glance at the spoke's health
 voice-bridge lists           # every list with its id
@@ -320,7 +336,7 @@ voice-bridge lists           # every list with its id
 
 ### Paste the prompt into the phone
 
-```bash
+```
 voice-bridge vox-prompt
 ```
 
@@ -334,12 +350,12 @@ transport, and a stale prompt is how a dictation ends up in a list nobody polls.
 
 ### Start the bridge
 
-```bash
+```
 voice-bridge run
 ```
 
-It announces the `vox` spoke into the mailbox, then prints an orientation block every time
-it starts — your mailbox path, which file your peer reads, which file your peer writes,
+Every start prints an orientation block before it goes quiet, and announces the `vox` spoke
+into the mailbox — your mailbox path, which file your peer reads, which file your peer writes,
 whether a peer has ever written there, and the line it goes quiet on:
 
 ```
@@ -347,14 +363,20 @@ bridging: polling Vox-Message-Outbox every 10s
 Ctrl-C to stop.
 ```
 
+The interval in that line is your `poll_interval` setting, not a fixed number.
+
 **Then it stays silent.** That is healthy. It does not narrate cycles where nothing
 happened, because a log that scrolls while nothing is happening hides the moments when
 something is. Errors and warnings still print.
 
-`run` sets up whatever is missing before it starts, so a bare `voice-bridge run` on a fresh
-machine takes you through the whole of step 1 and then bridges. `voice-bridge run --once`
-does a single cycle and exits — **exit 1 there means "ran fine, nothing new"**, which is
-normal, not a failure.
+**On a machine with no config at all, `run` takes you through guided setup first** and then
+bridges — so a bare `voice-bridge run` is a legitimate way to start from zero. Anything else
+missing it *names and exits 2* rather than fixing: unselected lists, or credentials it cannot
+find. (On iCloud you still make the two lists on the phone yourself — no command can create
+them.)
+
+`voice-bridge run --once` does a single cycle and exits — **exit 1 there means "ran fine,
+nothing new"**, which is normal, not a failure.
 
 ### Stopping it
 
@@ -377,21 +399,48 @@ anything it has not sent. Start it again and those replies go out, exactly once.
 Nothing is processed until a peer joins. Your dictations arrive in the mailbox and sit
 there until an agent reads them.
 
-When `run` creates a mailbox it writes **`PEER-PROMPT.md`** beside the mailbox files. Paste
-that at a coding agent and it becomes your peer. If the file isn't there:
-
-```bash
+```
 voice-bridge peer-prompt
 ```
 
-It renders with your actual mailbox paths, so what it tells the agent is what this install
-really uses.
+Paste what that prints at a coding agent and it becomes your peer. It renders with your
+actual mailbox paths, so what it tells the agent is what this install really uses.
+
+If `run` had to *create* your mailbox — a fresh directory rather than the existing one from
+step 0 — it also drops the same text in **`PEER-PROMPT.md`** beside the mailbox files, so it
+is still there tomorrow after the startup output has scrolled away.
+
+---
+
+## 6. Actually use it
+
+Everything above builds the thing. This is the thing working, and it is worth doing once
+deliberately so you know what normal looks like.
+
+With the bridge running in one terminal:
+
+1. **Say something to the assistant app on your phone** — ask it to put a message in your
+   dictation list. It writes a reminder into **Vox-Message-Outbox**.
+2. **Wait one poll interval** (10 seconds by default). The bridge reads the reminder, appends
+   it to your peer's inbox file in the mailbox, and completes the reminder on the phone — so
+   *the item disappearing from the list is the receipt* that it was picked up.
+3. **Watch it land.** In another terminal, run `voice-bridge tail -f`. Your words appear as
+   one line: `- [14:30] (vox) <what you said>`.
+4. **Your peer replies** into the mailbox, in its own time — this is an async channel, so
+   the answer may be a turn or more later.
+5. **The reply reaches your phone** as a new reminder in **Vox-Message-Inbox**, plus a push
+   notification if you set one up in step 2.
+
+That is the whole loop. If a dictation never appears in step 3, `voice-bridge peek --box
+inbox` shows what the bridge can currently see on the phone — an empty list there means the
+phone never wrote it, and a full one means the bridge is not reading the list you think it
+is.
 
 ---
 
 ## Everyday commands
 
-```bash
+```
 voice-bridge peek --box inbox      # inbox = your dictations; outbox = replies to you
 voice-bridge tail -f               # follow the mailbox files
 voice-bridge send "text"           # push one message through the outbound path
@@ -412,7 +461,7 @@ voice-bridge config set poll_interval 30
 | `tail [-n N] [-f]` | follow the mailbox files |
 | `send TEXT` | push one message through the outbound path |
 | `notify TEXT [--click URL]` | send a push notification |
-| `deliver FILE` | publish a file and send a tappable link |
+| `deliver FILE` | publish a file as a GitHub gist — secret by default, `--public` to change that — and send a tappable link. Needs the `gh` CLI, logged in |
 | `config show \| get \| set \| fields` | inspect and edit settings |
 | `icloud-login` | establish the iCloud session, including two-factor |
 | `vox-prompt` | the phone-side prompt, rendered for your install |
@@ -455,7 +504,7 @@ which is why Radicale exists as a same-contract fallback.
 
 ## Development
 
-```bash
+```
 uv run --extra dev pytest        # unit / contract / integration / e2e
 uv run --extra dev ruff check voice_bridge tests
 uv run --extra dev mypy voice_bridge

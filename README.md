@@ -34,8 +34,9 @@ talk to and that can read and write your Reminders lists** — the Claude app, o
 use. That app is the thing you actually dictate to; `voice-bridge` carries what it writes.
 
 **Nothing else installed.** Everything below runs through `uvx`, which fetches the tool on
-demand. If you don't have [`uv`](https://docs.astral.sh/uv/), install it first — then prove
-it, because everything after this depends on it:
+demand. If you don't have [`uv`](https://docs.astral.sh/uv/), install it — the installers
+are one line each and the link has the current form for your platform. Then prove it, because
+everything after this depends on it:
 
 ```
 uv --version
@@ -58,8 +59,8 @@ New-Item -ItemType Directory -Force ~/voice-bridge; cd ~/voice-bridge    # Power
 Get this wrong and nothing warns you. Run `setup` in one directory and `run` in another,
 and the second one finds no config and **starts a fresh guided setup, writing a second
 config into that directory** — so you end up with two half-installs and no error to tell you
-which is which. Commands that need a finished install, like `verify`, refuse with *"No list
-is selected"* instead.
+which is which. Commands that need a finished install, like `verify`, instead refuse with a
+*"No list is selected for:"* message naming each unfilled role.
 
 To use one config from anywhere, set `VOICE_BRIDGE_CONFIG` to its full path, or pass
 `--config PATH` every time.
@@ -90,7 +91,10 @@ window and `vb` is simply gone, with a "not recognized" error and nothing to exp
 Re-paste the line above in any new terminal.
 
 **If you cloned the repo instead**, read every `voice-bridge` below as
-`uv run --extra all voice-bridge` — the same in both shells:
+`uv run --extra all voice-bridge`, and **run it from the repo root** — `uv run` needs the
+project's own `pyproject.toml` beside it. That root *is* your "one directory" from above, so
+your settings land in `<repo>/.claude/voice-bridge.json`; ignore the `~/voice-bridge`
+suggestion, you already have a directory. Same in both shells:
 
 ```
 uv run --extra all voice-bridge --help
@@ -157,10 +161,12 @@ It walks you through the whole thing and asks only what it cannot infer. In orde
 
 1. **Ask three settings** — the transport (`icloud`), this spoke's name (`vox`), and your
    mailbox directory. Press Enter to keep any current value.
-2. **Take your Apple credentials**, then log in. This is where **two-factor** happens: Apple
-   pushes a code to your devices and setup asks for it. It needs your **main Apple ID
-   password**, not an app-specific one. There is deliberately no `--password` flag —
-   anything in a command line is readable by every other user on the machine.
+2. **Offer to take your Apple credentials**, then log in. It asks first, and declining is
+   fine — it names `voice-bridge icloud-login` for later and exits 0. This is where
+   **two-factor** happens: Apple pushes a code to your devices and setup asks for it. It
+   needs your **main Apple ID password**, not an app-specific one. There is deliberately no
+   `--password` flag — anything in a command line is readable by every other user on the
+   machine.
 3. **Show you your lists and ask which two carry messages.** Pick your outbox and your
    inbox. It never matches by name; it stores the id of what you chose.
 4. **Offer push notifications.** See [step 2](#2-push-notifications-do-this-before-the-test)
@@ -197,6 +203,10 @@ voice-bridge radicale-server status
 `status` prints a small table; the line to look at is **`reachable`**, which must say
 `True`. It also exits 0 when the server answers and 1 when it does not, so scripts should
 gate on the exit code rather than on the text.
+
+**`--background` detaches a process; it does not install a service.** The server dies with a
+reboot and nothing restarts it — so if you come back tomorrow and the bridge cannot reach it,
+run `radicale-server start --background` again.
 
 `init` asks you to type a password for the CalDAV account, hidden as you type. The account
 name is `vox` unless you pass `--user`. **Write both down** — your phone needs them in a
@@ -321,8 +331,8 @@ Guided setup already sends one message the whole way round. To check again at an
 voice-bridge verify
 ```
 
-One probe each way, then it cleans up after itself. No questions, nothing written to your
-config: **exit 0 means a message made it, exit 2 means it did not, and exit 1 means the
+One probe each way, then it cleans up after itself. Nothing is written to your config and
+it asks you nothing — except if the transport stalls, when it offers to keep waiting: **exit 0 means a message made it, exit 2 means it did not, and exit 1 means the
 check never finished** — a stall you chose not to wait out, or a Ctrl-C. Run it again. It is
 not a `doctor` check, because it *writes* — `doctor` only inspects.
 
@@ -427,7 +437,12 @@ With the bridge running in one terminal:
    it to your peer's inbox file in the mailbox, and completes the reminder on the phone — so
    *the item disappearing from the list is the receipt* that it was picked up.
 3. **Watch it land.** In another terminal, run `voice-bridge tail -f`. Your words appear as
-   one line: `- [14:30] (vox) <what you said>`.
+   one line:
+
+       [manager] - [14:30] (vox) <what you said>
+
+   The `[manager]` at the front is `tail`'s label for *which mailbox file* the line came
+   from — your peer's inbox, which is where your dictations go.
 4. **Your peer replies** into the mailbox, in its own time — this is an async channel, so
    the answer may be a turn or more later.
 5. **The reply reaches your phone** as a new reminder in **Vox-Message-Inbox**, plus a push
@@ -485,12 +500,18 @@ repo, and never in your mailbox.
 
 - **iCloud:** `icloud.env` holds your Apple ID and password; the trusted session caches in
   `pyicloud-cookies/`.
-- **Radicale:** `radicale.env` holds the server URL and the account `init` created.
+- **Radicale:** `radicale.env` holds the server URL, the account `init` created, and **its
+  password in plaintext** — see [step 1B](#1b-radicale-from-zero) for why that copy has to be
+  reversible.
 - **ntfy:** `ntfy-topic.txt` holds your private topic.
 
-`voice-bridge config show` prints the resolved paths for your install. `reset` deletes the
-settings so you can start over; `uninstall` removes everything, previewing exactly what it
-will delete and asking you to type a word first.
+`voice-bridge config show` prints the resolved paths for your install.
+
+**`reset` deletes your settings *and your credentials*** — the saved Apple login and the
+trusted 2FA session with it, so you will do the two-factor dance again on your phone. That is
+the point of the command rather than an extra tier, and your mailbox and its messages are
+never touched. `uninstall` removes everything. Both list every path before they ask, and both
+want a word typed in full rather than a `y`.
 
 ## Tell your peer (one line)
 

@@ -96,11 +96,12 @@ what makes them consistent once you hold that one idea.
 | **`to-vox.md`** | a file in the **mailbox** — *the bridge's* | **the agent → us** — the bridge reads it |
 | **`to-manager.md`** | a file in the **mailbox** — *the peer's* | **us → the agent** — the bridge writes it |
 
-**Changing these names changes what the bridge reads.** Swapping the two roles — as this
-project did once, from live use — means whatever is sitting in the newly-read list is
-delivered on the next poll, because the bridge has no way to know those items predate the
-change. Nothing is lost, but expect a one-time flush. The same applies to pointing
-`inbox_list` at any list that already has contents.
+**Changing these names changes what the bridge reads — the upgrade/migration case.**
+Swapping the two roles — as this project did once, from live use — means whatever is sitting
+in the newly-read list is delivered on the next poll, because the bridge has no way to know
+those items predate the change. Nothing is lost, but expect a one-time flush; clear that
+list first if you would rather it didn't. The same applies to pointing `inbox_list` at any
+list that already has contents.
 
 Note the deliberate crossing in the config: `inbox_list` names the list the BRIDGE reads,
 which is YOUR outbox. The field names are written from the bridge's seat and the list names
@@ -308,6 +309,10 @@ Two independent deduplication mechanisms, because the two directions have differ
 This section is deliberately blunt. The value of an unattended bridge is *justified
 confidence*, so a guarantee that is only aspirational is worse than none. Everything below is
 stated against **the code as it exists today**.
+
+> **Upgrading, or repointing a list role?** The one-time flush that causes is described in
+> *"Inbox" means two different directions* above. It is not in the README, because a
+> from-zero reader has nothing to upgrade from.
 
 ### What holds today
 

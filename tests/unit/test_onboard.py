@@ -158,15 +158,20 @@ def test_an_unusable_choice_re_asks(sample_config, tmp_path):
 def test_credentials_step_offers_the_login_inline(sample_config):
     ran: list[bool] = []
     ask, show, _ = _io(["y"])
-    assert onboard.step_credentials(
-        sample_config, ask=ask, show=show, login=lambda: ran.append(True) or 0
+    assert (
+        onboard.step_credentials(
+            sample_config, ask=ask, show=show, login=lambda: ran.append(True) or 0
+        )
+        == onboard.OK
     )
     assert ran == [True]
 
 
 def test_declining_credentials_names_the_command(sample_config):
     ask, show, out = _io(["n"])
-    assert not onboard.step_credentials(sample_config, ask=ask, show=show, login=lambda: 0)
+    assert onboard.step_credentials(sample_config, ask=ask, show=show, login=lambda: 0) == (
+        onboard.DECLINED
+    ), "asked and answered no - a choice, which the caller reports as 0, not 2"
     assert "voice-bridge icloud-login" in "\n".join(out)
 
 
@@ -175,7 +180,9 @@ def test_existing_credentials_are_not_re_asked(sample_config):
     sample_config.creds_env.write_text("ICLOUD_APPLE_ID=x\n", encoding="utf-8")
 
     ask, show, out = _io([])  # no answers available: asking would raise
-    assert onboard.step_credentials(sample_config, ask=ask, show=show, login=lambda: 0)
+    assert (
+        onboard.step_credentials(sample_config, ask=ask, show=show, login=lambda: 0) == onboard.OK
+    )
     assert "already configured" in "\n".join(out)
 
 

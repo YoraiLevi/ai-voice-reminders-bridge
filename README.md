@@ -278,6 +278,8 @@ In order, it will:
    mailbox directory.
 2. **Check the account exists and the server answers.** Either failure stops setup and
    prints the `radicale-server` command or commands to run, then asks you to re-run `setup`.
+   Both stops exit 2 — you have something to go and do — so a scripted install can tell them
+   apart from success.
 3. **Offer to create the two lists for you.** Say yes. They appear on the phone through the
    CalDAV account you just added — no further phone step. (Say no and you create them
    yourself in a CalDAV client, exactly like the iCloud path.)

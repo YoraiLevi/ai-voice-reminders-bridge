@@ -376,6 +376,50 @@ def test_a_declined_step_is_still_zero(tmp_path, tmp_mailbox, monkeypatch, capsy
     Skipping the credentials step is a CHOICE. The run did what the user asked, it names
     the command to finish later, and turning that into exit 2 would tell a script that a
     deliberate decision was a problem.
+
+    ⚑ THIS TEST USED THE WRONG STEP TO MAKE A RIGHT POINT, and in doing so PINNED A
+    DEFECT IN PLACE for three batches. It stubbed the RADICALE credentials step, which
+    asks nothing and therefore cannot be declined, and asserted the decline exit code.
+    So a radicale install with no credentials at all reported success, and the test made
+    that look deliberate. A test can be worse than absent: an absent one leaves a gap,
+    and this one filled the gap with a wrong answer wearing a green tick.
+
+    The decline case belongs on the ICLOUD step, which actually asks. Its sibling - the
+    radicale step, which is always an obstacle - is asserted directly below.
+    """
+    from voice_bridge import onboard, setup as setup_mod
+
+    cfg_file = tmp_path / "voice-bridge.json"
+    cfg_file.write_text(
+        json.dumps(
+            {
+                "transport": "icloud",
+                "mailbox_dir": str(tmp_mailbox),
+                "state_dir": str(tmp_path / "state"),
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(setup_mod, "_is_tty", lambda: True)
+    monkeypatch.setattr(setup_mod, "_ask", lambda *_a, **_k: "")
+    monkeypatch.setattr(setup_mod, "_ask_line", lambda *_a, **_k: "")
+    monkeypatch.setattr(onboard, "step_credentials", lambda *_a, **_k: onboard.DECLINED)
+
+    code = setup_mod.run_setup(config_path=cfg_file)
+
+    assert code == 0, "a step the user declined is not an obstacle"
+
+
+def test_missing_radicale_credentials_are_an_obstacle_not_a_decline(
+    tmp_path, tmp_mailbox, monkeypatch, capsys
+):
+    """The sibling, and the fourth surface of one ruling finally closing.
+
+    Nothing is asked on this path: the credentials are CREATED by `radicale-server init`,
+    and a user who does not have them was handed two commands to go and run. That is the
+    exit-code contract's "2 = you must act" in as pure a form as it comes - and it was
+    exiting 0, so a scripted install of a spoke that could authenticate to nothing
+    reported success.
     """
     from voice_bridge import onboard, setup as setup_mod
 
@@ -392,8 +436,32 @@ def test_a_declined_step_is_still_zero(tmp_path, tmp_mailbox, monkeypatch, capsy
     )
     monkeypatch.setattr(setup_mod, "_is_tty", lambda: True)
     monkeypatch.setattr(setup_mod, "_ask", lambda *_a, **_k: "")
-    monkeypatch.setattr(onboard, "step_radicale_credentials", lambda *_a, **_k: False)
+    monkeypatch.setattr(setup_mod, "_ask_line", lambda *_a, **_k: "")
+    monkeypatch.setattr(onboard, "step_radicale_credentials", lambda *_a, **_k: onboard.BLOCKED)
 
-    code = setup_mod.run_setup(config_path=cfg_file)
+    assert setup_mod.run_setup(config_path=cfg_file) == 2
 
-    assert code == 0, "a step the user declined is not an obstacle"
+
+def test_a_failed_icloud_login_is_an_obstacle_too(tmp_path, tmp_mailbox, monkeypatch, capsys):
+    """The same conflation from the other side. `step_credentials` returned False both
+    when the user said no AND when the login FAILED - one answer for a choice and a
+    breakage, so the caller could only pick one exit code for both."""
+    from voice_bridge import onboard, setup as setup_mod
+
+    cfg_file = tmp_path / "voice-bridge.json"
+    cfg_file.write_text(
+        json.dumps(
+            {
+                "transport": "icloud",
+                "mailbox_dir": str(tmp_mailbox),
+                "state_dir": str(tmp_path / "state"),
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(setup_mod, "_is_tty", lambda: True)
+    monkeypatch.setattr(setup_mod, "_ask", lambda *_a, **_k: "")
+    monkeypatch.setattr(setup_mod, "_ask_line", lambda *_a, **_k: "")
+    monkeypatch.setattr(onboard, "step_credentials", lambda *_a, **_k: onboard.BLOCKED)
+
+    assert setup_mod.run_setup(config_path=cfg_file) == 2

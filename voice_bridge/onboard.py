@@ -29,13 +29,31 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Literal
 
 from .config import Config, load_config, set_value
 from .layout import question_block
 
 Ask = Callable[[str], str]
 Show = Callable[[str], None]
+
+#: What a credentials step concluded. THE TWO FAILURES ARE NOT THE SAME EVENT, and a
+#: bool cannot tell them apart - which is exactly how `setup` came to exit 0 on a
+#: radicale install with no credentials at all.
+#:
+#: `setup.py` states the rule three lines from where it was being broken: AN OBSTACLE
+#: IS 2; A DECLINE IS 0. A user who answers "no" to "set them up now?" chose this and
+#: the run succeeded at what they asked of it. A user whose creds file does not exist
+#: chose nothing - they were handed two commands to go and run, which is the exit-code
+#: contract's "2 = you must act" in as pure a form as it gets.
+#:
+#: Fourth surface of that one ruling (after the title verdict without the banner leg,
+#: F5 without the HTTPS case, and auth without reachability). It is the last one.
+StepOutcome = Literal["ok", "declined", "blocked"]
+
+OK: StepOutcome = "ok"
+DECLINED: StepOutcome = "declined"  # the user was asked and said no -> exit 0
+BLOCKED: StepOutcome = "blocked"  # something is missing or failed -> exit 2
 
 
 def _step(show: Show, title: str, *, does: str = "") -> None:
@@ -114,8 +132,11 @@ def suggest_topic() -> str:
 # --------------------------------------------------------------------------- #
 
 
-def step_radicale_credentials(cfg: Config, *, show: Show) -> bool:
-    """The radicale half of the credentials step. Returns False if it is not set up.
+def step_radicale_credentials(cfg: Config, *, show: Show) -> StepOutcome:
+    """The radicale half of the credentials step. `BLOCKED` if it is not set up.
+
+    NEVER `DECLINED`: nothing is asked here, so there is nothing for the user to turn
+    down. Absent credentials on this transport are always an obstacle.
 
     This step existed only for iCloud, and `setup` reached the iCloud one on the
     radicale transport - so a user switching backends was asked for an "Apple ID
@@ -135,17 +156,20 @@ def step_radicale_credentials(cfg: Config, *, show: Show) -> bool:
     creds = radicale_creds_path(cfg)
     if creds.exists() and creds.read_text(encoding="utf-8").strip():
         show(f"  already configured: {creds}")
-        return True
+        return OK
 
     show(f"  No server credentials yet. They are created - not typed - and stored in {creds}.")
     show("  Run these two, then re-run setup:")
     show("    voice-bridge radicale-server init")
     show("    voice-bridge radicale-server start --background")
-    return False
+    return BLOCKED
 
 
-def step_credentials(cfg: Config, *, ask: Ask, show: Show, login: Callable[[], int]) -> bool:
-    """Offer to run the login flow inline. Returns False if it still is not set up.
+def step_credentials(cfg: Config, *, ask: Ask, show: Show, login: Callable[[], int]) -> StepOutcome:
+    """Offer to run the login flow inline. `OK`, `DECLINED`, or `BLOCKED`.
+
+    Both failures used to be `False`, which collapsed a choice and an obstacle into
+    one answer - and the caller could then only pick one exit code for both.
 
     ICLOUD ONLY - it prompts for an Apple ID and authenticates against Apple. The
     caller must branch on `cfg.transport`, never on a requested transport that the
@@ -154,14 +178,16 @@ def step_credentials(cfg: Config, *, ask: Ask, show: Show, login: Callable[[], i
     _step(show, "Credentials", does="lets this reach the Reminders on your phone")
     if cfg.creds_env.exists() and cfg.creds_env.read_text(encoding="utf-8").strip():
         show(f"  already configured: {cfg.creds_env}")
-        return True
+        return OK
 
     show(f"  No credentials yet. Stored in {cfg.creds_env}, this machine only.")
     if not _yes(ask, "  Set them up now?", show=show):
         show("  skipped - nothing will connect until you run:  voice-bridge icloud-login")
-        return False
+        return DECLINED
 
-    return login() == 0
+    # A login that FAILED is not a login that was skipped. Same sentence in the
+    # transcript, opposite meanings to a script reading the exit code.
+    return OK if login() == 0 else BLOCKED
 
 
 # --------------------------------------------------------------------------- #

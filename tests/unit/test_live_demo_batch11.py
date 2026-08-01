@@ -118,7 +118,10 @@ def test_the_preamble_answer_decides_which_credentials_step_runs(
     rc = setup_mod.run_setup(config_path=cfg_file, transport="icloud")
     out = capsys.readouterr().out
 
-    assert rc == 0
+    # 2, not 0: this config has no radicale credentials, and since batch 19e that is
+    # an OBSTACLE rather than a decline. The old 0 here was inherited from the defect,
+    # not asserted about it - this test's subject is WHICH step runs.
+    assert rc == 2
     assert load_config(cfg_file).transport == "radicale"
     assert not any("Apple ID" in p for p in asked), "no Apple prompt on a CalDAV transport"
     assert "radicale-server init" in out, "name where the credentials come from"
@@ -135,10 +138,12 @@ def test_the_radicale_credentials_step_asks_for_nothing(tmp_path, tmp_mailbox, c
     cfg_file = _write_cfg(tmp_path, tmp_mailbox, transport="radicale")
     out: list[str] = []
 
-    ok = onboard.step_radicale_credentials(load_config(cfg_file), show=out.append)
+    outcome = onboard.step_radicale_credentials(load_config(cfg_file), show=out.append)
     text = "\n".join(out)
 
-    assert ok is False
+    # BLOCKED, never DECLINED - this step asks nothing, so there is nothing to turn
+    # down, and the difference is the exit code the caller reports (batch 19e).
+    assert outcome == onboard.BLOCKED
     assert "radicale-server init" in text
     assert "Apple" not in text
 
@@ -152,7 +157,7 @@ def test_the_radicale_step_accepts_credentials_that_init_already_wrote(tmp_path,
     creds.parent.mkdir(parents=True, exist_ok=True)
     creds.write_text("ICLOUD_CALDAV_URL=http://x\n", encoding="utf-8")
 
-    assert onboard.step_radicale_credentials(cfg, show=lambda _s: None) is True
+    assert onboard.step_radicale_credentials(cfg, show=lambda _s: None) == onboard.OK
 
 
 # --------------------------------------------------------------------------- #

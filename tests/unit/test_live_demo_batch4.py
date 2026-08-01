@@ -201,7 +201,7 @@ def test_the_transient_retry_does_not_replay_the_whole_flow(
     monkeypatch.setattr(onboard, "_yes", lambda *a, **k: True)
     # Step 1 already succeeded in the scenario under test - the blip happened
     # AFTER credentials and after a pick, which is the whole point.
-    monkeypatch.setattr(onboard, "step_credentials", lambda *a, **k: True)
+    monkeypatch.setattr(onboard, "step_credentials", lambda *a, **k: onboard.OK)
     monkeypatch.setattr(setup_mod, "prompt_fields", lambda cfg, preset: {})
 
     attempts = []

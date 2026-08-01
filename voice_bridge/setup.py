@@ -519,17 +519,26 @@ def run_setup(
 
             return icloud_login(cfg)
 
-        if not onboard.step_credentials(cfg, ask=_ask_line, show=print, login=_login):
+        outcome = onboard.step_credentials(cfg, ask=_ask_line, show=print, login=_login)
+        if outcome != onboard.OK:
             onboard.farewell(print, ready=False)
-            return 0
+            # A DECLINE IS 0; AN OBSTACLE IS 2 - the same rule the unreachable-server
+            # branch below states, finally reaching its last surface. Saying no to
+            # "set them up now?" is a choice the run honoured; a login that FAILED is
+            # not, and a script cannot tell them apart from one exit code.
+            return 0 if outcome == onboard.DECLINED else 2
         cfg = onboard.reload_config(path)
 
     if cfg.transport == "radicale":
         from . import server as server_mod
 
-        if guided and not onboard.step_radicale_credentials(cfg, show=print):
+        if guided and onboard.step_radicale_credentials(cfg, show=print) != onboard.OK:
             onboard.farewell(print, ready=False)
-            return 0
+            # Always 2 here: this step asks nothing, so there is nothing to decline.
+            # Exiting 0 meant a scripted install of a radicale spoke with NO CREDENTIALS
+            # AT ALL reported success - found by a doc reviewer reading for a different
+            # defect entirely.
+            return 2
 
         if not server_mod.is_reachable(server_mod.client_url(cfg)):
             # NOT the same message as the credentials step above, because it is not

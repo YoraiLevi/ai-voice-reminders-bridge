@@ -2,7 +2,8 @@
 
 **Add a voice spoke to a file-mailbox agent system.** Talk to the agents in your mailbox
 from your phone, by voice — you dictate into a Reminders list, `voice-bridge` delivers it
-into the mailbox, and replies come back as a reminder plus a tappable notification.
+into the mailbox, and replies come back as a reminder, with a push notification if you set
+one up.
 
 It **extends** the file-mailbox protocol
 ([agent-to-agent-communication-file-mailbox]) — it does *not* set up the mailbox or the
@@ -33,37 +34,69 @@ directory, but it never creates a *peer* — see [step 5](#5-your-peer) for that
 **Nothing else installed.** Everything below runs through `uvx`, which fetches the tool on
 demand. If you don't have [`uv`](https://docs.astral.sh/uv/), install it first.
 
+### Pick a directory and stay in it
+
+**Your settings live in `.claude/voice-bridge.json` under the directory you run the command
+from.** Not in your home directory, not in the state directory — *there*. Make a directory
+now and run every `voice-bridge` command on this page from it:
+
+```bash
+mkdir -p ~/voice-bridge && cd ~/voice-bridge          # bash / zsh
+```
+
+```powershell
+New-Item -ItemType Directory -Force ~/voice-bridge; cd ~/voice-bridge    # PowerShell
+```
+
+If you run `setup` in one directory and `run` in another, the second one finds no config,
+falls back to built-in defaults, and refuses with *"no list is selected"* — correctly, and
+confusingly, because nothing is wrong except where you are standing. To use one config from
+anywhere, set `VOICE_BRIDGE_CONFIG` to its full path, or pass `--config PATH` every time.
+
 ### How to type the command
 
 Every example in this document is written as `voice-bridge <something>`. Nothing is
-installed yet, so define the shorthand once and **read every `voice-bridge` below as
-`$VB`**:
+installed yet, so pick the line for your shell and **read every `voice-bridge` below as the
+shorthand it defines**.
+
+**bash / zsh:**
 
 ```bash
-VB='uvx --from git+https://github.com/YoraiLevi/ai-voice-reminders-bridge voice-bridge'
-$VB --help          # this document's `voice-bridge --help`
+vb() { uvx --from 'voice-bridge[all] @ git+https://github.com/YoraiLevi/ai-voice-reminders-bridge' voice-bridge "$@"; }
+vb --help          # this document's `voice-bridge --help`
+```
+
+**PowerShell:**
+
+```powershell
+function vb { uvx --from 'voice-bridge[all] @ git+https://github.com/YoraiLevi/ai-voice-reminders-bridge' voice-bridge @args }
+vb --help
 ```
 
 **If you cloned the repo instead**, read every `voice-bridge` below as
-`uv run voice-bridge`:
+`uv run --extra all voice-bridge` — the same in both shells:
 
 ```bash
-uv run voice-bridge --help
+uv run --extra all voice-bridge --help
 ```
 
-Both forms are the same program. The difference matters in one place: **inside
-`uv run`, the name `voice-bridge` works, and in your ordinary shell it does not** — `uv`
-puts the script on the PATH for the command it is running and nowhere else. The tool knows
-this and says so when it applies, printing a line like:
+**`[all]` and `--extra all` are not optional.** The base package has **no dependencies at
+all**: each transport pulls its own backend, so a plain install fetches nothing either
+transport needs and the first command that touches one fails with *"pyicloud not
+installed"* or *"install voice-bridge[server]"*. `[all]` covers both. If you want only one,
+`[icloud]` covers the Apple path and `[caldav,server]` covers Radicale.
+
+Both forms are the same program. One difference is worth knowing: **inside `uv run`, the
+name `voice-bridge` works, and in your ordinary shell it does not** — `uv` puts the script
+on the PATH for the command it is running and nowhere else. The tool detects this and prints
+a note beginning:
 
 ```
 note: `voice-bridge` will not be on the PATH of the shell you type into -
-read every `voice-bridge ...` below as `uv run voice-bridge ...`.
 ```
 
-If you see that note, it is telling you the truth about *your* shell, and every command on
-this page needs the prefix it names. If you don't see it, the plain name works and there is
-nothing to do.
+…followed by the exact form to type in *your* situation. If you see it, use the form it
+names. If you don't, the plain name works and there is nothing to do.
 
 ### Which transport?
 
@@ -76,8 +109,11 @@ nothing to do.
 | your dictations | pass through Apple | never leave your own machines |
 
 Pick one and follow **either** [step 1A](#1a-icloud-from-zero) **or**
-[step 1B](#1b-radicale-from-zero). Steps 2 onward are shared. You can set up both later —
-`setup --transport <name>` switches, and each transport keeps its own list selection.
+[step 1B](#1b-radicale-from-zero). Steps 2 onward are shared.
+
+You can switch later with `setup --transport <name>`. **Switching clears the list
+selection** — there is one selection in the config, not one per transport — so you pick your
+two lists again on the new transport. Setup says so when it happens.
 
 ---
 
@@ -115,6 +151,9 @@ It walks you through the whole thing and asks only what it cannot infer. In orde
    — subscribe on your phone *before* you answer.
 5. **Send a test message round.**
 6. **Print the phone prompt.**
+7. **Offer to start the bridge** — *"Start the bridge now? (Enter = yes, start it)"*. Saying
+   yes takes over the terminal; Ctrl-C stops it and brings you back here, and nothing on this
+   page is lost either way.
 
 If it stops early it tells you what is missing and which command to re-run. Re-running
 `setup` is always safe: it only fills gaps.
@@ -139,9 +178,19 @@ voice-bridge radicale-server start --background
 voice-bridge radicale-server status
 ```
 
+`status` prints a small table; the line to look at is **`reachable : True`**. It also exits
+0 when the server answers and 1 when it does not, so you can script against it.
+
 `init` asks you to type a password for the CalDAV account, hidden as you type. The account
-name is `vox` unless you pass `--user`. **Remember both** — your phone needs them in a
-moment, and the password is stored hashed, so nothing can show it to you again.
+name is `vox` unless you pass `--user`. **Write both down** — your phone needs them in a
+moment.
+
+Two copies of that password are stored, and they are different on purpose. The **server's**
+copy is bcrypt-hashed in its user file, because a server only ever needs to *check* a
+password. The **client's** copy sits in plaintext in `radicale.env` (permissions `0600`
+where the platform supports it), because the bridge has to *present* it to authenticate.
+So: if you forget it, `radicale.env` is where to look — and knowing a plaintext credential
+lives there is part of deciding where this machine sits.
 
 `init` refuses to overwrite credentials that already exist. `--force` rotates the password,
 which means the phone's CalDAV account stops connecting until you update it there too.
@@ -150,6 +199,10 @@ The server binds to **`127.0.0.1`**, deliberately: nothing on your local network
 it. The next step is what lets your phone in, and it does so without opening the LAN.
 
 ### Put HTTPS in front of it
+
+**You need [Tailscale](https://tailscale.com/) here** — installed and signed in to the same
+tailnet on *both* this machine and the phone. Do that first; the commands below assume the
+`tailscale` CLI exists and is logged in.
 
 **An iPhone refuses a CalDAV account over plain HTTP.** This is a fact from the device, not
 a preference — a plain-HTTP account will not save, whatever else is correct. So TLS goes in
@@ -206,15 +259,18 @@ In order, it will:
 
 1. **Ask three settings** — the transport (answer `radicale`), this spoke's name, and your
    mailbox directory.
-2. **Check the server** is configured and answering. If it is not running it says so and
-   gives you the command to start it.
+2. **Check the account exists and the server answers.** Either failure stops setup and
+   names the `radicale-server` command to run — `init` if the account is missing, `start` if
+   it is simply not running.
 3. **Offer to create the two lists for you.** Say yes. They appear on the phone through the
    CalDAV account you just added — no further phone step. (Say no and you create them
    yourself in a CalDAV client, exactly like the iCloud path.)
-4. **Confirm which two lists carry messages** — the ones it just made, already selected.
+4. **Select the two lists** — the ones it just created are chosen for you, by id, and it
+   says so rather than matching them by name.
 5. **Offer push notifications.** See [step 2](#2-push-notifications-do-this-before-the-test).
 6. **Send a test message round.**
 7. **Print the phone prompt.**
+8. **Offer to start the bridge** — Ctrl-C stops it and brings you back here.
 
 **Check both lists appear on the phone** in the Reminders app, under the new account's
 section, before moving on. That is the proof the CalDAV account is really working.
@@ -229,9 +285,10 @@ when one arrives, instead of you remembering to look.
 They are delivered by [ntfy](https://ntfy.sh). Setup offers you four options, including
 generating a private topic for you and pointing at your own ntfy server.
 
-**Install the ntfy app on your phone and subscribe to the topic before you answer that
-question** — the test message setup sends immediately afterwards fires a banner, and if you
-are not subscribed yet you will not see it and will not know whether it worked.
+**Setup prints the generated topic on screen, just above the question** — something like
+`vox-a1b2c3…`. Install the ntfy app on your phone, subscribe to that string, and *then*
+answer. The test message setup sends immediately afterwards fires a banner, and if you are
+not subscribed yet you will not see it and will not know whether it worked.
 
 If you skip notifications entirely, everything still works; you just have to look at the
 list yourself.
@@ -247,8 +304,9 @@ voice-bridge verify
 ```
 
 One probe each way, then it cleans up after itself. No questions, nothing written to your
-config: **exit 0 means a message made it, exit 2 means it did not.** It is not a `doctor`
-check, because it *writes* — `doctor` only inspects.
+config: **exit 0 means a message made it, exit 2 means it did not, and exit 1 means the
+check never finished** — a stall you chose not to wait out, or a Ctrl-C. Run it again. It is
+not a `doctor` check, because it *writes* — `doctor` only inspects.
 
 ```bash
 voice-bridge doctor          # survey every interface; --fix repairs the safe ones
@@ -334,7 +392,7 @@ really uses.
 ## Everyday commands
 
 ```bash
-voice-bridge peek --box inbox      # what is waiting in a box right now
+voice-bridge peek --box inbox      # inbox = your dictations; outbox = replies to you
 voice-bridge tail -f               # follow the mailbox files
 voice-bridge send "text"           # push one message through the outbound path
 voice-bridge notify "done" --click https://example.com/pr/42

@@ -1,0 +1,392 @@
+"""Shared fixtures. The FakeTransport + a fixed clock are the highest-leverage ones:
+they let the whole spoke be tested with no network and deterministic timestamps.
+"""
+
+from __future__ import annotations
+
+import json
+from datetime import datetime
+from dataclasses import dataclass
+from pathlib import Path
+
+import pytest
+
+from voice_bridge.config import load_config
+from voice_bridge.transport import FakeTransport
+
+
+@pytest.fixture(autouse=True)
+def _clean_icloud_env(monkeypatch):
+    """Keep host ICLOUD_* env vars from leaking into file-based creds resolution."""
+    for k in (
+        "ICLOUD_APPLE_ID",
+        "ICLOUD_USERNAME",
+        "ICLOUD_APP_PASSWORD",
+        "ICLOUD_PASSWORD",
+        "ICLOUD_CALDAV_URL",
+    ):
+        monkeypatch.delenv(k, raising=False)
+
+
+@pytest.fixture
+def plain_shell(monkeypatch):
+    """A shell that borrowed nothing - no `uv run` around us.
+
+    The suite itself is normally launched with `uv run pytest`, so the marker IS in
+    the environment and any test reasoning about invocation advice would otherwise
+    inherit the harness's accident. That is the same lesson batch 4 paid for with an
+    instrument delta: a claim that depends on a condition you arranged has to state
+    the condition. Tests that WANT the borrowed case set the marker themselves.
+    """
+    monkeypatch.delenv("UV_RUN_RECURSION_DEPTH", raising=False)
+
+
+@pytest.fixture
+def fixed_clock() -> datetime:
+    """A frozen wall-clock for deterministic [HH:MM] stamps."""
+    return datetime(2026, 7, 12, 8, 48, 0)
+
+
+@pytest.fixture
+def tmp_mailbox(tmp_path: Path) -> Path:
+    """An empty mailbox dir (the shared bus)."""
+    d = tmp_path / "agent-mail"
+    d.mkdir()
+    return d
+
+
+#: The ids `FakeTransport.add_list` derives for the two default lists. Written out
+#: rather than computed so a change to the fake's id scheme fails loudly here
+#: instead of quietly unselecting every fixture that depends on it.
+FAKE_INBOX_ID = "list-vox-message-outbox"  # the user dictates here
+FAKE_OUTBOX_ID = "list-vox-message-inbox"  # replies land here
+
+
+@pytest.fixture
+def sample_config(tmp_path: Path, tmp_mailbox: Path):
+    """A resolved Config for a WORKING install: tmp dirs, and both lists selected.
+
+    The ids are part of the fixture because both roles are now a hard requirement -
+    `run`, `setup`'s later steps and `vox-prompt` all refuse without them - so a
+    config with no selection no longer represents "a normal install", it represents
+    a specific broken state. Tests that want that state ask for `unselected_config`,
+    which makes which one they mean visible at the call site.
+    """
+    cfg_file = tmp_path / "voice-bridge.json"
+    cfg_file.write_text(
+        json.dumps(
+            {
+                "mailbox_dir": str(tmp_mailbox),
+                "state_dir": str(tmp_path / "state"),
+                "inbox_list_id": FAKE_INBOX_ID,
+                "output_list_id": FAKE_OUTBOX_ID,
+                "inbox_list": "Vox-Message-Outbox",
+                "output_list": "Vox-Message-Inbox",
+            }
+        ),
+        encoding="utf-8",
+    )
+    return load_config(cfg_file)
+
+
+@pytest.fixture
+def unselected_config(tmp_path: Path, tmp_mailbox: Path):
+    """A fresh install: nothing chosen yet, and no fabricated list names.
+
+    This is what a config looks like straight after `setup` writes it, and the
+    state in which every list-dependent command must refuse rather than guess.
+    """
+    cfg_file = tmp_path / "voice-bridge.json"
+    cfg_file.write_text(
+        json.dumps({"mailbox_dir": str(tmp_mailbox), "state_dir": str(tmp_path / "state")}),
+        encoding="utf-8",
+    )
+    return load_config(cfg_file)
+
+
+@pytest.fixture
+def fake_transport() -> FakeTransport:
+    """In-memory backend pre-seeded with the two default lists."""
+    t = FakeTransport()
+    t.add_list("Vox-Message-Inbox")
+    t.add_list("Vox-Message-Outbox")
+    return t
+
+
+@pytest.fixture
+def radicale_server(tmp_path):
+    """An embedded Radicale CalDAV server on a random localhost port — the real oracle
+    for the CalDAV transport. htpasswd auth (test:test), tmp filesystem storage."""
+    import socket
+    import threading
+    from wsgiref.simple_server import WSGIRequestHandler, make_server
+
+    radicale = pytest.importorskip("radicale")
+    from radicale import config as rconfig
+
+    storage = tmp_path / "collections"
+    storage.mkdir()
+    users = tmp_path / "users"
+    users.write_text("test:test\n", encoding="utf-8")
+    cfg = rconfig.load(())
+    cfg.update(
+        {
+            "auth": {
+                "type": "htpasswd",
+                "htpasswd_filename": str(users),
+                "htpasswd_encryption": "plain",
+            },
+            "storage": {"filesystem_folder": str(storage)},
+            "rights": {"type": "authenticated"},
+        },
+        "test",
+        privileged=True,
+    )
+    app = radicale.Application(cfg)
+
+    probe = socket.socket()
+    probe.bind(("127.0.0.1", 0))
+    port = probe.getsockname()[1]
+    probe.close()
+
+    class _Quiet(WSGIRequestHandler):
+        def log_message(self, *a):  # noqa: D401 - silence access log
+            pass
+
+    httpd = make_server("127.0.0.1", port, app, handler_class=_Quiet)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield {"url": f"http://127.0.0.1:{port}", "username": "test", "password": "test"}
+    finally:
+        httpd.shutdown()
+        thread.join(timeout=5)
+
+
+@pytest.fixture
+def radicale_config(radicale_server, tmp_path, tmp_mailbox):
+    """A resolved Config wired to the embedded Radicale server (transport=radicale)."""
+    import json
+
+    state = tmp_path / "state"
+    state.mkdir(parents=True, exist_ok=True)
+    creds = state / "radicale.env"
+    creds.write_text(
+        f"ICLOUD_APPLE_ID={radicale_server['username']}\n"
+        f"ICLOUD_APP_PASSWORD={radicale_server['password']}\n"
+        f"ICLOUD_CALDAV_URL={radicale_server['url']}\n",
+        encoding="utf-8",
+    )
+    cfg_file = tmp_path / "voice-bridge.json"
+    cfg_file.write_text(
+        json.dumps(
+            {
+                "transport": "radicale",
+                "mailbox_dir": str(tmp_mailbox),
+                "state_dir": str(state),
+                "creds_env": str(creds),
+            }
+        ),
+        encoding="utf-8",
+    )
+    from voice_bridge.config import load_config
+
+    return load_config(cfg_file)
+
+
+@dataclass
+class BoomTransport(FakeTransport):
+    """A transport whose `connect()` fails, to drive the typed-error mapping.
+
+    The point of the mapping is that *which* error surfaces decides the exit code
+    and whether the user is told to fix credentials, fix a list name, or file a
+    bug — so the tests need to choose the failure.
+    """
+
+    boom: Exception | None = None
+
+    def connect(self) -> None:
+        if self.boom is not None:
+            raise self.boom
+        super().connect()
+
+
+@pytest.fixture
+def boom_transport():
+    """Factory: `boom_transport(SomeError("x"))` -> a transport that fails to connect."""
+    return lambda exc: BoomTransport(boom=exc)
+
+
+@pytest.fixture
+def ghost_transport() -> FakeTransport:
+    """Two lists sharing the inbox NAME with different ids — a real iCloud hazard.
+
+    Deleting and recreating a list on the phone leaves same-titled orphans, so
+    resolve-by-name silently picks one at random. This is exactly what pinning an
+    id exists to disambiguate, and `lists` must make the ambiguity visible.
+    """
+    t = FakeTransport()
+    # Duplicated on the list the BRIDGE READS (the user's outbox, per UX-1), since
+    # that is where an ambiguity actually costs a dictation.
+    t.add_list("Vox-Message-Outbox", "L1")  # the ghost (older, empty)
+    t.add_list("Vox-Message-Inbox", "L2")
+    t.add_list("Vox-Message-Outbox", "L9")  # the live one
+    return t
+
+
+class FakeICloudService:
+    """Stands in for `PyiCloudService`, modelling only the surface login uses.
+
+    It RECORDS its calls, which is what turns LOGIN-4 into a regression sentinel:
+    delete `trust_session()` from the implementation and the durability test goes
+    red, rather than the session quietly lapsing weeks later on a real phone.
+
+    No test imports pyicloud — the same stance `test_icloud.py` takes.
+    """
+
+    def __init__(
+        self,
+        apple_id: str,
+        password: str,
+        cookie_directory: str | None = None,
+        *,
+        good_password: str = "correct-horse",
+        mfa_required: bool = True,
+        hsa_version: int = 2,
+        code_ok: bool = True,
+        trust_works: bool = True,
+    ) -> None:
+        if password != good_password:
+            raise RuntimeError("Invalid email/password combination.")
+        self.apple_id = apple_id
+        self.password = password
+        self.cookie_directory = cookie_directory
+        # Model the account the way pyicloud does — one MFA flag and an hsaVersion —
+        # rather than two independent booleans. The flags below are DERIVED, so this
+        # double cannot express a combination the real library never produces. It
+        # previously could, and that is exactly how LIVE-1 escaped: every test set
+        # `requires_2sa` independently of `requires_2fa`, while in reality a modern
+        # two-factor account reports BOTH as true.
+        self._mfa = mfa_required
+        self._hsa = hsa_version
+        self.is_trusted_session = not self.requires_2fa
+        self._code_ok = code_ok
+        self._trust_works = trust_works
+        self.calls: list[str] = ["construct"]
+
+    @property
+    def requires_2sa(self) -> bool:
+        """`hsaVersion >= 1` — a SUPERSET, true for legacy 2SA *and* modern 2FA."""
+        return self._mfa and self._hsa >= 1
+
+    @property
+    def requires_2fa(self) -> bool:
+        """`hsaVersion == 2` — modern two-factor only."""
+        return self._mfa and self._hsa == 2
+
+    def validate_2fa_code(self, code: str) -> bool:
+        self.calls.append(f"validate_2fa_code:{code}")
+        if self._code_ok:
+            self._mfa = False  # satisfied: both derived flags fall together
+        return self._code_ok
+
+    def trust_session(self) -> None:
+        self.calls.append("trust_session")
+        if self._trust_works:
+            self.is_trusted_session = True
+
+
+@pytest.fixture
+def fake_icloud(monkeypatch):
+    """Install a `FakeICloudService` behind `login._make_service`; return a handle.
+
+    `_make_service` is the ONE injection point for the whole login flow, so a test
+    never needs the network, a real Apple ID, or pyicloud.
+    """
+    from voice_bridge import login as login_mod
+
+    state: dict = {"service": None, "kwargs": {}}
+
+    def install(**kwargs):
+        state["kwargs"] = kwargs
+
+        def _make(apple_id, password, cookie_dir):
+            svc = FakeICloudService(apple_id, password, str(cookie_dir), **state["kwargs"])
+            state["service"] = svc
+            return svc
+
+        monkeypatch.setattr(login_mod, "_make_service", _make)
+        return state
+
+    install()  # sensible defaults; a test may re-install with its own
+    return install
+
+
+@pytest.fixture
+def fake_ntfy(monkeypatch):
+    """A localhost capture server standing in for ntfy, deferred here from the
+    3-state PushResult work because `setup --verify` is the first thing that
+    genuinely needs WIRE-level capture rather than branch coverage.
+
+    Yields a list that receives one dict per request: url, headers, body. The
+    verify smoke asserts a banner really was posted, not merely that a function
+    returned truthy.
+    """
+    import urllib.request
+
+    captured: list[dict] = []
+    real = urllib.request.urlopen
+
+    def capture(req, timeout=None, **kw):
+        captured.append(
+            {
+                "url": getattr(req, "full_url", str(req)),
+                "headers": {k.lower(): v for k, v in getattr(req, "header_items", list)()},
+                "body": (req.data or b"").decode("utf-8", "replace"),
+            }
+        )
+        return None
+
+    monkeypatch.setattr(urllib.request, "urlopen", capture)
+    yield captured
+    urllib.request.urlopen = real
+
+
+@pytest.fixture
+def wired_config(sample_config):
+    """A config with both roles SELECTED, matching `fake_transport`'s ids.
+
+    Running now requires a selection for each role — an unselected role no longer
+    falls back to matching a list by name — so every test that actually starts the
+    loop needs one. Tests about the unselected state use `sample_config` instead.
+    """
+    import dataclasses
+
+    return dataclasses.replace(
+        sample_config,
+        inbox_list_id="list-vox-message-outbox",
+        output_list_id="list-vox-message-inbox",
+    )
+
+
+@pytest.fixture(autouse=True)
+def _isolate_pending_banners():
+    """Keep delayed banners from leaking between tests.
+
+    `ntfy` holds waiting banners in module-level state, which is right for a
+    process with one bridge in it and wrong for a test suite: a banner scheduled
+    by one test would still be pending when the next one counted them. Cleared
+    rather than flushed, because firing another test's banner is exactly the
+    cross-talk this prevents.
+    """
+    from voice_bridge import ntfy
+
+    def _clear():
+        with ntfy._pending_lock:
+            for timer, *_ in ntfy._pending:
+                timer.cancel()
+            ntfy._pending.clear()
+
+    _clear()
+    yield
+    _clear()

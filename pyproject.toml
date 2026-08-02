@@ -1,0 +1,68 @@
+[project]
+name = "voice-bridge"
+version = "0.1.0"
+description = "Add an async voice spoke to a file-mailbox agent system — talk to your mailbox from your phone via Apple Reminders."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+    # transports pull their own backends lazily; kept out of the core install so
+    # the iCloud path never forces CalDAV deps and vice versa. Installed extras:
+]
+
+[project.optional-dependencies]
+icloud = ["pyicloud"]
+caldav = ["caldav>=3.2,<4", "icalendar>=6,<8"]
+server = ["radicale>=3,<4", "bcrypt>=4"]
+all = ["pyicloud", "caldav>=3.2,<4", "icalendar>=6,<8", "radicale>=3,<4", "bcrypt>=4"]
+# The test environment needs EVERY optional transport, or the suites that cover
+# them vanish behind a module-level importorskip — one quiet skip line per file,
+# hiding a whole suite. pyicloud's absence here (while caldav/radicale were
+# present) cost ~5 points of coverage that only CI could see.
+dev = ["pytest>=8", "pytest-cov", "ruff", "mypy", "pyicloud", "caldav>=3.2,<4", "icalendar>=6,<8", "radicale>=3,<4", "bcrypt>=4"]
+
+[project.scripts]
+voice-bridge = "voice_bridge.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["voice_bridge"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# -ra: always print the reason for every skip. A module-level importorskip
+# reports ONE skip for a whole file, so a missing optional dependency can
+# silently remove a suite while the run still looks green. Naming the reason
+# makes that visible instead of invisible.
+addopts = "-q -ra"
+
+[tool.coverage.run]
+# WITHOUT this, a bare `pytest --cov` measures every file it imports - including
+# `tests/`, which is ~3,300 statements that are ~100% covered by definition. That
+# reported 93.01% where the CI gate (`--cov=voice_bridge`) reported 85.99% on the
+# identical tree: seven points of pure self-congratulation, from a number that
+# looked like coverage and was measuring the tests testing themselves.
+#
+# Naming the source here makes `--cov` and `--cov=voice_bridge` produce the SAME
+# figure, so the only way to quote a wrong one is to ask for it explicitly.
+source = ["voice_bridge"]
+
+[tool.ruff]
+line-length = 100
+extend-exclude = [".archive", "radicale"]
+
+[tool.ruff.lint]
+# Pinned to the set ruff 0.15.21 selects by default TODAY, verified with
+# `ruff check --show-settings`. Relying on the tool's own default means the
+# gate silently redefines itself on a lock bump: 0.16.0 adds isort (I), which
+# flags ~20 findings this tree does not have today. A gate that changes when
+# you weren't looking is not a gate — widen this list deliberately, or not at all.
+select = ["E4", "E7", "E9", "F"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true  # optional untyped backends: pyicloud/caldav/icalendar/radicale/bcrypt
+files = ["voice_bridge"]

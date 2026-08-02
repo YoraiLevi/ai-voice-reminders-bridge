@@ -1,0 +1,11 @@
+# Text files are stored with LF in the repository, whatever the checkout does.
+#
+# Without this, an edit made through a tool that opens files in text mode on Windows
+# silently rewrites every line ending, and a three-line change arrives as a
+# whole-file diff. That is not cosmetic: the reviewer verifying a batch by reading
+# its diff loses the ability to see what actually changed.
+#
+# `voice_bridge/mailbox.py` makes the same call in code, for the same reason - the
+# mailbox is a shared append-only protocol file, so its bytes must not depend on
+# which OS appended the last line.
+* text=auto eol=lf

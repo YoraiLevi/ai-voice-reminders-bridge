@@ -1,16 +1,31 @@
 # voice-bridge — design
 
 How `voice-bridge` is put together, what it guarantees, and where it deliberately stops.
-This document is the architecture reference; the [README](../README.md) is the quick start.
+This document is the architecture reference; the [README](../README.md) indexes the
+task-shaped guides that get you running.
 
 **Reading it standalone:** you don't need prior context. Terms are defined where they first
 appear, and every guarantee below says plainly whether it holds *in the code today* or is
 *designed but not yet built*.
 
-**This document does not cover installation or first run.** Those live in the
-[README](../README.md), which is the quick start of record: how to invoke the tool with no
-installation, and the single command that sets everything up and starts bridging. Read the
-README first if you have never run this; come here for how it works and what it promises.
+**This document does not cover installation or first run.** Those live in the guides:
+[Install](install.md), then [iCloud](setup-icloud.md) or [Radicale](setup-radicale.md), then
+[Using the bridge](using.md). Read those first if you have never run this; come here for how
+it works and what it promises. The [README](../README.md) indexes the set.
+
+## Contents
+
+- [1. What it is](#1-what-it-is)
+- [2. Boundary — what it owns, what it defers](#2-boundary-what-it-owns-what-it-defers)
+- [3. Vocabulary and routing](#3-vocabulary-and-routing)
+- [4. Architecture](#4-architecture)
+- [5. Configuration](#5-configuration)
+- [6. CLI surface](#6-cli-surface)
+- [7. Runtime files](#7-runtime-files)
+- [8. Guarantees and limits](#8-guarantees-and-limits)
+- [9. When a dictation goes unanswered](#9-when-a-dictation-goes-unanswered)
+- [10. Testing model](#10-testing-model)
+- [11. Deliberately open](#11-deliberately-open)
 
 ---
 
@@ -187,7 +202,7 @@ be absent.
 | mailbox | `mailbox_dir` | `~/.agent-mail` | the shared mailbox directory |
 | our state | `state_dir` | `$XDG_STATE_HOME/vox-mailbox` | credentials, cookies, bookkeeping |
 | transport | `transport` | `icloud` | `icloud` or `radicale` |
-| Radicale | `radicale_host` / `radicale_port` / `radicale_user` | `127.0.0.1` / `5232` / `vox` | self-hosted server settings; the loopback bind is deliberate — TLS terminates in front (see the README's Radicale path), so the LAN needs no access at all |
+| Radicale | `radicale_host` / `radicale_port` / `radicale_user` | `127.0.0.1` / `5232` / `vox` | self-hosted server settings; the loopback bind is deliberate — TLS terminates in front ([Radicale setup](setup-radicale.md#2-put-https-in-front-of-it)), so the LAN needs no access at all |
 | notification | `ntfy_server` | `https://ntfy.sh` | override to self-host |
 | | `ntfy_title` / `ntfy_tags` / `ntfy_priority` | `Vox` / `robot` / `high` | banner presentation |
 | | `ntfy_body_limit` | `-1` | cap banner length; `-1` = no cap |
@@ -311,8 +326,8 @@ confidence*, so a guarantee that is only aspirational is worse than none. Everyt
 stated against **the code as it exists today**.
 
 > **Upgrading, or repointing a list role?** The one-time flush that causes is described in
-> *"Inbox" means two different directions* above. It is not in the README, because a
-> from-zero reader has nothing to upgrade from.
+> *"Inbox" means two different directions* above. It is deliberately not in the setup
+> guides, because a from-zero reader has nothing to upgrade from.
 
 ### What holds today
 

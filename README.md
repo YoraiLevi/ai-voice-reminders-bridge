@@ -54,9 +54,9 @@ two lists again. Setup says so when it happens.
 - **An iPhone or iPad** with the Reminders app, **and an assistant app on it** that you can
   talk to and that can read and write your Reminders lists — the Claude app, or whatever you
   use. That app is what you actually dictate to; `voice-bridge` carries what it writes.
-- **[`uv`](https://docs.astral.sh/uv/) and `git`**, and on Windows **PowerShell rather than
-  Command Prompt**. [Install](docs/install.md) walks all of it, including how to tell which
-  shell you are actually in.
+- **[`uv`](https://docs.astral.sh/uv/)**, and on Windows **PowerShell rather than Command
+  Prompt**. Nothing else is installed and there is nothing to clone —
+  [Install](docs/install.md) walks it, including how to tell which shell you are actually in.
 
 ## What it looks like working
 

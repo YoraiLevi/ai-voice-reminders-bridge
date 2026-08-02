@@ -6,8 +6,8 @@ other guide in this set uses `vb`, literally, so you never have to translate any
 - [1. Open the right shell](#1-open-the-right-shell)
 - [2. Get `uv`](#2-get-uv)
 - [3. Pick a directory and stay in it](#3-pick-a-directory-and-stay-in-it)
-- [4. Get the code](#4-get-the-code)
-- [5. Define `vb`, and prove it](#5-define-vb-and-prove-it)
+- [4. Define `vb`, and prove it](#4-define-vb-and-prove-it)
+- [If you would rather have the source](#if-you-would-rather-have-the-source)
 - [If `vb` stops working](#if-vb-stops-working)
 
 ---
@@ -47,14 +47,6 @@ A version number means you are ready. `not recognized` / `command not found` mea
 install did not land on this shell's PATH — close the window, open a new one, and try again
 before anything else.
 
-**You also need `git`**, for the next step. Same check:
-
-```
-git --version
-```
-
-If that one fails, install [Git](https://git-scm.com/downloads) and open a fresh terminal.
-
 ## 3. Pick a directory and stay in it
 
 **Your settings live in `.claude/voice-bridge.json` under the directory you run commands
@@ -63,60 +55,34 @@ sounds: run setup in one place and the bridge in another, and the second one fin
 config, **starts a fresh setup, and writes a second config where you happen to be standing**.
 Two half-installs and nothing says so.
 
-The next step picks that directory for you: it is the folder the code lands in, and you run
-everything from inside it. (If you take the no-clone route in the box below instead, make a
-folder yourself — `voice-bridge` anywhere convenient — and `cd` into it before going on.)
+So make one now and stay in it:
+
+```bash
+mkdir -p ~/voice-bridge && cd ~/voice-bridge          # bash / zsh
+```
+
+```powershell
+New-Item -ItemType Directory -Force ~/voice-bridge; cd ~/voice-bridge    # PowerShell
+```
 
 > If you would rather keep one config and run from anywhere, set the `VOICE_BRIDGE_CONFIG`
 > environment variable to its full path, or pass `--config PATH` on every command.
 
-## 4. Get the code
+## 4. Define `vb`, and prove it
 
-Clone the repository and go into it. **This is the path that works today**, and the rest of
-this guide assumes you are standing in that folder:
+**There is nothing to download.** `uvx` fetches and runs the tool on demand, so the whole
+install is one line that teaches your shell a shortcut. Paste the one for your shell:
 
-```
-git clone https://github.com/YoraiLevi/ai-voice-reminders-bridge
-cd ai-voice-reminders-bridge
-```
-
-<details>
-<summary><b>Installing without a clone</b></summary>
-
-`uvx` can run the tool straight from the repository with nothing checked out. Skip the clone
-in step 4, `cd` into a folder of your own (step 3), and use this instead of step 5:
+**PowerShell:**
 
 ```powershell
 function vb { uvx --from 'voice-bridge[all] @ git+https://github.com/YoraiLevi/ai-voice-reminders-bridge' voice-bridge @args }
 ```
 
-```bash
-vb() { uvx --from 'voice-bridge[all] @ git+https://github.com/YoraiLevi/ai-voice-reminders-bridge' voice-bridge "$@"; }
-```
-
-Everything else in every guide is unchanged, because they all say `vb`.
-
-**If that fails with *"does not appear to be a Python project"***, the package is not on the
-repository's default branch yet — `uvx` fetches that branch. Use the clone above instead; it
-works either way.
-
-</details>
-
-## 5. Define `vb`, and prove it
-
-Paste the line for your shell. It defines `vb` as a shortcut for the real command, so every
-guide can print commands you type **exactly as written**.
-
-**PowerShell:**
-
-```powershell
-function vb { uv run --extra all voice-bridge @args }
-```
-
 **bash / zsh:**
 
 ```bash
-vb() { uv run --extra all voice-bridge "$@"; }
+vb() { uvx --from 'voice-bridge[all] @ git+https://github.com/YoraiLevi/ai-voice-reminders-bridge' voice-bridge "$@"; }
 ```
 
 Now prove it:
@@ -126,30 +92,61 @@ vb --help
 ```
 
 You should get a usage block listing `run`, `setup`, `verify`, `doctor` and the rest. The
-first run takes a moment — `uv` is building the environment.
+first run takes a moment while `uv` builds the environment; later runs are fast.
 
-### Why `--extra all` is in there
+Every guide in this set prints its commands as `vb something`, so from here on you type what
+you see.
+
+### Why `[all]` is in there
 
 **It is not optional and it is not decoration.** The package itself has *no* dependencies:
-each backend is pulled in separately, so without `--extra all` the tool installs fine and
-then fails the first time it tries to reach your phone, with *"pyicloud not installed"* or
-*"install voice-bridge[server]"*. `all` covers both backends. It is baked into `vb`, so you
-will not have to think about it again.
+each backend is pulled in separately, so without it the tool installs fine and then fails the
+first time it tries to reach your phone, with *"pyicloud not installed"* or *"install
+voice-bridge[server]"*. `all` covers both backends.
+
+It is baked into `vb` — spelled `[all]` in the `uvx` form and `--extra all` in the clone form
+— so you will not have to think about it again.
+
+## If you would rather have the source
+
+Cloning is for reading or changing the code — it is not needed to *use* the tool. You also
+need [Git](https://git-scm.com/downloads) for this route (`git --version` to check).
+
+```
+git clone https://github.com/YoraiLevi/ai-voice-reminders-bridge
+cd ai-voice-reminders-bridge
+```
+
+That checkout is then your one directory from [step 3](#3-pick-a-directory-and-stay-in-it),
+and `vb` is defined against it instead — run this from inside the clone:
+
+```powershell
+function vb { uv run --extra all voice-bridge @args }
+```
+
+```bash
+vb() { uv run --extra all voice-bridge "$@"; }
+```
+
+Everything else in every guide is unchanged, because they all say `vb`.
 
 ## If `vb` stops working
 
 **`vb` lives only in the terminal window you defined it in.** Open a new window — or reboot,
 or come back tomorrow — and it is gone, with `The term 'vb' is not recognized`.
 
-Nothing is broken. Re-paste the line from [step 5](#5-define-vb-and-prove-it), from inside
-the project directory. That is the whole fix, and you will do it more than once.
+Nothing is broken. `cd` back to your directory and re-paste the line from
+[step 4](#4-define-vb-and-prove-it). That is the whole fix, and you will do it more than
+once.
 
-> **Why not install it properly on the PATH?** You can, but `uv run` deliberately puts the
-> program on the PATH only for the command it is running — which is why typing a bare
-> `voice-bridge` in your own shell does not work even though it works inside `uv run`. `vb`
-> is the honest shortcut around that. If the tool ever detects the mismatch it prints a note
-> beginning `note: `voice-bridge` will not be on the PATH of the shell you type into -`
-> followed by the exact form to use.
+> **Why not just install it on the PATH?** You can — but neither route above puts a
+> `voice-bridge` command in your shell, and both are deliberate about it. `uvx` runs the tool
+> without installing it at all, and `uv run` puts the program on the PATH only for the
+> command it is running. That is why a bare `voice-bridge` fails in your own shell even when
+> it works inside `uv run`, and `vb` is the honest shortcut around it. If the tool ever
+> detects the mismatch it says so, in a note beginning
+> `note: `voice-bridge` will not be on the PATH of the shell you type into -` followed by the
+> exact form to use.
 
 ---
 

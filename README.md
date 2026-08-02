@@ -38,7 +38,7 @@ limits](docs/design.md)**
 | what it is | your existing Apple account | a small CalDAV server on this machine |
 | you need | an Apple ID and its password, plus 2FA on your phone | Tailscale on the machine *and* the phone |
 | the two lists | **you create them on the phone** — Apple's API cannot | created for you |
-| speed | fast | slower — it polls over the tunnel |
+| speed | fast | slower — the phone syncs over the tunnel |
 | your dictations | pass through Apple | never leave your own machines |
 
 You can switch later with `setup --transport <name>`. **Switching clears the list
@@ -60,7 +60,8 @@ two lists again. Setup says so when it happens.
 
 ## What it looks like working
 
-You say something to your phone. Within a poll interval it appears in the mailbox as
+You say something to your phone. Within a poll interval it lands in the mailbox, and
+`vb tail -f` shows it as
 
 ```
 [manager] - [14:30] (vox) look at the failing test in test_poller.py
@@ -77,12 +78,8 @@ it.
 
 ## Development
 
-```
-uv run --extra dev pytest        # unit / contract / integration / e2e
-uv run --extra dev ruff check voice_bridge tests
-uv run --extra dev mypy voice_bridge
-```
-
-Architecture, guarantees and known limits: [`docs/design.md`](docs/design.md).
+The test, lint and type-check commands are in the
+[reference](docs/reference.md#development). Architecture, guarantees and known limits:
+[`docs/design.md`](docs/design.md).
 
 [agent-to-agent-communication-file-mailbox]: https://github.com/YoraiLevi/agent-to-agent-communication-file-mailbox

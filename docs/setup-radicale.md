@@ -138,9 +138,24 @@ Then, on the machine:
 vb verify
 ```
 
-- **exit 0** — a message made the round trip.
-- **exit 2** — it did not.
-- **exit 1** — the check never finished. Run it again.
+One probe each way, then it cleans up after itself. Nothing is written to your config and it
+asks you nothing, except if the backend stalls, when it offers to keep waiting.
+
+**Watch the two contract legs and the closing line:**
+
+```
+  [ok  ] dictation reached the mailbox
+  [ok  ] reply reached the outbox list
+verified: a message makes the round trip.
+```
+
+Anything other than `verified:` on that last line names which leg failed. Two lines you may
+also see are **not** failures: `[ -- ] notification not configured` just means you skipped
+[notifications](notifications.md), and `[ ?  ] title not confirmed` means the check could not
+reach a verdict — the message itself still arrived.
+
+If you are scripting this rather than watching it, the exit codes are in the
+[reference](reference.md#exit-codes).
 
 **Now go to [Using the bridge](using.md).**
 

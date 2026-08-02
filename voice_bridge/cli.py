@@ -385,7 +385,12 @@ def _build_parser() -> argparse.ArgumentParser:
     dl.add_argument(
         "--public",
         action="store_true",
-        help="publish the gist PUBLICLY and searchably (default: a secret link)",
+        # NOT "a secret link". `deliver`'s own confirmation prompt says the opposite and is
+        # right: "A private gist is UNLISTED, not secret - anyone with the link can read it."
+        # Two artifacts describing one GitHub behaviour, disagreeing, and the reassuring one
+        # was the help text - which is the direction that costs somebody something. Found by
+        # a doc reviewer comparing the two.
+        help="publish the gist PUBLICLY and searchably (default: unlisted, not private)",
     )
     dl.add_argument("--yes", action="store_true", help="skip the confirmation")
 

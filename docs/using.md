@@ -83,9 +83,9 @@ one terminal:
 
 1. **Say something to the assistant app on your phone** — ask it to put a message in your
    dictation list. It writes a reminder into **Vox-Message-Outbox**.
-2. **Wait one poll interval** (10 seconds by default). The bridge reads the reminder, appends
-   it to your peer's inbox file, and completes the reminder on the phone — so *the item
-   disappearing from the list is the receipt* that it was picked up.
+2. **Wait one poll interval** — the number in the `bridging:` line you just saw. The bridge
+   reads the reminder, appends it to your peer's inbox file, and completes the reminder on the
+   phone, so *the item disappearing from the list is the receipt* that it was picked up.
 3. **Watch it land.** In another terminal, run `vb tail -f`. Your words appear as one line:
 
        [manager] - [14:30] (vox) <what you said>

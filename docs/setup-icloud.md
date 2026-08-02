@@ -38,8 +38,10 @@ It walks the whole thing and asks only what it cannot work out. In order:
 1. **Three settings** — the backend (answer `icloud`), this spoke's name (`vox` is fine),
    and your mailbox directory. Press Enter to keep any value it shows.
 2. **Your Apple credentials.** It asks before taking anything, and declining is fine — it
-   names `vb icloud-login` for later and exits 0. This is where **two-factor** happens:
-   Apple pushes a code to your devices and setup asks you for it.
+   names the login command for later and stops. It prints that command as
+   `voice-bridge icloud-login`, which is the tool's own name for itself; type it as
+   `vb icloud-login`. This is where **two-factor** happens: Apple pushes a code to your
+   devices and setup asks you for it.
    - It needs your **main Apple ID password**, not an app-specific one.
    - There is deliberately no `--password` flag: anything on a command line is readable by
      every other user on the machine.
@@ -63,11 +65,23 @@ vb verify
 ```
 
 One probe each way, then it cleans up after itself. Nothing is written to your config and it
-asks you nothing, except if the account stalls, when it offers to keep waiting.
+asks you nothing, except if the backend stalls, when it offers to keep waiting.
 
-- **exit 0** — a message made the round trip.
-- **exit 2** — it did not.
-- **exit 1** — the check never finished. Run it again.
+**Watch the two contract legs and the closing line:**
+
+```
+  [ok  ] dictation reached the mailbox
+  [ok  ] reply reached the outbox list
+verified: a message makes the round trip.
+```
+
+Anything other than `verified:` on that last line names which leg failed. Two lines you may
+also see are **not** failures: `[ -- ] notification not configured` just means you skipped
+[notifications](notifications.md), and `[ ?  ] title not confirmed` means the check could not
+reach a verdict — the message itself still arrived.
+
+If you are scripting this rather than watching it, the exit codes are in the
+[reference](reference.md#exit-codes).
 
 If something is off:
 

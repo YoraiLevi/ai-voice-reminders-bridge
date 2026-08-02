@@ -11,6 +11,7 @@ Commands are written as `vb …`, the shortcut defined in [Install](install.md).
 - [Where your credentials and state live](#where-your-credentials-and-state-live)
 - [Starting over, and removing it](#starting-over-and-removing-it)
 - [Limits](#limits)
+- [Development](#development)
 
 ---
 
@@ -39,7 +40,7 @@ vb config set poll_interval 30
 | `tail [-n N] [-f]` | follow the mailbox files |
 | `send TEXT` | push one message through the outbound path |
 | `notify TEXT [--click URL]` | send a push notification |
-| `deliver FILE` | publish a file as a GitHub gist — secret by default, `--public` to change that — and send a tappable link. Needs the `gh` CLI, logged in |
+| `deliver FILE` | publish a file as a GitHub gist — **unlisted** by default, `--public` to list it — and send a tappable link. Needs the `gh` CLI, logged in. Unlisted is not private: anyone with the link can read it, and the link goes to your phone through the notification topic |
 | `config show \| get \| set \| fields` | inspect and edit settings |
 | `icloud-login` | establish the iCloud session, including two-factor |
 | `vox-prompt` | the phone-side prompt, rendered for your install |

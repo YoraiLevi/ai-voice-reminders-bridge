@@ -27,8 +27,9 @@ Open **Windows Terminal** and pick the *PowerShell* tab, or press `Win+R` and ru
 PS C:\Users\you>
 ```
 
-If it starts with `C:\Users\you>` and no `PS`, you are in Command Prompt — type `pwsh` and
-press Enter.
+If it starts with `C:\Users\you>` and no `PS`, you are in Command Prompt. Type `pwsh` and
+press Enter — and if that reports `'pwsh' is not recognized`, type `powershell` instead,
+which every Windows install has.
 
 **macOS / Linux:** the default Terminal is fine. Anything bash- or zsh-like works.
 
@@ -80,14 +81,10 @@ cd ai-voice-reminders-bridge
 ```
 
 <details>
-<summary><b>Installing without a clone (after this branch is merged)</b></summary>
+<summary><b>Installing without a clone</b></summary>
 
-`uvx` can run the tool straight from the repository with nothing checked out — but only once
-the package is on the repository's **default branch**. Until then it fails with *"does not
-appear to be a Python project"*, because the default branch does not contain it yet.
-
-When it is merged, skip the clone in step 4, `cd` into a folder of your own (step 3), and
-use this instead of step 5:
+`uvx` can run the tool straight from the repository with nothing checked out. Skip the clone
+in step 4, `cd` into a folder of your own (step 3), and use this instead of step 5:
 
 ```powershell
 function vb { uvx --from 'voice-bridge[all] @ git+https://github.com/YoraiLevi/ai-voice-reminders-bridge' voice-bridge @args }
@@ -98,6 +95,10 @@ vb() { uvx --from 'voice-bridge[all] @ git+https://github.com/YoraiLevi/ai-voice
 ```
 
 Everything else in every guide is unchanged, because they all say `vb`.
+
+**If that fails with *"does not appear to be a Python project"***, the package is not on the
+repository's default branch yet — `uvx` fetches that branch. Use the clone above instead; it
+works either way.
 
 </details>
 

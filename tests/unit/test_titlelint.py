@@ -176,6 +176,65 @@ def test_a_record_without_a_title_document_is_reported():
     assert any("no TitleDocument" in p for p in verdict.problems)
 
 
+class _TypedRecord:
+    """The shape a REAL account returns, measured 2026-08-09 against pyicloud's
+    reminders client: `fields["TitleDocument"]` is a `CKFieldOpen` RootModel wrapping
+    a `CKEncryptedBytesField`, whose `.value` is the raw deflate bytes - not a dict,
+    and not base64. The dict in `_FakeRecord` above is the shape the check ASSUMED,
+    which is why every fake passed while every live record failed (LIVE-6)."""
+
+    def __init__(self, raw: bytes):
+        class _Inner:
+            value = raw
+
+        class _Open:
+            root = _Inner()
+
+        self.fields = {"TitleDocument": _Open()}
+
+
+def _raw_document(text: str) -> bytes:
+    """What the server stores: the encoded document, deflated, without the base64."""
+    return base64.b64decode(encode_crdt_document(text))
+
+
+def test_the_typed_field_model_a_live_account_returns_is_read():
+    """LIVE-6: `isinstance(entry, dict)` sent every live record down the "no
+    TitleDocument" path, so `verify` told users with good titles that their phone
+    would render nothing. Both live legs were [ok]; only this verdict was wrong."""
+    service = _FakeService([_TypedRecord(_raw_document("titlelint probe DELETE ME"))])
+
+    verdict = titlelint.check_stored(service, "Reminder/ABC")
+
+    assert verdict.ok, verdict.describe()
+    assert verdict.text == "titlelint probe DELETE ME"
+
+
+def test_raw_deflate_bytes_are_accepted_alongside_base64():
+    """Same document, both encodings, same verdict - the branch is on type, so
+    neither can shadow the other."""
+    text = f"both ways {ASTRAL}"
+    as_b64 = encode_crdt_document(text)
+
+    assert titlelint.check_document(as_b64).ok
+    assert titlelint.check_document(base64.b64decode(as_b64)).ok
+
+
+def test_an_unreadable_title_field_is_UNDETERMINED_not_a_failure():
+    """The blind spot must not wear a defect's clothes. If pyicloud moves the field
+    model again, the check has to say it cannot tell - not accuse the title."""
+
+    class _Alien:
+        fields = {"TitleDocument": object()}
+
+    verdict = titlelint.check_stored(_FakeService([_Alien()]), "Reminder/ABC")
+
+    assert verdict.ok is False
+    assert verdict.undetermined is True
+    assert "cannot read" in verdict.describe()
+    assert "NOT renderable" not in verdict.describe()
+
+
 def test_a_failing_lookup_is_reported_not_raised():
     class _Boom:
         _reads = property(lambda self: (_ for _ in ()).throw(RuntimeError("network gone")))

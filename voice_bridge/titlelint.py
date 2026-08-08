@@ -61,12 +61,17 @@ def utf16_length(text: str) -> int:
     return len(text.encode("utf-16-le")) // 2 if text else 0
 
 
-def check_document(doc_b64: str) -> Verdict:
+def check_document(doc: str | bytes) -> Verdict:
     """Validate one encoded CRDT document against itself.
 
     The check is self-contained: whatever string the document carries, every
     declared length must match that string's UTF-16 length. No reference copy is
     needed, which is why this works on records we did not write.
+
+    Accepts the document base64-encoded (how `check_text` produces it, and how the
+    older dict-shaped record carried it) or as the raw deflate bytes pyicloud's
+    typed field model hands back. Guessing between them by content would be a coin
+    flip on a short payload, so the branch is on TYPE, which is never ambiguous.
     """
     try:
         from pyicloud.services.reminders.protobuf import reminders_pb2, versioned_document_pb2
@@ -74,7 +79,7 @@ def check_document(doc_b64: str) -> Verdict:
         return Verdict(False, problems=["pyicloud not installed"])
 
     try:
-        raw = zlib.decompress(base64.b64decode(doc_b64))
+        raw = zlib.decompress(doc if isinstance(doc, bytes) else base64.b64decode(doc))
         document = versioned_document_pb2.Document()
         document.ParseFromString(raw)
         if not document.version:
@@ -114,6 +119,33 @@ def check_text(text: str) -> Verdict:
     from ._icloud_crdt import encode_crdt_document
 
     return check_document(encode_crdt_document(text))
+
+
+def _document_of(entry: object) -> str | bytes | None:
+    """Pull the encoded document out of one CloudKit field, whatever shape it is in.
+
+    LIVE-6: this used to be `entry.get("value") if isinstance(entry, dict) else None`,
+    which reads as defensive and was the opposite. pyicloud returns a typed
+    `CKFieldOpen` wrapping a `CKEncryptedBytesField`, not a dict, so the `isinstance`
+    gate turned EVERY live record into `doc = None` - and `None` fell through to the
+    branch that announces "the stored record carries no TitleDocument". `verify` then
+    told a user with a perfectly good title that their phone would render nothing.
+    Measured on a real account: the record carried TitleDocument, 121 bytes, which
+    decodes to exactly the text we wrote.
+
+    The lesson is the branch, not the type: an unrecognised shape must return None so
+    the caller can say "could not check", and a shape we DO understand must be read -
+    never the reverse. So each known shape is named, and anything else is unknown.
+    """
+    if entry is None:
+        return None
+    if isinstance(entry, dict):
+        value = entry.get("value")
+        return value if isinstance(value, (str, bytes)) else None
+    # Typed pydantic models: `CKFieldOpen` is a RootModel over the concrete field.
+    inner = getattr(entry, "root", entry)
+    value = getattr(inner, "value", None)
+    return value if isinstance(value, (str, bytes)) else None
 
 
 def check_stored(service: object, reminder_id: str) -> Verdict:
@@ -168,15 +200,29 @@ def check_stored(service: object, reminder_id: str) -> Verdict:
         # document and reads it back, and roughly one create in two returned Apple's
         # placeholder title because the read landed first.
         saw_record = False
+        unreadable_field = False
         for rec in resp.records:
             fields = getattr(rec, "fields", None)
             if fields is None:
                 continue  # an entry with no fields is a record we did not get
             saw_record = True
-            entry = fields.get("TitleDocument") or {}
-            doc = entry.get("value") if isinstance(entry, dict) else None
+            if "TitleDocument" not in fields:
+                continue  # genuinely absent - the real finding, decided below
+            doc = _document_of(fields.get("TitleDocument"))
             if doc:
                 return check_document(doc)
+            # The field IS there and we could not read it. That is our blind spot,
+            # not a titleless reminder, and it must not print as one (LIVE-6).
+            unreadable_field = True
+        if unreadable_field:
+            return Verdict(
+                False,
+                problems=[
+                    "the record carries a TitleDocument in a shape this build cannot "
+                    "read; pyicloud's field model has moved and the check needs updating"
+                ],
+                undetermined=True,
+            )
         if not saw_record:
             return Verdict(
                 False,
